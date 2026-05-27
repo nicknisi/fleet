@@ -39,12 +39,19 @@ export function runDoctor(): number {
     });
   }
 
-  const hooksJson = join(import.meta.dir, '../../hooks/hooks.json');
-  const hooksExist = existsSync(hooksJson);
+  let fleetInstalled = false;
+  const proc = Bun.spawnSync({
+    cmd: ['claude', 'plugin', 'list'],
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  if (proc.exitCode === 0 && proc.stdout.toString().includes('fleet@')) {
+    fleetInstalled = true;
+  }
   checks.push({
-    name: 'hooks.json',
-    ok: hooksExist,
-    detail: hooksExist ? 'found' : 'missing',
+    name: 'fleet plugin',
+    ok: fleetInstalled,
+    detail: fleetInstalled ? 'installed' : 'not installed (run: fleet install)',
   });
 
   let allOk = true;
