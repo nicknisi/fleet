@@ -456,14 +456,16 @@ async function launchTui(): Promise<number> {
       tick();
     });
 
-    // Fast timer: re-read status files only (cheap — no subprocesses except tmux list-panes)
+    // Fast timer: skip if user is actively typing (send/filter mode)
     refreshTimer = setInterval(() => {
+      if (app.mode === TuiMode.SEND || app.isFiltering()) return;
       doRefresh();
       tick();
     }, FAST_REFRESH_MS);
 
-    // Slow timer: refresh git branches + ports (expensive — spawns many subprocesses)
+    // Slow timer: skip if user is actively typing
     const slowTimer = setInterval(() => {
+      if (app.mode === TuiMode.SEND || app.isFiltering()) return;
       doFullRefresh();
       tick();
     }, SLOW_REFRESH_MS);
