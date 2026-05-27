@@ -246,8 +246,7 @@ function handleFilterInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, f
 function handleSendInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, _finish: (code: number) => void): void {
   switch (key.type) {
     case 'escape':
-      app.mode = TuiMode.DASHBOARD;
-      app.sendBuffer = '';
+      app.exitSend();
       break;
     case 'backspace':
       app.sendBuffer = app.sendBuffer.slice(0, -1);
@@ -267,8 +266,7 @@ function handleSendInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, _fi
           }
         }
       }
-      app.mode = TuiMode.DASHBOARD;
-      app.sendBuffer = '';
+      app.exitSend();
       break;
     }
   }
@@ -395,16 +393,13 @@ async function launchTui(): Promise<number> {
             case 's': {
               const selected = app.selectedState();
               if (selected && canSendTo(selected).ok) {
-                app.mode = TuiMode.SEND;
-                app.sendBuffer = '';
+                app.enterSend();
               } else {
-                // Find first sendable session
                 const visible = app.visibleStates();
                 const sendableIdx = visible.findIndex((s) => canSendTo(s).ok);
                 if (sendableIdx >= 0) {
                   app.selectedIndex = sendableIdx;
-                  app.mode = TuiMode.SEND;
-                  app.sendBuffer = '';
+                  app.enterSend();
                 }
               }
               break;

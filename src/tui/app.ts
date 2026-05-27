@@ -23,6 +23,7 @@ export class TuiApp {
   private filtering: boolean = false;
   selectedIndex: number = 0;
   mode: TuiMode = TuiMode.DASHBOARD;
+  private modeBeforeSend: TuiMode = TuiMode.DASHBOARD;
   sendBuffer: string = '';
   shouldQuit: boolean = false;
 
@@ -92,6 +93,17 @@ export class TuiApp {
     this.filter = '';
     this.filtering = false;
     this.selectedIndex = 0;
+  }
+
+  enterSend(): void {
+    this.modeBeforeSend = this.mode;
+    this.mode = TuiMode.SEND;
+    this.sendBuffer = '';
+  }
+
+  exitSend(): void {
+    this.mode = this.modeBeforeSend;
+    this.sendBuffer = '';
   }
 
   moveUp(): void {
