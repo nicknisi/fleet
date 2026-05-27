@@ -43,7 +43,7 @@ function printHelp(): number {
       'fleet — agent dashboard TUI',
       '',
       'Usage:',
-      '  fleet                          Launch TUI dashboard',
+      '  fleet [--preview|--no-preview]  Launch TUI dashboard',
       '  fleet status [--tmux] <session> Query agent state',
       '  fleet next                     Jump to next waiting agent',
       '  fleet send <session> <prompt>  Send prompt to session',
@@ -278,6 +278,14 @@ async function launchTui(): Promise<number> {
   const registry = new AgentRegistry();
   const statusDirs = registry.statusDirs();
   const app = new TuiApp();
+
+  const args = process.argv.slice(2);
+  const size = getTerminalSize();
+  if (args.includes('--no-preview')) {
+    app.mode = TuiMode.DASHBOARD;
+  } else if (args.includes('--preview') || size.cols >= 120) {
+    app.mode = TuiMode.PREVIEW;
+  }
 
   enterAlternateScreen();
   hideCursor();
