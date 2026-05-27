@@ -1,0 +1,5 @@
+{
+  "name": "fleet",
+  "description": "Agent dashboard TUI — tracks AI agent state via hooks for the fleet CLI",
+  "version": "0.1.0"
+}
