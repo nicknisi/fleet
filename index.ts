@@ -14,7 +14,7 @@ import {
 } from './src/terminal/terminal.ts';
 import { fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
-import { readLastEvent, deriveStatusFromLastEvent, readEventLog, deriveStatusFromEvents } from './src/state/events.ts';
+import { readLastEvent, deriveStatusFromLastEvent } from './src/state/events.ts';
 import { AgentStatus, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import { listPanes, switchClient, gitBranch } from './src/tmux/sessions.ts';
