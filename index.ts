@@ -14,7 +14,7 @@ import {
 } from './src/terminal/terminal.ts';
 import { fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
-import { readEventLog, deriveStatusFromEvents } from './src/state/events.ts';
+import { readLastEvent, deriveStatusFromLastEvent, readEventLog, deriveStatusFromEvents } from './src/state/events.ts';
 import { AgentStatus, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import { listPanes, switchClient, gitBranch } from './src/tmux/sessions.ts';
@@ -29,7 +29,8 @@ import { runReconcile } from './src/cli/reconcile.ts';
 import { join } from 'node:path';
 
 const VERSION: string = packageJson.version;
-const REFRESH_INTERVAL_MS = 500;
+const FAST_REFRESH_MS = 500;
+const SLOW_REFRESH_MS = 5000;
 
 function printVersion(): number {
   process.stdout.write(`fleet ${VERSION}\n`);
@@ -66,13 +67,11 @@ function shortenPath(path: string): string {
   return path;
 }
 
-// Caches for expensive operations (git, lsof) — refreshed on timer, not on every render
+// Slow caches (git branches, ports) — refreshed every SLOW_REFRESH_MS
 const branchCache = new Map<string, string | null>();
 let portCache = new Map<string, number[]>();
-let slowCacheStale = true;
 
 function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): void {
-  // Git branches
   const paths = new Set<string>();
   for (const p of panes) paths.add(p.currentPath);
   branchCache.clear();
@@ -80,7 +79,6 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): vo
     branchCache.set(path, gitBranch(path));
   }
 
-  // Ports
   const newPorts = new Map<string, number[]>();
   try {
     for (const pp of detectPorts()) {
@@ -88,20 +86,14 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): vo
       existing.push(pp.port);
       newPorts.set(pp.paneId, existing);
     }
-  } catch {
-    // Port detection is optional
-  }
+  } catch {}
   portCache = newPorts;
-  slowCacheStale = false;
 }
 
-function refreshStates(statusDirs: string[], fullRefresh: boolean = false): AgentState[] {
+// Fast refresh: ONE tmux call + status file reads + last-line JSONL reads. No git, no lsof.
+function refreshStates(statusDirs: string[]): AgentState[] {
   const hookStatuses = readAllStatusDirs(statusDirs);
   const panes = listPanes();
-
-  if (fullRefresh || slowCacheStale) {
-    refreshSlowCaches(panes);
-  }
 
   const hookByPane = new Map<string, (typeof hookStatuses)[number]>();
   for (const h of hookStatuses) {
@@ -121,9 +113,9 @@ function refreshStates(statusDirs: string[], fullRefresh: boolean = false): Agen
       let eventStatus: AgentStatus | null = null;
       for (const dir of statusDirs) {
         const eventsFile = join(dir, `${pane.paneNum}.events.jsonl`);
-        const events = readEventLog(eventsFile);
-        if (events.length > 0) {
-          eventStatus = deriveStatusFromEvents(events);
+        const lastEvent = readLastEvent(eventsFile);
+        if (lastEvent) {
+          eventStatus = deriveStatusFromLastEvent(lastEvent);
           break;
         }
       }
@@ -160,6 +152,13 @@ function refreshStates(statusDirs: string[], fullRefresh: boolean = false): Agen
   return states;
 }
 
+// Full refresh: runs slow caches then fast refresh
+function fullRefreshStates(statusDirs: string[]): AgentState[] {
+  const panes = listPanes();
+  refreshSlowCaches(panes);
+  return refreshStates(statusDirs);
+}
+
 function handleCli(args: string[]): number | null {
   if (args.includes('--version') || args.includes('-v')) return printVersion();
   if (args.includes('--help') || args.includes('-h')) return printHelp();
@@ -172,13 +171,13 @@ function handleCli(args: string[]): number | null {
 
   switch (command) {
     case 'status': {
-      const states = refreshStates(statusDirs, true);
+      const states = fullRefreshStates(statusDirs);
       const output = runStatus(args.slice(1), states);
       if (output.length > 0) process.stdout.write(output + '\n');
       return 0;
     }
     case 'next': {
-      const states = refreshStates(statusDirs, true);
+      const states = fullRefreshStates(statusDirs);
       return runNext(states);
     }
     case 'send': {
@@ -191,7 +190,7 @@ function handleCli(args: string[]): number | null {
         process.stderr.write('Usage: fleet send <session> <prompt>\n');
         return 1;
       }
-      const states = refreshStates(statusDirs, true);
+      const states = fullRefreshStates(statusDirs);
       const force = args.includes('--force');
       return runSend(session, prompt, states, force);
     }
@@ -292,13 +291,19 @@ async function launchTui(): Promise<number> {
     process.stdout.write(render(app, size));
   };
 
-  const doRefresh = (full: boolean = false) => {
-    const states = refreshStates(statusDirs, full);
+  const doRefresh = () => {
+    const states = refreshStates(statusDirs);
     app.updateStates(states);
     needsRender = true;
   };
 
-  doRefresh(true);
+  const doFullRefresh = () => {
+    const states = fullRefreshStates(statusDirs);
+    app.updateStates(states);
+    needsRender = true;
+  };
+
+  doFullRefresh();
 
   // Debounce watcher-triggered refreshes — hooks fire rapidly
   let watcherTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -316,6 +321,7 @@ async function launchTui(): Promise<number> {
 
     const finish = (code: number) => {
       if (refreshTimer !== null) clearInterval(refreshTimer);
+      clearInterval(slowTimer);
       if (watcherTimeout !== null) clearTimeout(watcherTimeout);
       stopWatching();
       process.stdin.removeAllListeners('data');
@@ -387,7 +393,7 @@ async function launchTui(): Promise<number> {
               break;
             }
             case 'n': {
-              const states = refreshStates(statusDirs, true);
+              const states = fullRefreshStates(statusDirs);
               runNext(states);
               finish(0);
               return;
@@ -433,10 +439,17 @@ async function launchTui(): Promise<number> {
       tick();
     });
 
+    // Fast timer: re-read status files only (cheap — no subprocesses except tmux list-panes)
     refreshTimer = setInterval(() => {
-      doRefresh(true);
+      doRefresh();
       tick();
-    }, REFRESH_INTERVAL_MS);
+    }, FAST_REFRESH_MS);
+
+    // Slow timer: refresh git branches + ports (expensive — spawns many subprocesses)
+    const slowTimer = setInterval(() => {
+      doFullRefresh();
+      tick();
+    }, SLOW_REFRESH_MS);
 
     tick();
   });

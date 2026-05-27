@@ -18,11 +18,13 @@ export function render(app: TuiApp, size: TerminalSize): string {
     return out.join('');
   }
 
-  // Row 1: header
-  out.push(renderHeader(app, cols));
-  out.push('\x1b[K\r\n');
+  // Header (may be multiple lines)
+  const headerLines = renderHeader(app, cols);
+  for (const hl of headerLines) {
+    out.push(hl + '\x1b[K\r\n');
+  }
 
-  const contentRows = rows - 3;
+  const contentRows = rows - headerLines.length - 2;
   let linesWritten = 0;
 
   if (app.mode === TuiMode.HELP) {
