@@ -32,10 +32,10 @@ export function renderHeader(app: TuiApp, cols: number): string[] {
   const s = app.summary();
 
   const badges: string[] = [];
-  if (s.permit > 0) badges.push(`${C.permit}${s.permit} permit${C.reset}`);
-  if (s.question > 0) badges.push(`${C.question}${s.question} question${C.reset}`);
+  if (s.permit > 0) badges.push(`${C.permit}${s.permit} waiting${C.reset}`);
+  if (s.question > 0) badges.push(`${C.question}${s.question} asking${C.reset}`);
   if (s.done > 0) badges.push(`${C.done}${s.done} done${C.reset}`);
-  if (s.busy > 0) badges.push(`${C.busy}${s.busy} busy${C.reset}`);
+  if (s.busy > 0) badges.push(`${C.busy}${s.busy} working${C.reset}`);
 
   const agentCount = s.total - app.shellCount();
   const title = ` ${C.bold}${logo()}${C.reset} ${C.gray}${BOX_H} ${agentCount} agents · ${getQuip()}${C.reset}`;
@@ -136,10 +136,10 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
   const lines: string[] = [];
 
   const legend = [
-    `${C.permit}⚠ ${C.gray}permit${C.reset}`,
-    `${C.question}? ${C.gray}question${C.reset}`,
+    `${C.permit}⚠ ${C.gray}waiting${C.reset}`,
+    `${C.question}? ${C.gray}asking${C.reset}`,
     `${C.done}✓ ${C.gray}done${C.reset}`,
-    `${C.busy}◉ ${C.gray}busy${C.reset}`,
+    `${C.busy}◉ ${C.gray}working${C.reset}`,
     `${C.idle}● ${C.gray}idle${C.reset}`,
   ];
   lines.push(truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${legend.join('  ')}`, cols));

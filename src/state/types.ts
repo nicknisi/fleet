@@ -29,13 +29,13 @@ export function compareStatus(a: AgentStatus, b: AgentStatus): number {
 }
 
 export const STATUS_DISPLAY: Record<AgentStatus, { icon: string; label: string; color: string }> = {
-  [AgentStatus.PERMIT]: { icon: '⚠', label: 'PERMIT', color: '#f9e2af' },
-  [AgentStatus.QUESTION]: { icon: '?', label: 'QUESTION', color: '#cba6f7' },
-  [AgentStatus.DONE]: { icon: '✓', label: 'DONE', color: '#a6e3a1' },
-  [AgentStatus.BUSY]: { icon: '◉', label: 'BUSY', color: '#fab387' },
-  [AgentStatus.IDLE]: { icon: '●', label: 'IDLE', color: '#89b4fa' },
-  [AgentStatus.SHELL]: { icon: '■', label: 'SHELL', color: '#6c7086' },
-  [AgentStatus.DOWN]: { icon: '○', label: 'DOWN', color: '#45475a' },
+  [AgentStatus.PERMIT]: { icon: '⚠', label: 'waiting', color: '#f9e2af' },
+  [AgentStatus.QUESTION]: { icon: '?', label: 'asking', color: '#cba6f7' },
+  [AgentStatus.DONE]: { icon: '✓', label: 'done', color: '#a6e3a1' },
+  [AgentStatus.BUSY]: { icon: '◉', label: 'working', color: '#fab387' },
+  [AgentStatus.IDLE]: { icon: '●', label: 'idle', color: '#89b4fa' },
+  [AgentStatus.SHELL]: { icon: '■', label: 'shell', color: '#6c7086' },
+  [AgentStatus.DOWN]: { icon: '○', label: 'down', color: '#45475a' },
 };
 
 export interface AgentState {
