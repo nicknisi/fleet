@@ -50,7 +50,13 @@ export class TuiApp {
   }
 
   visibleStates(): AgentState[] {
-    return this.applyFilter(this.sortedStates());
+    const sorted = this.sortedStates();
+    const noShell = sorted.filter((s) => s.status !== AgentStatus.SHELL && s.status !== AgentStatus.DOWN);
+    return this.applyFilter(noShell);
+  }
+
+  shellCount(): number {
+    return this.states.filter((s) => s.status === AgentStatus.SHELL || s.status === AgentStatus.DOWN).length;
   }
 
   private applyFilter(states: AgentState[]): AgentState[] {
