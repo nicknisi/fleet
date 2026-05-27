@@ -118,34 +118,26 @@ function formatSessionRow(state: AgentState, cols: number, selected: boolean): s
   const display = STATUS_DISPLAY[state.status];
   const stColor = getStateColor(state.status);
 
-  // Selection indicator: colored bar vs space
   const sel = selected ? `${stColor}▌${C.reset}` : ' ';
 
-  // State label (5 chars padded)
-  const label = display.label.padEnd(7);
-
-  // Session name
   const nameColor = selected ? C.bold : '';
   const name = state.session.padEnd(15);
 
-  // Project path — strip ~/Developer/ prefix for brevity
   let project = state.project ?? '';
   project = project.replace(/^~\/Developer\//, '');
 
-  // Branch (colored if not main/master)
   const branch = state.branch ?? '';
   const branchColor = branch && branch !== 'main' && branch !== 'master' ? C.purple : C.gray;
 
-  // Age with color gradient
   const age = formatAge(state.ts);
   const ageColor = getAgeColor(state.ts);
 
-  // Ports
   const portStr = state.ports.length > 0 ? ` ${C.cyan}⌁${state.ports[0]}${C.reset}` : '';
 
-  // Layout: sel icon LABEL session project branch age ports
-  const projectW = Math.max(8, cols - 55);
-  const row = `${sel} ${stColor}${display.icon}${C.reset} ${stColor}${label}${C.reset}${nameColor}${name}${C.reset} ${C.gray}${truncate(project, projectW).padEnd(projectW)}${C.reset} ${branchColor}${truncate(branch, 12).padEnd(12)}${C.reset} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
+  // Layout: sel icon session project branch age ports
+  const fixedW = 3 + 15 + 1 + 14 + 5;
+  const projectW = Math.max(8, cols - fixedW);
+  const row = `${sel} ${stColor}${display.icon}${C.reset} ${nameColor}${name}${C.reset}${C.gray}${truncate(project, projectW).padEnd(projectW)}${C.reset} ${branchColor}${truncate(branch, 12).padEnd(12)}${C.reset} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
 
   return truncateAnsi(row, cols);
 }
