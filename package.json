@@ -1,0 +1,36 @@
+{
+  "name": "fleet",
+  "version": "0.1.0",
+  "description": "Agent dashboard TUI for managing AI sessions in tmux",
+  "module": "index.ts",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/nicknisi/fleet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicknisi/fleet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nicknisi/fleet/issues"
+  },
+  "bin": {
+    "fleet": "./dist/fleet"
+  },
+  "scripts": {
+    "dev": "bun run index.ts",
+    "build": "bun build --compile --minify index.ts --outfile dist/fleet",
+    "lint": "oxlint",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "oxfmt": "^0.47.0",
+    "oxlint": "^1.62.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
