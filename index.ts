@@ -386,9 +386,18 @@ async function launchTui(): Promise<number> {
               break;
             case 's': {
               const selected = app.selectedState();
-              if (selected) {
+              if (selected && canSendTo(selected).ok) {
                 app.mode = TuiMode.SEND;
                 app.sendBuffer = '';
+              } else {
+                // Find first sendable session
+                const visible = app.visibleStates();
+                const sendableIdx = visible.findIndex((s) => canSendTo(s).ok);
+                if (sendableIdx >= 0) {
+                  app.selectedIndex = sendableIdx;
+                  app.mode = TuiMode.SEND;
+                  app.sendBuffer = '';
+                }
               }
               break;
             }

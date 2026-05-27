@@ -189,12 +189,12 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
 
   // Legend row
   const legend = [
-    `${C.permit}⚠${C.reset}${C.gray}permit${C.reset}`,
-    `${C.question}?${C.reset}${C.gray}question${C.reset}`,
-    `${C.done}✓${C.reset}${C.gray}done${C.reset}`,
-    `${C.busy}◉${C.reset}${C.gray}busy${C.reset}`,
-    `${C.idle}●${C.reset}${C.gray}idle${C.reset}`,
-    `${C.shell}■${C.reset}${C.gray}shell${C.reset}`,
+    `${C.permit}⚠ ${C.reset}${C.gray}permit${C.reset}`,
+    `${C.question}? ${C.reset}${C.gray}question${C.reset}`,
+    `${C.done}✓ ${C.reset}${C.gray}done${C.reset}`,
+    `${C.busy}◉ ${C.reset}${C.gray}busy${C.reset}`,
+    `${C.idle}● ${C.reset}${C.gray}idle${C.reset}`,
+    `${C.shell}■ ${C.reset}${C.gray}shell${C.reset}`,
   ];
   lines.push(truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${legend.join('  ')}`, cols));
 
