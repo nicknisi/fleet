@@ -24,7 +24,8 @@ export function render(app: TuiApp, size: TerminalSize): string {
     out.push(hl + '\x1b[K\r\n');
   }
 
-  const contentRows = rows - headerLines.length - 2;
+  const footerLines = renderFooter(app, cols);
+  const contentRows = rows - headerLines.length - footerLines.length - 1;
   let linesWritten = 0;
 
   if (app.mode === TuiMode.HELP) {
@@ -82,10 +83,13 @@ export function render(app: TuiApp, size: TerminalSize): string {
     linesWritten++;
   }
 
-  // Footer (last row)
-  out.push(`\x1b[${rows};1H`);
-  out.push(renderFooter(app, cols));
-  out.push('\x1b[K');
+  // Footer (last rows)
+  const footerStart = rows - footerLines.length + 1;
+  for (let i = 0; i < footerLines.length; i++) {
+    out.push(`\x1b[${footerStart + i};1H`);
+    out.push(footerLines[i]!);
+    out.push('\x1b[K');
+  }
 
   return out.join('');
 }

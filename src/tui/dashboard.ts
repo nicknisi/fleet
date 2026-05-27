@@ -184,23 +184,40 @@ function calculateScroll(selected: number, viewHeight: number, total: number): n
   return selected - half;
 }
 
-export function renderFooter(app: TuiApp, cols: number): string {
+export function renderFooter(app: TuiApp, cols: number): string[] {
+  const lines: string[] = [];
+
+  // Legend row
+  const legend = [
+    `${C.permit}⚠${C.reset}${C.gray}permit${C.reset}`,
+    `${C.question}?${C.reset}${C.gray}question${C.reset}`,
+    `${C.done}✓${C.reset}${C.gray}done${C.reset}`,
+    `${C.busy}◉${C.reset}${C.gray}busy${C.reset}`,
+    `${C.idle}●${C.reset}${C.gray}idle${C.reset}`,
+    `${C.shell}■${C.reset}${C.gray}shell${C.reset}`,
+  ];
+  lines.push(truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${legend.join('  ')}`, cols));
+
+  // Keybindings row
   if (app.isFiltering()) {
-    return truncateAnsi(
+    lines.push(truncateAnsi(
       `${C.gray}${BOX_H}${C.reset} ${C.cyan}/${app.getFilter()}${C.reset}█ ${C.gray}${BOX_H} ${C.reset}${chip('Esc')} ${C.gray}clear${C.reset}`,
       cols,
-    );
+    ));
+  } else {
+    const hints = [
+      `${chip('↑↓')} ${C.gray}nav${C.reset}`,
+      `${chip('⏎')} ${C.gray}switch${C.reset}`,
+      `${chip('/')} ${C.gray}filter${C.reset}`,
+      `${chip('p')} ${C.gray}preview${C.reset}`,
+      `${chip('s')} ${C.gray}send${C.reset}`,
+      `${chip('n')} ${C.gray}next${C.reset}`,
+      `${chip('?')} ${C.gray}help${C.reset}`,
+    ];
+    lines.push(truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${hints.join('  ')}`, cols));
   }
-  const hints = [
-    `${chip('↑↓')} ${C.gray}nav${C.reset}`,
-    `${chip('⏎')} ${C.gray}switch${C.reset}`,
-    `${chip('/')} ${C.gray}filter${C.reset}`,
-    `${chip('p')} ${C.gray}preview${C.reset}`,
-    `${chip('s')} ${C.gray}send${C.reset}`,
-    `${chip('n')} ${C.gray}next${C.reset}`,
-    `${chip('?')} ${C.gray}help${C.reset}`,
-  ];
-  return truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${hints.join('  ')}`, cols);
+
+  return lines;
 }
 
 function chip(key: string): string {
