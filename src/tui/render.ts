@@ -8,65 +8,82 @@ import type { TerminalSize } from '../terminal/terminal.ts';
 
 export function render(app: TuiApp, size: TerminalSize): string {
   const out: string[] = [];
-  out.push('\x1b[2J\x1b[H');
+  const { cols, rows } = size;
 
-  if (size.cols < 20 || size.rows < 6) {
-    out.push(`${C.gray}Terminal too small${C.reset}`);
+  // Home cursor (no screen clear — overwrite in place to avoid flicker)
+  out.push('\x1b[H');
+
+  if (cols < 20 || rows < 6) {
+    out.push(`${C.gray}Terminal too small${C.reset}\x1b[K`);
     return out.join('');
   }
 
-  // Header (row 1)
-  out.push(renderHeader(app, size.cols));
-  out.push('\r\n');
+  // Row 1: header
+  out.push(renderHeader(app, cols));
+  out.push('\x1b[K\r\n');
 
-  const contentRows = size.rows - 3;
+  const contentRows = rows - 3;
+  let linesWritten = 0;
 
   if (app.mode === TuiMode.HELP) {
     const helpLines = renderHelp();
-    for (const line of helpLines.slice(0, contentRows)) {
-      out.push(line + '\r\n');
+    for (let i = 0; i < contentRows; i++) {
+      out.push((helpLines[i] ?? '') + '\x1b[K\r\n');
+      linesWritten++;
     }
   } else if (app.mode === TuiMode.SEND) {
     const selected = app.selectedState();
     if (selected) {
-      out.push('\r\n');
-      const sendLines = renderSendMode(selected, app.sendBuffer, size.cols);
-      for (const line of sendLines.slice(0, contentRows)) {
-        out.push(line + '\r\n');
+      out.push('\x1b[K\r\n');
+      linesWritten++;
+      const sendLines = renderSendMode(selected, app.sendBuffer, cols);
+      for (let i = 0; i < contentRows - 1 && i < sendLines.length; i++) {
+        out.push(sendLines[i]! + '\x1b[K\r\n');
+        linesWritten++;
       }
     }
   } else if (app.mode === TuiMode.PREVIEW) {
     const selected = app.selectedState();
-    const listWidth = Math.floor(size.cols * 0.45);
-    const previewWidth = size.cols - listWidth - 1;
+    const listWidth = Math.floor(cols * 0.45);
+    const previewWidth = cols - listWidth - 1;
 
-    out.push('\r\n');
+    out.push('\x1b[K\r\n');
+    linesWritten++;
     const sessionLines = renderSessionList(app, contentRows, listWidth);
     const previewLines = selected ? renderPreview(selected, previewWidth, contentRows) : [];
 
-    for (let row = 0; row < contentRows; row++) {
+    for (let row = 0; row < contentRows - 1; row++) {
       const sessionLine = sessionLines[row] ?? '';
       const previewLine = previewLines[row] ?? '';
       out.push(sessionLine);
-      // Pad session line to listWidth
       const sessionVis = visibleLengthFast(sessionLine);
       if (sessionVis < listWidth) out.push(' '.repeat(listWidth - sessionVis));
       out.push(`${C.gray}│${C.reset}`);
       out.push(previewLine);
-      out.push('\r\n');
+      out.push('\x1b[K\r\n');
+      linesWritten++;
     }
   } else {
     // Dashboard mode
-    out.push('\r\n');
-    const sessionLines = renderSessionList(app, contentRows, size.cols);
+    out.push('\x1b[K\r\n');
+    linesWritten++;
+    const sessionLines = renderSessionList(app, contentRows, cols);
     for (const line of sessionLines) {
-      out.push(line + '\r\n');
+      out.push(line + '\x1b[K\r\n');
+      linesWritten++;
     }
   }
 
+  // Clear remaining content rows
+  while (linesWritten < contentRows) {
+    out.push('\x1b[K\r\n');
+    linesWritten++;
+  }
+
   // Footer (last row)
-  out.push(`\x1b[${size.rows};1H`);
-  out.push(renderFooter(app, size.cols));
+  out.push(`\x1b[${rows};1H`);
+  out.push(renderFooter(app, cols));
+  out.push('\x1b[K');
 
   return out.join('');
 }

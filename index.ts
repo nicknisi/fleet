@@ -66,24 +66,43 @@ function shortenPath(path: string): string {
   return path;
 }
 
-// Build AgentState[] by composing hooks, events, scraper, and tmux layers.
-function refreshStates(statusDirs: string[]): AgentState[] {
-  const hookStatuses = readAllStatusDirs(statusDirs);
-  const panes = listPanes();
+// Caches for expensive operations (git, lsof) — refreshed on timer, not on every render
+const branchCache = new Map<string, string | null>();
+let portCache = new Map<string, number[]>();
+let slowCacheStale = true;
 
-  // Build port map
-  const portMap = new Map<string, number[]>();
+function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): void {
+  // Git branches
+  const paths = new Set<string>();
+  for (const p of panes) paths.add(p.currentPath);
+  branchCache.clear();
+  for (const path of paths) {
+    branchCache.set(path, gitBranch(path));
+  }
+
+  // Ports
+  const newPorts = new Map<string, number[]>();
   try {
     for (const pp of detectPorts()) {
-      const existing = portMap.get(pp.paneId) ?? [];
+      const existing = newPorts.get(pp.paneId) ?? [];
       existing.push(pp.port);
-      portMap.set(pp.paneId, existing);
+      newPorts.set(pp.paneId, existing);
     }
   } catch {
     // Port detection is optional
   }
+  portCache = newPorts;
+  slowCacheStale = false;
+}
 
-  // Index hook statuses by pane ID
+function refreshStates(statusDirs: string[], fullRefresh: boolean = false): AgentState[] {
+  const hookStatuses = readAllStatusDirs(statusDirs);
+  const panes = listPanes();
+
+  if (fullRefresh || slowCacheStale) {
+    refreshSlowCaches(panes);
+  }
+
   const hookByPane = new Map<string, (typeof hookStatuses)[number]>();
   for (const h of hookStatuses) {
     hookByPane.set(h.pane, h);
@@ -99,7 +118,6 @@ function refreshStates(statusDirs: string[]): AgentState[] {
     let ts = Math.floor(Date.now() / 1000);
 
     if (hook) {
-      // Read JSONL event log
       let eventStatus: AgentStatus | null = null;
       for (const dir of statusDirs) {
         const eventsFile = join(dir, `${pane.paneNum}.events.jsonl`);
@@ -132,8 +150,8 @@ function refreshStates(statusDirs: string[]): AgentState[] {
       status,
       tool,
       project: shortenPath(pane.currentPath),
-      branch: gitBranch(pane.currentPath),
-      ports: portMap.get(pane.paneId) ?? [],
+      branch: branchCache.get(pane.currentPath) ?? null,
+      ports: portCache.get(pane.paneId) ?? [],
       ts,
       agentType: 'claude',
     });
@@ -154,13 +172,13 @@ function handleCli(args: string[]): number | null {
 
   switch (command) {
     case 'status': {
-      const states = refreshStates(statusDirs);
+      const states = refreshStates(statusDirs, true);
       const output = runStatus(args.slice(1), states);
       if (output.length > 0) process.stdout.write(output + '\n');
       return 0;
     }
     case 'next': {
-      const states = refreshStates(statusDirs);
+      const states = refreshStates(statusDirs, true);
       return runNext(states);
     }
     case 'send': {
@@ -173,7 +191,7 @@ function handleCli(args: string[]): number | null {
         process.stderr.write('Usage: fleet send <session> <prompt>\n');
         return 1;
       }
-      const states = refreshStates(statusDirs);
+      const states = refreshStates(statusDirs, true);
       const force = args.includes('--force');
       return runSend(session, prompt, states, force);
     }
@@ -274,17 +292,23 @@ async function launchTui(): Promise<number> {
     process.stdout.write(render(app, size));
   };
 
-  const doRefresh = () => {
-    const states = refreshStates(statusDirs);
+  const doRefresh = (full: boolean = false) => {
+    const states = refreshStates(statusDirs, full);
     app.updateStates(states);
     needsRender = true;
   };
 
-  doRefresh();
+  doRefresh(true);
 
+  // Debounce watcher-triggered refreshes — hooks fire rapidly
+  let watcherTimeout: ReturnType<typeof setTimeout> | null = null;
   const stopWatching = watchStatusDirs(statusDirs, () => {
-    doRefresh();
-    if (needsRender) draw();
+    if (watcherTimeout !== null) return;
+    watcherTimeout = setTimeout(() => {
+      watcherTimeout = null;
+      doRefresh();
+      draw();
+    }, 100);
   });
 
   return await new Promise<number>((resolve) => {
@@ -292,6 +316,7 @@ async function launchTui(): Promise<number> {
 
     const finish = (code: number) => {
       if (refreshTimer !== null) clearInterval(refreshTimer);
+      if (watcherTimeout !== null) clearTimeout(watcherTimeout);
       stopWatching();
       process.stdin.removeAllListeners('data');
       restore();
@@ -362,7 +387,7 @@ async function launchTui(): Promise<number> {
               break;
             }
             case 'n': {
-              const states = refreshStates(statusDirs);
+              const states = refreshStates(statusDirs, true);
               runNext(states);
               finish(0);
               return;
@@ -409,7 +434,7 @@ async function launchTui(): Promise<number> {
     });
 
     refreshTimer = setInterval(() => {
-      doRefresh();
+      doRefresh(true);
       tick();
     }, REFRESH_INTERVAL_MS);
 
