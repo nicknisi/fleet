@@ -20,6 +20,7 @@ export interface Summary {
 export class TuiApp {
   private states: AgentState[] = [];
   private filter: string = '';
+  private filtering: boolean = false;
   selectedIndex: number = 0;
   mode: TuiMode = TuiMode.DASHBOARD;
   sendBuffer: string = '';
@@ -69,6 +70,7 @@ export class TuiApp {
 
   setFilter(text: string): void {
     this.filter = text;
+    this.filtering = true;
     this.selectedIndex = 0;
   }
 
@@ -76,8 +78,13 @@ export class TuiApp {
     return this.filter;
   }
 
+  isFiltering(): boolean {
+    return this.filtering;
+  }
+
   clearFilter(): void {
     this.filter = '';
+    this.filtering = false;
     this.selectedIndex = 0;
   }
 

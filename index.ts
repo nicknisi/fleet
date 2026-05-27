@@ -354,7 +354,7 @@ async function launchTui(): Promise<number> {
       }
 
       // Filter mode
-      if (app.getFilter().length > 0) {
+      if (app.isFiltering()) {
         handleFilterInput(app, key, finish);
         needsRender = true;
         return;

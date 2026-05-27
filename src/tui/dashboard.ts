@@ -94,9 +94,8 @@ function calculateScroll(selected: number, viewHeight: number, total: number): n
 }
 
 export function renderFooter(app: TuiApp, cols: number): string {
-  const filter = app.getFilter();
-  if (filter.length > 0) {
-    return truncateAnsi(`${C.cyan}/${filter}${C.reset} ${C.gray}· esc clear${C.reset}`, cols);
+  if (app.isFiltering()) {
+    return truncateAnsi(`${C.cyan}/${app.getFilter()}${C.reset}${C.gray}█ · esc clear${C.reset}`, cols);
   }
   return truncateAnsi(
     `${C.gray}↑↓ navigate  enter switch  / filter  p preview  s send  n next  ? help${C.reset}`,
