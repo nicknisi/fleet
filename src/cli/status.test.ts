@@ -18,10 +18,7 @@ const makeState = (overrides: Partial<AgentState>): AgentState => ({
 
 describe('formatPlainStatus', () => {
   test('shows state and count for a session', () => {
-    const states = [
-      makeState({ status: AgentStatus.PERMIT }),
-      makeState({ status: AgentStatus.BUSY, paneId: '%43' }),
-    ];
+    const states = [makeState({ status: AgentStatus.PERMIT }), makeState({ status: AgentStatus.BUSY, paneId: '%43' })];
     const result = formatPlainStatus(states, 'test');
     expect(result).toContain('PERMIT');
     expect(result).toContain('1');

@@ -31,10 +31,7 @@ describe('TuiApp', () => {
 
   test('filter narrows visible sessions', () => {
     const app = new TuiApp();
-    app.updateStates([
-      makeState('dotfiles', AgentStatus.IDLE),
-      makeState('workos-app', AgentStatus.BUSY),
-    ]);
+    app.updateStates([makeState('dotfiles', AgentStatus.IDLE), makeState('workos-app', AgentStatus.BUSY)]);
     app.setFilter('dot');
     const visible = app.visibleStates();
     expect(visible.length).toBe(1);

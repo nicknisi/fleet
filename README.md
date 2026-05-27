@@ -52,30 +52,30 @@ The dashboard shows every Claude Code pane grouped by urgency. Agents that need 
 
 ### Keybindings
 
-| Key | Action |
-|-----|--------|
-| `j` / `k` or `Up` / `Down` | Navigate sessions |
-| `Enter` | Switch to selected session |
-| `n` | Jump to next waiting agent (cycles) |
-| `p` | Toggle preview pane |
-| `s` | Send prompt to selected session |
-| `/` | Filter sessions by name or project |
-| `?` | Help overlay |
-| `q` or `Esc` | Quit (or clear filter) |
+| Key                        | Action                              |
+| -------------------------- | ----------------------------------- |
+| `j` / `k` or `Up` / `Down` | Navigate sessions                   |
+| `Enter`                    | Switch to selected session          |
+| `n`                        | Jump to next waiting agent (cycles) |
+| `p`                        | Toggle preview pane                 |
+| `s`                        | Send prompt to selected session     |
+| `/`                        | Filter sessions by name or project  |
+| `?`                        | Help overlay                        |
+| `q` or `Esc`               | Quit (or clear filter)              |
 
 ### Agent States
 
 Fleet tracks seven states, sorted by urgency. The icon and color tell you what's happening at a glance:
 
-| Icon | State | Meaning |
-|------|-------|---------|
-| `⚠` | **waiting** | Tool approval needed (`[y/n]` prompt) |
-| `?` | **asking** | Agent asked you a question |
-| `✓` | **done** | Task finished, needs your next prompt |
-| `◉` | **working** | Thinking or running tools |
-| `●` | **idle** | Up but no recent activity |
-| `■` | **shell** | No agent running (hidden by default) |
-| `○` | **down** | No live process (hidden by default) |
+| Icon | State       | Meaning                               |
+| ---- | ----------- | ------------------------------------- |
+| `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt) |
+| `?`  | **asking**  | Agent asked you a question            |
+| `✓`  | **done**    | Task finished, needs your next prompt |
+| `◉`  | **working** | Thinking or running tools             |
+| `●`  | **idle**    | Up but no recent activity             |
+| `■`  | **shell**   | No agent running (hidden by default)  |
+| `○`  | **down**    | No live process (hidden by default)   |
 
 ### Send Mode
 
@@ -88,6 +88,7 @@ Press `s` to send a prompt to the selected agent. Fleet auto-selects the first s
 Press `p` to toggle a live `tmux capture-pane` view of the selected session. Shows actual terminal output so you can verify state visually. Opens automatically on terminals wider than 120 columns.
 
 The preview shows:
+
 - Live pane content (ANSI color preserved)
 - State badge and current tool
 - Listening ports (e.g., `⌁3000`)
@@ -96,15 +97,15 @@ The preview shows:
 
 Fleet also works as a non-interactive CLI for scripting and tmux integration.
 
-| Command | Description |
-|---------|-------------|
-| `fleet status [--tmux] <session>` | Query agent state. `--tmux` outputs a tmux format string for status bars. |
-| `fleet next` | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE). |
-| `fleet send <session> <prompt>` | Send a prompt to a session. Refuses unsafe states unless `--force`. |
-| `fleet doctor` | Check tmux version, plugin installation, status directories, hook health. |
-| `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states. |
-| `fleet install` | Register Fleet as a Claude Code plugin. |
-| `fleet uninstall` | Remove the plugin registration. |
+| Command                                   | Description                                                                      |
+| ----------------------------------------- | -------------------------------------------------------------------------------- |
+| `fleet status [--tmux] <session>`         | Query agent state. `--tmux` outputs a tmux format string for status bars.        |
+| `fleet next`                              | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE). |
+| `fleet send <session> <prompt>`           | Send a prompt to a session. Refuses unsafe states unless `--force`.              |
+| `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.        |
+| `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.             |
+| `fleet install`                           | Register Fleet as a Claude Code plugin.                                          |
+| `fleet uninstall`                         | Remove the plugin registration.                                                  |
 
 ### Tmux Status Bar Integration
 

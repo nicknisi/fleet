@@ -92,13 +92,20 @@ function formatSessionRow(state: AgentState, cols: number, selected: boolean): s
 
 function getStateColor(status: AgentStatus): string {
   switch (status) {
-    case AgentStatus.PERMIT: return C.permit;
-    case AgentStatus.QUESTION: return C.question;
-    case AgentStatus.DONE: return C.done;
-    case AgentStatus.BUSY: return C.busy;
-    case AgentStatus.IDLE: return C.idle;
-    case AgentStatus.SHELL: return C.shell;
-    case AgentStatus.DOWN: return C.down;
+    case AgentStatus.PERMIT:
+      return C.permit;
+    case AgentStatus.QUESTION:
+      return C.question;
+    case AgentStatus.DONE:
+      return C.done;
+    case AgentStatus.BUSY:
+      return C.busy;
+    case AgentStatus.IDLE:
+      return C.idle;
+    case AgentStatus.SHELL:
+      return C.shell;
+    case AgentStatus.DOWN:
+      return C.down;
   }
 }
 
@@ -145,10 +152,12 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
   lines.push(truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${legend.join('  ')}`, cols));
 
   if (app.isFiltering()) {
-    lines.push(truncateAnsi(
-      `${C.gray}${BOX_H}${C.reset} ${C.cyan}/${app.getFilter()}${C.reset}█ ${C.gray}${BOX_H} ${C.reset}${chip('Esc')} ${C.gray}clear${C.reset}`,
-      cols,
-    ));
+    lines.push(
+      truncateAnsi(
+        `${C.gray}${BOX_H}${C.reset} ${C.cyan}/${app.getFilter()}${C.reset}█ ${C.gray}${BOX_H} ${C.reset}${chip('Esc')} ${C.gray}clear${C.reset}`,
+        cols,
+      ),
+    );
   } else {
     const hints = [
       `${chip('↑↓')} ${C.gray}nav${C.reset}`,

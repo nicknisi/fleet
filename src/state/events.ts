@@ -40,7 +40,8 @@ export function readLastEvent(path: string): EventEntry | null {
     while (end > 0 && buf[end - 1] === '\n') end--;
     if (end === 0) return null;
     let start = buf.lastIndexOf('\n', end - 1);
-    if (start === -1) start = 0; else start++;
+    if (start === -1) start = 0;
+    else start++;
     const line = buf.slice(start, end);
     if (line.length === 0) return null;
     const data = JSON.parse(line) as Record<string, unknown>;
@@ -77,9 +78,12 @@ export function deriveStatusFromEvents(events: EventEntry[]): AgentStatus | null
 
   if (last.event === 'Notification') {
     switch (last.notification_type) {
-      case 'permission_prompt': return AgentStatus.PERMIT;
-      case 'elicitation_dialog': return AgentStatus.QUESTION;
-      case 'idle_prompt': return AgentStatus.DONE;
+      case 'permission_prompt':
+        return AgentStatus.PERMIT;
+      case 'elicitation_dialog':
+        return AgentStatus.QUESTION;
+      case 'idle_prompt':
+        return AgentStatus.DONE;
     }
   }
 

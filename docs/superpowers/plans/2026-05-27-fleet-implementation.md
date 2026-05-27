@@ -82,6 +82,7 @@
 ### Task 1: Project Scaffolding
 
 **Files:**
+
 - Create: `package.json`
 - Create: `tsconfig.json`
 - Create: `.oxlintrc.json`
@@ -225,6 +226,7 @@ logs
 - [ ] **Step 7: Create release-please config**
 
 `.release-please-config.json`:
+
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
@@ -239,6 +241,7 @@ logs
 ```
 
 `.release-please-manifest.json`:
+
 ```json
 {
   ".": "0.1.0"
@@ -306,6 +309,7 @@ git commit -m "chore: initial project scaffolding"
 ### Task 2: State Types
 
 **Files:**
+
 - Create: `src/state/types.ts`
 - Test: `src/state/types.test.ts`
 
@@ -455,6 +459,7 @@ git commit -m "feat: add state types with priority ordering"
 ### Task 3: Terminal Primitives (ported from tm)
 
 **Files:**
+
 - Create: `src/terminal/ansi.ts` (copy from tm, identical)
 - Create: `src/terminal/ansi.test.ts` (copy from tm)
 - Create: `src/terminal/colors.ts` (extended with catppuccin palette)
@@ -492,28 +497,70 @@ function rgb(r: number, g: number, b: number): string {
 }
 
 export const C = {
-  get reset() { return code('\x1b[0m'); },
-  get bold() { return code('\x1b[1m'); },
-  get dim() { return code('\x1b[2m'); },
-  get red() { return code('\x1b[0;31m'); },
-  get green() { return code('\x1b[0;32m'); },
-  get blue() { return code('\x1b[0;34m'); },
-  get purple() { return code('\x1b[0;35m'); },
-  get cyan() { return code('\x1b[0;36m'); },
-  get cyanBold() { return code('\x1b[1;36m'); },
-  get yellow() { return code('\x1b[0;33m'); },
-  get yellowBold() { return code('\x1b[1;33m'); },
-  get greenBold() { return code('\x1b[1;32m'); },
-  get whiteBold() { return code('\x1b[1;37m'); },
-  get gray() { return code('\x1b[0;90m'); },
+  get reset() {
+    return code('\x1b[0m');
+  },
+  get bold() {
+    return code('\x1b[1m');
+  },
+  get dim() {
+    return code('\x1b[2m');
+  },
+  get red() {
+    return code('\x1b[0;31m');
+  },
+  get green() {
+    return code('\x1b[0;32m');
+  },
+  get blue() {
+    return code('\x1b[0;34m');
+  },
+  get purple() {
+    return code('\x1b[0;35m');
+  },
+  get cyan() {
+    return code('\x1b[0;36m');
+  },
+  get cyanBold() {
+    return code('\x1b[1;36m');
+  },
+  get yellow() {
+    return code('\x1b[0;33m');
+  },
+  get yellowBold() {
+    return code('\x1b[1;33m');
+  },
+  get greenBold() {
+    return code('\x1b[1;32m');
+  },
+  get whiteBold() {
+    return code('\x1b[1;37m');
+  },
+  get gray() {
+    return code('\x1b[0;90m');
+  },
   // Catppuccin Mocha palette for state colors
-  get permit() { return rgb(249, 226, 175); },    // #f9e2af yellow
-  get question() { return rgb(203, 166, 247); },   // #cba6f7 mauve
-  get done() { return rgb(166, 227, 161); },        // #a6e3a1 green
-  get busy() { return rgb(250, 179, 135); },        // #fab387 peach
-  get idle() { return rgb(137, 180, 250); },        // #89b4fa blue
-  get shell() { return rgb(108, 112, 134); },       // #6c7086 overlay0
-  get down() { return rgb(69, 71, 90); },           // #45475a surface1
+  get permit() {
+    return rgb(249, 226, 175);
+  }, // #f9e2af yellow
+  get question() {
+    return rgb(203, 166, 247);
+  }, // #cba6f7 mauve
+  get done() {
+    return rgb(166, 227, 161);
+  }, // #a6e3a1 green
+  get busy() {
+    return rgb(250, 179, 135);
+  }, // #fab387 peach
+  get idle() {
+    return rgb(137, 180, 250);
+  }, // #89b4fa blue
+  get shell() {
+    return rgb(108, 112, 134);
+  }, // #6c7086 overlay0
+  get down() {
+    return rgb(69, 71, 90);
+  }, // #45475a surface1
 } as const;
 ```
 
@@ -556,11 +603,16 @@ export function parseKeyEvent(data: Buffer): KeyEventType {
     if (data.length >= 3 && data[1] === 0x5b) {
       const final = data[2];
       switch (final) {
-        case 0x41: return { type: 'arrow', direction: 'up' };
-        case 0x42: return { type: 'arrow', direction: 'down' };
-        case 0x43: return { type: 'arrow', direction: 'right' };
-        case 0x44: return { type: 'arrow', direction: 'left' };
-        default: return { type: 'unknown' };
+        case 0x41:
+          return { type: 'arrow', direction: 'up' };
+        case 0x42:
+          return { type: 'arrow', direction: 'down' };
+        case 0x43:
+          return { type: 'arrow', direction: 'right' };
+        case 0x44:
+          return { type: 'arrow', direction: 'left' };
+        default:
+          return { type: 'unknown' };
       }
     }
     return { type: 'escape' };
@@ -609,6 +661,7 @@ git commit -m "feat: add terminal primitives (ansi, colors, mouse, input, termin
 ### Task 4: Tmux IPC Layer
 
 **Files:**
+
 - Create: `src/tmux/ipc.ts`
 - Create: `src/tmux/sessions.ts`
 - Create: `src/tmux/send.ts`
@@ -877,6 +930,7 @@ git commit -m "feat: add tmux IPC layer (sessions, send-keys, port detection)"
 ### Task 5: Agent Configuration
 
 **Files:**
+
 - Create: `src/agents/config.ts`
 - Create: `src/agents/registry.ts`
 - Create: `src/agents/config.test.ts`
@@ -951,7 +1005,10 @@ export function loadAgentDirs(): AgentDir[] {
       const eqIdx = trimmed.indexOf('=');
       if (eqIdx === -1) continue;
       const name = trimmed.slice(0, eqIdx).trim();
-      const dir = trimmed.slice(eqIdx + 1).trim().replace(/^\$HOME/, HOME);
+      const dir = trimmed
+        .slice(eqIdx + 1)
+        .trim()
+        .replace(/^\$HOME/, HOME);
       dirs.push({ name, statusDir: dir });
     }
     if (dirs.length > 0) return dirs;
@@ -1026,6 +1083,7 @@ git commit -m "feat: add agent config with legacy backward compatibility"
 ### Task 6: State Engine — Layer 1 (Hook Status Files)
 
 **Files:**
+
 - Create: `src/state/hooks.ts`
 - Create: `src/state/hooks.test.ts`
 - Create: `test/fixtures/` (sample status files)
@@ -1033,13 +1091,15 @@ git commit -m "feat: add agent config with legacy backward compatibility"
 - [ ] **Step 1: Create test fixtures**
 
 Create `test/fixtures/sample-status.json`:
+
 ```json
-{"state":"working","pane":"%42","session":"dotfiles","tool":"Edit","ts":1748380000,"tmux_pid":12345}
+{ "state": "working", "pane": "%42", "session": "dotfiles", "tool": "Edit", "ts": 1748380000, "tmux_pid": 12345 }
 ```
 
 Create `test/fixtures/waiting-status.json`:
+
 ```json
-{"state":"waiting","pane":"%43","session":"workos-app","tool":"","ts":1748380100,"tmux_pid":12345}
+{ "state": "waiting", "pane": "%43", "session": "workos-app", "tool": "", "ts": 1748380100, "tmux_pid": 12345 }
 ```
 
 - [ ] **Step 2: Write failing test for hook status reading**
@@ -1053,7 +1113,8 @@ import { join } from 'node:path';
 
 describe('parseStatusFile', () => {
   test('parses valid status JSON', () => {
-    const content = '{"state":"working","pane":"%42","session":"dotfiles","tool":"Edit","ts":1748380000,"tmux_pid":12345}';
+    const content =
+      '{"state":"working","pane":"%42","session":"dotfiles","tool":"Edit","ts":1748380000,"tmux_pid":12345}';
     const status = parseStatusFile(content);
     expect(status).not.toBeNull();
     expect(status!.state).toBe('working');
@@ -1180,6 +1241,7 @@ git commit -m "feat: add hook status file reader with file watcher"
 ### Task 7: State Engine — Layer 2 (JSONL Event Stream)
 
 **Files:**
+
 - Create: `src/state/events.ts`
 - Create: `src/state/events.test.ts`
 - Create: `test/fixtures/sample-events.jsonl`
@@ -1187,6 +1249,7 @@ git commit -m "feat: add hook status file reader with file watcher"
 - [ ] **Step 1: Create JSONL fixture**
 
 Create `test/fixtures/sample-events.jsonl`:
+
 ```
 {"event":"PreToolUse","ts":1748380000,"tool":"Edit"}
 {"event":"Stop","ts":1748380005,"stop_reason":"tool_use"}
@@ -1302,9 +1365,12 @@ export function deriveStatusFromEvents(events: EventEntry[]): AgentStatus | null
 
   if (last.event === 'Notification') {
     switch (last.notification_type) {
-      case 'permission_prompt': return AgentStatus.PERMIT;
-      case 'elicitation_dialog': return AgentStatus.QUESTION;
-      case 'idle_prompt': return AgentStatus.DONE;
+      case 'permission_prompt':
+        return AgentStatus.PERMIT;
+      case 'elicitation_dialog':
+        return AgentStatus.QUESTION;
+      case 'idle_prompt':
+        return AgentStatus.DONE;
     }
   }
 
@@ -1332,6 +1398,7 @@ git commit -m "feat: add JSONL event log parser with status derivation"
 ### Task 8: State Engine — Layer 3 (Pane Scraping)
 
 **Files:**
+
 - Create: `src/state/scraper.ts`
 - Create: `src/state/scraper.test.ts`
 
@@ -1346,12 +1413,7 @@ import { AgentStatus } from './types.ts';
 
 describe('detectFromPaneContent', () => {
   test('detects permission prompt', () => {
-    const lines = [
-      'Some output...',
-      '',
-      'Allow Edit to /path/file.ts?',
-      '[y/n]',
-    ];
+    const lines = ['Some output...', '', 'Allow Edit to /path/file.ts?', '[y/n]'];
     expect(detectFromPaneContent(lines)).toBe(AgentStatus.PERMIT);
   });
 
@@ -1366,20 +1428,12 @@ describe('detectFromPaneContent', () => {
   });
 
   test('detects working spinner', () => {
-    const lines = [
-      '✶ Thinking…',
-      '',
-      '❯',
-    ];
+    const lines = ['✶ Thinking…', '', '❯'];
     expect(detectFromPaneContent(lines)).toBe(AgentStatus.BUSY);
   });
 
   test('detects idle prompt', () => {
-    const lines = [
-      'Done! Created the file.',
-      '',
-      '❯',
-    ];
+    const lines = ['Done! Created the file.', '', '❯'];
     expect(detectFromPaneContent(lines)).toBe(AgentStatus.DONE);
   });
 
@@ -1466,6 +1520,7 @@ git commit -m "feat: add pane scraping for visual state detection"
 ### Task 9: State Engine — Fuser
 
 **Files:**
+
 - Create: `src/state/engine.ts`
 - Create: `src/state/engine.test.ts`
 
@@ -1542,14 +1597,16 @@ describe('fuseState', () => {
   });
 
   test('maps notification waiting to PERMIT/QUESTION/DONE', () => {
-    expect(fuseState({
-      hookState: 'waiting',
-      hookTs: now,
-      eventStatus: null,
-      scrapeStatus: null,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: now - 10,
-    })).toBe(AgentStatus.PERMIT);
+    expect(
+      fuseState({
+        hookState: 'waiting',
+        hookTs: now,
+        eventStatus: null,
+        scrapeStatus: null,
+        currentStatus: AgentStatus.IDLE,
+        currentTs: now - 10,
+      }),
+    ).toBe(AgentStatus.PERMIT);
   });
 });
 ```
@@ -1588,10 +1645,14 @@ export interface FuseInput {
 
 function mapHookState(state: string): AgentStatus {
   switch (state) {
-    case 'waiting': return AgentStatus.PERMIT;
-    case 'working': return AgentStatus.BUSY;
-    case 'completed': return AgentStatus.DONE;
-    default: return AgentStatus.IDLE;
+    case 'waiting':
+      return AgentStatus.PERMIT;
+    case 'working':
+      return AgentStatus.BUSY;
+    case 'completed':
+      return AgentStatus.DONE;
+    default:
+      return AgentStatus.IDLE;
   }
 }
 
@@ -1788,6 +1849,7 @@ git commit -m "feat: add three-layer state fusion engine"
 ### Task 10: Hook Scripts (Plugin Delivery)
 
 **Files:**
+
 - Create: `hooks/hooks.json`
 - Create: `hooks/lib.sh`
 - Create: `hooks/notification.sh`
@@ -2080,6 +2142,7 @@ git commit -m "feat: add Claude Code hook scripts for state tracking"
 ### Task 11: Plugin Manifest
 
 **Files:**
+
 - Create: `plugin.json`
 
 - [ ] **Step 1: Create plugin.json**
@@ -2104,6 +2167,7 @@ git commit -m "feat: add Claude Code plugin manifest"
 ### Task 12: CLI — Status Command
 
 **Files:**
+
 - Create: `src/cli/status.ts`
 - Create: `src/cli/status.test.ts`
 
@@ -2132,10 +2196,7 @@ const makeState = (overrides: Partial<AgentState>): AgentState => ({
 
 describe('formatPlainStatus', () => {
   test('shows state and count for a session', () => {
-    const states = [
-      makeState({ status: AgentStatus.PERMIT }),
-      makeState({ status: AgentStatus.BUSY }),
-    ];
+    const states = [makeState({ status: AgentStatus.PERMIT }), makeState({ status: AgentStatus.BUSY })];
     const result = formatPlainStatus(states, 'test');
     expect(result).toContain('PERMIT');
   });
@@ -2229,6 +2290,7 @@ git commit -m "feat: add fleet status command with tmux format output"
 ### Task 13: CLI — Next, Send, Doctor, Reconcile, Install
 
 **Files:**
+
 - Create: `src/cli/next.ts`
 - Create: `src/cli/send.ts`
 - Create: `src/cli/install.ts`
@@ -2244,7 +2306,9 @@ import { switchClient, displayMessage, currentPaneId } from '../tmux/sessions.ts
 export function runNext(states: AgentState[]): number {
   const currentPane = currentPaneId();
   const waiting = states
-    .filter((s) => s.status === AgentStatus.PERMIT || s.status === AgentStatus.QUESTION || s.status === AgentStatus.DONE)
+    .filter(
+      (s) => s.status === AgentStatus.PERMIT || s.status === AgentStatus.QUESTION || s.status === AgentStatus.DONE,
+    )
     .sort((a, b) => compareStatus(a.status, b.status));
 
   if (waiting.length === 0) {
@@ -2427,7 +2491,9 @@ export function runReconcile(dryRun: boolean, verbose: boolean): number {
   let fixed = 0;
   const now = Math.floor(Date.now() / 1000);
 
-  const log = (msg: string) => { if (verbose) process.stdout.write(`${msg}\n`); };
+  const log = (msg: string) => {
+    if (verbose) process.stdout.write(`${msg}\n`);
+  };
 
   for (const dir of dirs) {
     if (!existsSync(dir.statusDir)) continue;
@@ -2495,6 +2561,7 @@ git commit -m "feat: add CLI commands (next, send, install, doctor, reconcile)"
 ### Task 14: TUI — App State Model
 
 **Files:**
+
 - Create: `src/tui/app.ts`
 - Create: `src/tui/app.test.ts`
 
@@ -2536,10 +2603,7 @@ describe('TuiApp', () => {
 
   test('filter narrows visible sessions', () => {
     const app = new TuiApp();
-    app.updateStates([
-      makeState('dotfiles', AgentStatus.IDLE),
-      makeState('workos-app', AgentStatus.BUSY),
-    ]);
+    app.updateStates([makeState('dotfiles', AgentStatus.IDLE), makeState('workos-app', AgentStatus.BUSY)]);
     app.setFilter('dot');
     const visible = app.visibleStates();
     expect(visible.length).toBe(1);
@@ -2720,6 +2784,7 @@ git commit -m "feat: add TUI app state model with priority sorting"
 ### Task 15: TUI — Dashboard Renderer
 
 **Files:**
+
 - Create: `src/tui/dashboard.ts`
 - Create: `src/tui/render.ts`
 - Create: `src/tui/help.ts`
@@ -2767,7 +2832,15 @@ export function renderSessionList(app: TuiApp, startRow: number, maxRows: number
   return lines;
 }
 
-function formatRow(st: string, session: string, project: string, branch: string, age: string, cols: number, isHeader: boolean): string {
+function formatRow(
+  st: string,
+  session: string,
+  project: string,
+  branch: string,
+  age: string,
+  cols: number,
+  isHeader: boolean,
+): string {
   const stW = 4;
   const sessionW = 17;
   const branchW = 16;
@@ -2802,13 +2875,20 @@ function formatSessionRow(state: AgentState, cols: number, selected: boolean): s
 
 function getStateColor(status: AgentStatus): string {
   switch (status) {
-    case AgentStatus.PERMIT: return C.permit;
-    case AgentStatus.QUESTION: return C.question;
-    case AgentStatus.DONE: return C.done;
-    case AgentStatus.BUSY: return C.busy;
-    case AgentStatus.IDLE: return C.idle;
-    case AgentStatus.SHELL: return C.shell;
-    case AgentStatus.DOWN: return C.down;
+    case AgentStatus.PERMIT:
+      return C.permit;
+    case AgentStatus.QUESTION:
+      return C.question;
+    case AgentStatus.DONE:
+      return C.done;
+    case AgentStatus.BUSY:
+      return C.busy;
+    case AgentStatus.IDLE:
+      return C.idle;
+    case AgentStatus.SHELL:
+      return C.shell;
+    case AgentStatus.DOWN:
+      return C.down;
   }
 }
 
@@ -2941,6 +3021,7 @@ git commit -m "feat: add TUI dashboard renderer with header, session list, help"
 ### Task 16: TUI — Preview Pane
 
 **Files:**
+
 - Create: `src/tui/preview.ts`
 
 - [ ] **Step 1: Implement preview.ts**
@@ -2997,6 +3078,7 @@ git commit -m "feat: add TUI preview pane with live capture"
 ### Task 17: TUI — Send Mode
 
 **Files:**
+
 - Create: `src/tui/send.ts`
 
 - [ ] **Step 1: Implement send.ts (TUI version)**
@@ -3057,6 +3139,7 @@ git commit -m "feat: add TUI send mode with state gating"
 ### Task 18: Entry Point — CLI Dispatch + TUI Launch
 
 **Files:**
+
 - Create: `index.ts`
 
 - [ ] **Step 1: Implement index.ts**
@@ -3067,7 +3150,14 @@ import { TuiApp, TuiMode } from './src/tui/app.ts';
 import { render, type TerminalSize } from './src/tui/render.ts';
 import { parseKeyEvent } from './src/terminal/input.ts';
 import { isMouseSequence } from './src/terminal/mouse.ts';
-import { enterAlternateScreen, hideCursor, enterRawMode, enableMouse, restore, getTerminalSize } from './src/terminal/terminal.ts';
+import {
+  enterAlternateScreen,
+  hideCursor,
+  enterRawMode,
+  enableMouse,
+  restore,
+  getTerminalSize,
+} from './src/terminal/terminal.ts';
 import { StateEngine } from './src/state/engine.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import { runStatus } from './src/cli/status.ts';
@@ -3142,9 +3232,12 @@ function handleCli(args: string[]): number | null {
       const force = args.includes('--force');
       return runSend(session, prompt, states, force);
     }
-    case 'install': return runInstall();
-    case 'uninstall': return runUninstall();
-    case 'doctor': return runDoctor();
+    case 'install':
+      return runInstall();
+    case 'uninstall':
+      return runUninstall();
+    case 'doctor':
+      return runDoctor();
     case 'reconcile': {
       const dryRun = args.includes('--dry-run');
       const verbose = args.includes('--verbose') || args.includes('-v');
@@ -3252,9 +3345,15 @@ async function launchTui(): Promise<number> {
           break;
         case 'char':
           switch (key.char) {
-            case 'q': app.shouldQuit = true; break;
-            case 'j': app.moveDown(); break;
-            case 'k': app.moveUp(); break;
+            case 'q':
+              app.shouldQuit = true;
+              break;
+            case 'j':
+              app.moveDown();
+              break;
+            case 'k':
+              app.moveUp();
+              break;
             case 'p':
               app.mode = app.mode === TuiMode.PREVIEW ? TuiMode.DASHBOARD : TuiMode.PREVIEW;
               break;
@@ -3272,8 +3371,12 @@ async function launchTui(): Promise<number> {
               finish(0);
               return;
             }
-            case '?': app.mode = TuiMode.HELP; break;
-            case '/': app.setFilter(''); break;
+            case '?':
+              app.mode = TuiMode.HELP;
+              break;
+            case '/':
+              app.setFilter('');
+              break;
           }
           break;
         case 'enter': {
@@ -3324,13 +3427,17 @@ async function launchTui(): Promise<number> {
 
 function handleFilterInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>): void {
   switch (key.type) {
-    case 'escape': app.clearFilter(); break;
+    case 'escape':
+      app.clearFilter();
+      break;
     case 'backspace': {
       const f = app.getFilter();
       app.setFilter(f.slice(0, -1));
       break;
     }
-    case 'char': app.setFilter(app.getFilter() + key.char); break;
+    case 'char':
+      app.setFilter(app.getFilter() + key.char);
+      break;
     case 'arrow':
       if (key.direction === 'up') app.moveUp();
       if (key.direction === 'down') app.moveDown();
@@ -3432,6 +3539,7 @@ git commit -m "feat: add entry point with CLI dispatch and TUI launch"
 ### Task 19: CI/CD Workflows
 
 **Files:**
+
 - Create: `.github/workflows/ci.yml`
 - Create: `.github/workflows/release.yml`
 - Create: `.github/workflows/lint-pr-title.yml`
@@ -3733,27 +3841,27 @@ git commit -m "feat: fleet v0.1.0 — agent dashboard TUI"
 
 ## Spec Coverage Self-Review
 
-| Spec Section | Task(s) |
-|---|---|
-| Architecture (hybrid hooks + TUI) | Tasks 10 + 18 |
-| State Engine (3 layers) | Tasks 6, 7, 8, 9 |
-| State Model (7 states) | Task 2 |
-| Freshness Invariant | Task 9 (engine.ts fuseState) |
-| TUI Dashboard | Tasks 14, 15 |
-| Preview Pane | Task 16 |
-| Send Mode | Task 17 |
-| Keybindings | Task 18 (index.ts handleInput) |
-| Rendering (raw ANSI) | Tasks 3, 15 |
-| CLI commands | Tasks 12, 13 |
-| Plugin structure | Tasks 10, 11 |
-| Hook scripts | Task 10 |
-| Agent Registry | Task 5 |
-| Backward compat (agents.conf) | Task 5 (config.ts) |
-| Toolchain (mirrors tm) | Task 1 |
-| CI/CD | Task 19 |
-| Distribution (Homebrew) | Task 19 |
-| Notification splitting | Task 10 (notification.sh) |
-| Grace period | Task 10 (stop.sh) |
-| Background task guard | Task 10 (stop.sh) |
-| JSONL event append | Task 10 (lib.sh) |
-| Status bar integration | Task 12 |
+| Spec Section                      | Task(s)                        |
+| --------------------------------- | ------------------------------ |
+| Architecture (hybrid hooks + TUI) | Tasks 10 + 18                  |
+| State Engine (3 layers)           | Tasks 6, 7, 8, 9               |
+| State Model (7 states)            | Task 2                         |
+| Freshness Invariant               | Task 9 (engine.ts fuseState)   |
+| TUI Dashboard                     | Tasks 14, 15                   |
+| Preview Pane                      | Task 16                        |
+| Send Mode                         | Task 17                        |
+| Keybindings                       | Task 18 (index.ts handleInput) |
+| Rendering (raw ANSI)              | Tasks 3, 15                    |
+| CLI commands                      | Tasks 12, 13                   |
+| Plugin structure                  | Tasks 10, 11                   |
+| Hook scripts                      | Task 10                        |
+| Agent Registry                    | Task 5                         |
+| Backward compat (agents.conf)     | Task 5 (config.ts)             |
+| Toolchain (mirrors tm)            | Task 1                         |
+| CI/CD                             | Task 19                        |
+| Distribution (Homebrew)           | Task 19                        |
+| Notification splitting            | Task 10 (notification.sh)      |
+| Grace period                      | Task 10 (stop.sh)              |
+| Background task guard             | Task 10 (stop.sh)              |
+| JSONL event append                | Task 10 (lib.sh)               |
+| Status bar integration            | Task 12                        |

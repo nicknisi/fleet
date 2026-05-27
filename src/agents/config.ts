@@ -37,7 +37,10 @@ export function loadAgentDirs(): AgentDir[] {
       const eqIdx = trimmed.indexOf('=');
       if (eqIdx === -1) continue;
       const name = trimmed.slice(0, eqIdx).trim();
-      const dir = trimmed.slice(eqIdx + 1).trim().replace(/^\$HOME/, HOME);
+      const dir = trimmed
+        .slice(eqIdx + 1)
+        .trim()
+        .replace(/^\$HOME/, HOME);
       dirs.push({ name, statusDir: dir });
     }
     if (dirs.length > 0) return dirs;
