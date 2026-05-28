@@ -1,6 +1,5 @@
 import { AgentStatus } from './types.ts';
 
-const DONE_DECAY_SECS = 60;
 const WORKING_TIMEOUT_SECS = 180;
 
 export interface FuseInput {
@@ -36,9 +35,11 @@ export function fuseState(input: FuseInput): AgentStatus {
   // Freshness invariant: a newer in-memory state beats a staler hook write.
   if (input.hookTs <= input.currentTs && input.currentStatus !== AgentStatus.IDLE) {
     const age = now - input.currentTs;
-    if (input.currentStatus === AgentStatus.DONE && age >= DONE_DECAY_SECS) {
-      return AgentStatus.IDLE;
-    }
+    // A stuck "working" eventually retires — a crashed turn shouldn't spin
+    // forever. But DONE never auto-decays: a finished turn is waiting on you and
+    // stays "ready" until you actually act on it (switch to it, send, or it
+    // starts working again). Timing out a pending hand-off into "idle" is what
+    // made questions silently disappear.
     if (input.currentStatus === AgentStatus.BUSY && age >= WORKING_TIMEOUT_SECS) {
       return AgentStatus.IDLE;
     }
@@ -56,9 +57,6 @@ export function fuseState(input: FuseInput): AgentStatus {
   // PreToolUse fires the instant a tool runs; Stop fires when a turn ends.
   let derived = input.eventStatus ?? mapHookState(input.hookState);
   const hookAge = now - input.hookTs;
-  if (derived === AgentStatus.DONE && hookAge >= DONE_DECAY_SECS) {
-    derived = AgentStatus.IDLE;
-  }
   if (derived === AgentStatus.BUSY && hookAge >= WORKING_TIMEOUT_SECS) {
     derived = AgentStatus.IDLE;
   }

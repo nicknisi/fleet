@@ -65,16 +65,18 @@ describe('fuseState', () => {
     expect(result).toBe(AgentStatus.PERMIT);
   });
 
-  test('DONE decays to IDLE after 60s', () => {
+  test('DONE never auto-decays — a finished turn waits on you', () => {
+    // A turn that ended an hour ago is still waiting for your acknowledgement;
+    // it must not silently slip into idle. (This is what hid asked questions.)
     const result = fuseState({
       hookState: 'completed',
-      hookTs: now - 65,
+      hookTs: now - 3600,
       eventStatus: null,
       scrapeStatus: null,
       currentStatus: AgentStatus.IDLE,
       currentTs: 0,
     });
-    expect(result).toBe(AgentStatus.IDLE);
+    expect(result).toBe(AgentStatus.DONE);
   });
 
   test('maps waiting to PERMIT', () => {
