@@ -15,10 +15,13 @@ describe('statusPriority', () => {
     expect(statusPriority(AgentStatus.PERMIT)).toBeLessThan(statusPriority(AgentStatus.BUSY));
   });
 
-  test('needs-you states sort above BUSY', () => {
+  test('blocking states sort above BUSY, which sorts above ready/idle', () => {
+    // PERMIT and QUESTION need you now, so they outrank working. Working outranks
+    // ready (finished, waiting on you) so live work stays visible; ready outranks idle.
     expect(statusPriority(AgentStatus.PERMIT)).toBeLessThan(statusPriority(AgentStatus.BUSY));
     expect(statusPriority(AgentStatus.QUESTION)).toBeLessThan(statusPriority(AgentStatus.BUSY));
-    expect(statusPriority(AgentStatus.DONE)).toBeLessThan(statusPriority(AgentStatus.BUSY));
+    expect(statusPriority(AgentStatus.BUSY)).toBeLessThan(statusPriority(AgentStatus.DONE));
+    expect(statusPriority(AgentStatus.DONE)).toBeLessThan(statusPriority(AgentStatus.IDLE));
   });
 
   test('DOWN is lowest priority', () => {
@@ -31,7 +34,7 @@ describe('compareStatus', () => {
   test('sorts higher priority first', () => {
     const statuses = [AgentStatus.IDLE, AgentStatus.PERMIT, AgentStatus.BUSY, AgentStatus.DONE];
     statuses.sort(compareStatus);
-    expect(statuses).toEqual([AgentStatus.PERMIT, AgentStatus.DONE, AgentStatus.BUSY, AgentStatus.IDLE]);
+    expect(statuses).toEqual([AgentStatus.PERMIT, AgentStatus.BUSY, AgentStatus.DONE, AgentStatus.IDLE]);
   });
 });
 

@@ -10,11 +10,14 @@ export const AgentStatus = {
 
 export type AgentStatus = (typeof AgentStatus)[keyof typeof AgentStatus];
 
+// Dashboard sort order, most-urgent first: a blocked tool (PERMIT) and a
+// question (QUESTION) need you now; working agents come next so live work stays
+// visible; then ready (finished, waiting on you); then idle and the rest.
 const PRIORITY: Record<AgentStatus, number> = {
   [AgentStatus.PERMIT]: 0,
   [AgentStatus.QUESTION]: 1,
-  [AgentStatus.DONE]: 2,
-  [AgentStatus.BUSY]: 3,
+  [AgentStatus.BUSY]: 2,
+  [AgentStatus.DONE]: 3,
   [AgentStatus.IDLE]: 4,
   [AgentStatus.SHELL]: 5,
   [AgentStatus.DOWN]: 6,

@@ -84,9 +84,9 @@ Fleet tracks seven states, sorted by urgency. The icon and color tell you what's
 | ---- | ----------- | -------------------------------------------------- |
 | `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt)              |
 | `?`  | **asking**  | Agent asked you a question (`AskUserQuestion`)     |
-| `●`  | **ready**   | Turn ended — your move (finished, or asked in prose); green dot |
 | `◉`  | **working** | Thinking or running tools                          |
-| `●`  | **idle**    | Up but no recent activity                          |
+| `●`  | **ready**   | Turn ended — your move (finished, or asked in prose); green dot |
+| `●`  | **idle**    | Up but no recent activity (blue dot)               |
 | `■`  | **shell**   | No agent running (hidden by default)               |
 | `○`  | **down**    | No live process (hidden by default)                |
 

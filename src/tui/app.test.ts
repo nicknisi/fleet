@@ -30,6 +30,18 @@ describe('TuiApp', () => {
     expect(sorted[2]!.session).toBe('idle-session');
   });
 
+  test('working sorts above ready, ready above idle', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      makeState('ready-s', AgentStatus.DONE),
+      makeState('idle-s', AgentStatus.IDLE, '%2'),
+      makeState('question-s', AgentStatus.QUESTION, '%3'),
+      makeState('working-s', AgentStatus.BUSY, '%4'),
+    ]);
+    const order = app.sortedStates().map((s) => s.session);
+    expect(order).toEqual(['question-s', 'working-s', 'ready-s', 'idle-s']);
+  });
+
   test('filter narrows visible sessions', () => {
     const app = new TuiApp();
     app.updateStates([makeState('dotfiles', AgentStatus.IDLE), makeState('workos-app', AgentStatus.BUSY)]);
