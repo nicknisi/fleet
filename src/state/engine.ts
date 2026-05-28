@@ -68,12 +68,17 @@ export function fuseState(input: FuseInput): AgentStatus {
     return AgentStatus.BUSY;
   }
 
-  // Scraper IDLE means the live screen shows an idle prompt. Use it to clear a
-  // stale PERMIT/DONE, but never to override a live BUSY — the scraper can miss
-  // an animated spinner between frames; the working-timeout decay above is what
-  // retires genuinely-stuck working states.
+  // Scraper IDLE just means the live screen shows a bare prompt with no dialog
+  // and no spinner. That looks identical whether the agent just finished (DONE)
+  // or has been idle a while (IDLE), and the scraper can miss an animated spinner
+  // between frames. So an idle screen can only retire a *stale prompt* — a
+  // PERMIT/QUESTION that's since been answered and is gone from the screen. It
+  // must never override a derived DONE or BUSY; time decay above retires those.
   if (input.scrapeStatus === AgentStatus.IDLE) {
-    return derived === AgentStatus.BUSY ? AgentStatus.BUSY : AgentStatus.IDLE;
+    if (derived === AgentStatus.PERMIT || derived === AgentStatus.QUESTION) {
+      return AgentStatus.IDLE;
+    }
+    return derived;
   }
 
   // No scrape result — fall back to the derived hook/event status.

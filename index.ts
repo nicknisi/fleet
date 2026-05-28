@@ -121,6 +121,13 @@ function verifyPaneState(state: AgentState, statusDirs: string[]): void {
       const content = readFileSync(file, 'utf-8');
       const existing = JSON.parse(content);
       if (existing.pane === state.paneId) {
+        // A scraped idle screen (bare prompt, no dialog/spinner) can't be told
+        // apart from a just-finished turn — both show a prompt. So never let it
+        // overwrite a done/working hook state; only use it to clear a stale
+        // prompt (permit/question/waiting) that's actually gone from the screen.
+        if (scraped === AgentStatus.IDLE && !['permit', 'question', 'waiting'].includes(existing.state)) {
+          return;
+        }
         const updated = JSON.stringify({
           state: newHookState,
           pane: state.paneId,

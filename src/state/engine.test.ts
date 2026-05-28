@@ -129,6 +129,22 @@ describe('fuseState', () => {
     expect(result).toBe(AgentStatus.BUSY);
   });
 
+  test('scrape IDLE does not override a fresh DONE', () => {
+    // A finished turn sitting at the prompt looks identical on screen to an
+    // idle one — the scraper can't tell DONE from IDLE. So a scraped idle
+    // prompt must not demote a just-completed turn; DONE means "needs your
+    // next prompt" and only time decay should retire it.
+    const result = fuseState({
+      hookState: 'completed',
+      hookTs: now,
+      eventStatus: null,
+      scrapeStatus: AgentStatus.IDLE,
+      currentStatus: AgentStatus.IDLE,
+      currentTs: 0,
+    });
+    expect(result).toBe(AgentStatus.DONE);
+  });
+
   test('working hook past the timeout decays to idle', () => {
     const result = fuseState({
       hookState: 'working',
