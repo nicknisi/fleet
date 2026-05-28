@@ -1,5 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, openSync, readSync, fstatSync, closeSync } from 'node:fs';
 import { AgentStatus, type EventEntry } from './types.ts';
+
+const TAIL_BYTES = 8192;
 
 export function parseEventLog(content: string): EventEntry[] {
   const entries: EventEntry[] = [];
@@ -58,6 +60,29 @@ export function readLastEvent(path: string): EventEntry | null {
   }
 }
 
+// Read just the last `maxLines` events without parsing the whole file — reads a
+// bounded tail off the end so the hot refresh path stays cheap on long logs.
+export function readLastEvents(path: string, maxLines: number): EventEntry[] {
+  if (!existsSync(path)) return [];
+  try {
+    const fd = openSync(path, 'r');
+    try {
+      const size = fstatSync(fd).size;
+      const readBytes = Math.min(size, TAIL_BYTES);
+      const buf = Buffer.alloc(readBytes);
+      readSync(fd, buf, 0, readBytes, size - readBytes);
+      const lines = buf.toString('utf-8').split('\n').filter((l) => l.length > 0);
+      // If we didn't reach the start of the file, the first line may be partial.
+      const usable = size > readBytes ? lines.slice(1) : lines;
+      return parseEventLog(usable.slice(-maxLines).join('\n'));
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return [];
+  }
+}
+
 export function deriveStatusFromLastEvent(event: EventEntry | null): AgentStatus | null {
   if (!event) return null;
   return deriveStatusFromEvents([event]);
@@ -74,12 +99,20 @@ export function deriveStatusFromEvents(events: EventEntry[]): AgentStatus | null
     return AgentStatus.DONE;
   }
 
-  if (last.event === 'PreToolUse') return AgentStatus.BUSY;
+  // AskUserQuestion is Claude asking YOU a multiple-choice question, not running
+  // a tool on your behalf — that's the asking (QUESTION) state, not working.
+  if (last.event === 'PreToolUse') {
+    return last.tool === 'AskUserQuestion' ? AgentStatus.QUESTION : AgentStatus.BUSY;
+  }
 
   if (last.event === 'Notification') {
     switch (last.notification_type) {
       case 'permission_prompt':
-        return AgentStatus.PERMIT;
+        // A permission_prompt fires both for tool approvals and for
+        // AskUserQuestion. They're indistinguishable from the notification
+        // alone, so trace back to the tool that triggered it: AskUserQuestion
+        // is a question, anything else is a real permission request.
+        return triggeredByAskUserQuestion(events) ? AgentStatus.QUESTION : AgentStatus.PERMIT;
       case 'elicitation_dialog':
         return AgentStatus.QUESTION;
       case 'idle_prompt':
@@ -88,4 +121,16 @@ export function deriveStatusFromEvents(events: EventEntry[]): AgentStatus | null
   }
 
   return null;
+}
+
+function triggeredByAskUserQuestion(events: EventEntry[]): boolean {
+  // Walk back from the notification to the PreToolUse that opened the prompt. A
+  // Stop/SubagentStop in between means a turn ended, so the prompt belongs to a
+  // later, unrelated request.
+  for (let i = events.length - 2; i >= 0; i--) {
+    const e = events[i]!;
+    if (e.event === 'Stop' || e.event === 'SubagentStop') return false;
+    if (e.event === 'PreToolUse') return e.tool === 'AskUserQuestion';
+  }
+  return false;
 }

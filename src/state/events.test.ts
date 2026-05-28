@@ -51,4 +51,38 @@ describe('deriveStatusFromEvents', () => {
   test('empty events returns null', () => {
     expect(deriveStatusFromEvents([])).toBeNull();
   });
+
+  test('a pending AskUserQuestion tool means QUESTION, not BUSY', () => {
+    const events = parseEventLog('{"event":"PreToolUse","ts":1,"tool":"AskUserQuestion"}');
+    expect(deriveStatusFromEvents(events)).toBe(AgentStatus.QUESTION);
+  });
+
+  test('permission_prompt from an AskUserQuestion means QUESTION', () => {
+    // AskUserQuestion fires PreToolUse(AskUserQuestion) then a permission_prompt
+    // notification — the same notification_type as a tool approval. Trace it back
+    // to the triggering tool to tell "Claude is asking you" from "approve this Bash?".
+    const events = parseEventLog(
+      '{"event":"PreToolUse","ts":1,"tool":"AskUserQuestion"}\n{"event":"Notification","ts":2,"notification_type":"permission_prompt"}',
+    );
+    expect(deriveStatusFromEvents(events)).toBe(AgentStatus.QUESTION);
+  });
+
+  test('permission_prompt from a regular tool stays PERMIT', () => {
+    const events = parseEventLog(
+      '{"event":"PreToolUse","ts":1,"tool":"Bash"}\n{"event":"Notification","ts":2,"notification_type":"permission_prompt"}',
+    );
+    expect(deriveStatusFromEvents(events)).toBe(AgentStatus.PERMIT);
+  });
+
+  test('permission_prompt after a Stop is PERMIT even if an earlier turn used AskUserQuestion', () => {
+    const events = parseEventLog(
+      '{"event":"PreToolUse","ts":1,"tool":"AskUserQuestion"}\n{"event":"Stop","ts":2,"stop_reason":"end_turn"}\n{"event":"Notification","ts":3,"notification_type":"permission_prompt"}',
+    );
+    expect(deriveStatusFromEvents(events)).toBe(AgentStatus.PERMIT);
+  });
+
+  test('a lone permission_prompt with no preceding tool is PERMIT', () => {
+    const events = parseEventLog('{"event":"Notification","ts":1,"notification_type":"permission_prompt"}');
+    expect(deriveStatusFromEvents(events)).toBe(AgentStatus.PERMIT);
+  });
 });

@@ -15,7 +15,7 @@ import {
 } from './src/terminal/terminal.ts';
 import { fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
-import { readLastEvent, deriveStatusFromLastEvent } from './src/state/events.ts';
+import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
 import { scrapePane } from './src/state/scraper.ts';
 import { AgentStatus, extractClaudeName, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
@@ -209,9 +209,9 @@ function refreshStates(statusDirs: string[]): AgentState[] {
       let eventStatus: AgentStatus | null = null;
       for (const dir of statusDirs) {
         const eventsFile = join(dir, `${pane.paneNum}.events.jsonl`);
-        const lastEvent = readLastEvent(eventsFile);
-        if (lastEvent) {
-          eventStatus = deriveStatusFromLastEvent(lastEvent);
+        const recent = readLastEvents(eventsFile, 12);
+        if (recent.length > 0) {
+          eventStatus = deriveStatusFromEvents(recent);
           break;
         }
       }

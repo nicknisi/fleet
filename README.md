@@ -80,15 +80,17 @@ Each row leads with the tmux session name. When Claude Code has auto-named a ses
 
 Fleet tracks seven states, sorted by urgency. The icon and color tell you what's happening at a glance:
 
-| Icon | State       | Meaning                               |
-| ---- | ----------- | ------------------------------------- |
-| `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt) |
-| `?`  | **asking**  | Agent asked you a question            |
-| `✓`  | **done**    | Task finished, needs your next prompt |
-| `◉`  | **working** | Thinking or running tools             |
-| `●`  | **idle**    | Up but no recent activity             |
-| `■`  | **shell**   | No agent running (hidden by default)  |
-| `○`  | **down**    | No live process (hidden by default)   |
+| Icon | State       | Meaning                                            |
+| ---- | ----------- | -------------------------------------------------- |
+| `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt)              |
+| `?`  | **asking**  | Agent asked you a question (`AskUserQuestion`)     |
+| `▸`  | **ready**   | Turn ended — your move (finished, or asked in prose) |
+| `◉`  | **working** | Thinking or running tools                          |
+| `●`  | **idle**    | Up but no recent activity                          |
+| `■`  | **shell**   | No agent running (hidden by default)               |
+| `○`  | **down**    | No live process (hidden by default)                |
+
+**asking vs. ready:** A turn that ends — whether the agent finished the task or asked you something in prose — looks identical at the hook layer (both are a plain `Stop`). Fleet can't tell them apart, so both land in **ready** ("your move"). The dedicated **asking** state is only reachable through structured signals the agent emits: the `AskUserQuestion` tool and MCP elicitation dialogs. Either way both sort into the attention tier, so nothing that needs you gets buried.
 
 ### Send Mode
 
@@ -121,7 +123,7 @@ When the preview pane is open, Fleet shows context-aware actions at the bottom o
 
 - **waiting** — `y` to approve, `n` to deny the permission prompt
 - **asking** — `i` to answer inline via passthrough, `s` to send a prompt
-- **done/idle** — `i` for passthrough, `s` to send the next prompt
+- **ready/idle** — `i` for passthrough, `s` to send the next prompt
 - **working** — `i` for passthrough (watch and interact)
 
 ### Passthrough Mode
@@ -213,9 +215,9 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 
 The Claude Code plugin (`hooks/`) fires on five events:
 
-- **Notification** — Splits into three sub-types: `permission_prompt` → permit, `elicitation_dialog` → question, `idle_prompt` → done
-- **PreToolUse** — Agent is running a tool (working)
-- **Stop** — Agent stopped. `tool_use` stop reason = still working. `end_turn` = actually done. Background tasks suppress completion. 3-second grace period before marking done.
+- **Notification** — Splits into three sub-types: `permission_prompt` → permit, `elicitation_dialog` → question, `idle_prompt` → ready
+- **PreToolUse** — Agent is running a tool (working). The `AskUserQuestion` tool is the exception — it means the agent is asking _you_, so it maps to **asking**, not working.
+- **Stop** — Agent stopped. `tool_use` stop reason = still working. `end_turn` = turn over (ready). Background tasks suppress completion. 3-second grace period.
 - **SubagentStop** — Subagent finished; parent keeps working
 - **SessionEnd** — Cleanup status and event files
 
@@ -267,7 +269,7 @@ Fleet is a zero-dependency Bun project.
 bun install              # Install dev dependencies
 bun run dev              # Run without compiling
 bun run build            # Compile to standalone binary (dist/fleet)
-bun test                 # Run tests (141 tests, ~50ms)
+bun test                 # Run tests (147 tests, ~50ms)
 bun run typecheck        # tsc --noEmit
 bun run lint             # oxlint
 bun run format           # oxfmt
@@ -279,7 +281,7 @@ bun run format:check     # oxfmt --check
 Tests are collocated (`*.test.ts` next to source). The state engine, ANSI utilities, TUI model, and CLI commands are unit-tested. Tmux-dependent code has integration-style tests that gracefully degrade outside tmux.
 
 ```bash
-bun test                 # 141 tests, ~50ms
+bun test                 # 147 tests, ~50ms
 bun test src/state/      # State engine only
 bun test src/terminal/   # Terminal primitives only
 bun test src/tui/        # TUI model only

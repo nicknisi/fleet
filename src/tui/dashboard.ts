@@ -34,7 +34,7 @@ export function renderHeader(app: TuiApp, cols: number): string[] {
   const badges: string[] = [];
   if (s.permit > 0) badges.push(`${C.permit}${s.permit} waiting${C.reset}`);
   if (s.question > 0) badges.push(`${C.question}${s.question} asking${C.reset}`);
-  if (s.done > 0) badges.push(`${C.done}${s.done} done${C.reset}`);
+  if (s.done > 0) badges.push(`${C.done}${s.done} ready${C.reset}`);
   if (s.busy > 0) badges.push(`${C.busy}${s.busy} working${C.reset}`);
 
   const agentCount = s.total - app.shellCount();
@@ -150,7 +150,7 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
   const legend = [
     `${C.permit}⚠ ${C.gray}waiting${C.reset}`,
     `${C.question}? ${C.gray}asking${C.reset}`,
-    `${C.done}✓ ${C.gray}done${C.reset}`,
+    `${C.done}▸ ${C.gray}ready${C.reset}`,
     `${C.busy}◉ ${C.gray}working${C.reset}`,
     `${C.idle}● ${C.gray}idle${C.reset}`,
   ];

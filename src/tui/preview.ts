@@ -34,7 +34,7 @@ export function renderPreview(
 
   const modeTag = passthrough ? ` ${C.cyan}● LIVE${C.reset}` : '';
   const claudeInfo = state.claudeName ? ` · ${state.claudeName}` : '';
-  const title = `${display.icon} ${state.session} · ${state.status}${claudeInfo}${modeTag}`;
+  const title = `${display.icon} ${state.session} · ${display.label.toUpperCase()}${claudeInfo}${modeTag}`;
   const toolInfo = state.tool ? ` · ${state.tool}` : '';
   const portInfo = state.ports.length > 0 ? ` · ⌁${state.ports.join(',')}` : '';
   lines.push(truncateAnsi(`${C.bold}${title}${C.reset}${C.gray}${toolInfo}${portInfo}${C.reset}`, width));
