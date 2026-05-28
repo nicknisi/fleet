@@ -23,8 +23,8 @@ fi
   if [ -f "$FLEET_STATUS_FILE" ]; then
     CURRENT_TS=$(jq -r '.ts // 0' "$FLEET_STATUS_FILE" 2>/dev/null)
     if [ "$CURRENT_TS" = "$FLEET_TS" ]; then
-      fleet_write_status "completed" "$TOOL"
-      fleet_notify "completed" "$FLEET_SESSION" "$FLEET_PANE_ID" "$TOOL" >/dev/null 2>&1
+      fleet_write_status "done" "$TOOL"
+      fleet_notify "done" "$FLEET_SESSION" "$FLEET_PANE_ID" "$TOOL" >/dev/null 2>&1
     fi
   fi
 ) &

@@ -39,7 +39,7 @@ fleet_append_event() {
 fleet_notify() {
   local state="$1" session="$2" pane_id="$3" tool="${4:-}"
   case "$state" in
-    waiting|completed) ;;
+    permit|question|done|waiting|completed) ;;
     *) return ;;
   esac
 
@@ -51,7 +51,9 @@ fleet_notify() {
   current_session=$(tmux display-message -p '#{session_name}' 2>/dev/null)
 
   local icon="⏳"
-  [ "$state" = "completed" ] && icon="✓"
+  [ "$state" = "permit" ] && icon="⚠"
+  [ "$state" = "question" ] && icon="?"
+  [ "$state" = "done" ] || [ "$state" = "completed" ] && icon="✓"
   local msg="$icon $session"
   [ -n "$tool" ] && msg="$msg ($tool)"
 

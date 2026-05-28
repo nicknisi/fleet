@@ -14,12 +14,17 @@ export interface FuseInput {
 
 function mapHookState(state: string): AgentStatus {
   switch (state) {
-    case 'waiting':
+    case 'permit':
       return AgentStatus.PERMIT;
-    case 'working':
-      return AgentStatus.BUSY;
+    case 'question':
+      return AgentStatus.QUESTION;
+    case 'done':
     case 'completed':
       return AgentStatus.DONE;
+    case 'working':
+      return AgentStatus.BUSY;
+    case 'waiting':
+      return AgentStatus.PERMIT;
     default:
       return AgentStatus.IDLE;
   }
