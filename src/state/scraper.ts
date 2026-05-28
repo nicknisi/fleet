@@ -21,6 +21,14 @@ export function detectFromPaneContent(lines: string[]): AgentStatus | null {
   if (/Do you want to (proceed|allow)/.test(bottomText)) return AgentStatus.PERMIT;
   if (/Enter to select.*[↑↓]|Esc to cancel/.test(bottomText)) return AgentStatus.QUESTION;
 
+  // Claude Code shows a working status line while a turn is in flight. The spinner
+  // glyph and verb animate (✻ "Trapping Gollum…" -> ✢ "Sharting…"), so match the
+  // stable parts instead: the elapsed/token counter "(1m 11s · ↓ 3.4k tokens)" and
+  // the "esc to interrupt" affordance. Either is a definitive BUSY signal.
+  if (/\(\d+m\s+\d+s\s+·.*tokens?\)/.test(bottomText)) return AgentStatus.BUSY;
+  if (/\(\d+s\s+·.*tokens?\)/.test(bottomText)) return AgentStatus.BUSY;
+  if (/esc to interrupt/i.test(bottomText)) return AgentStatus.BUSY;
+
   let promptLine = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (lines[i]!.includes('❯')) {
@@ -30,14 +38,6 @@ export function detectFromPaneContent(lines: string[]): AgentStatus | null {
   }
 
   if (promptLine === -1) return null;
-
-  const start = Math.max(0, promptLine - 10);
-  const above = lines.slice(start, promptLine);
-  const aboveText = above.join('\n');
-
-  if (/^[✢✶·⏳⏺●] \S+…|Running…/m.test(aboveText)) {
-    return AgentStatus.BUSY;
-  }
 
   return AgentStatus.IDLE;
 }

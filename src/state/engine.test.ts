@@ -88,4 +88,56 @@ describe('fuseState', () => {
     });
     expect(result).toBe(AgentStatus.PERMIT);
   });
+
+  test('scrape IDLE does not override a fresh working hook', () => {
+    // The scraper can miss Claude's animated spinner between frames. A fresh
+    // PreToolUse (working) must not be downgraded to idle by a scraper miss.
+    const result = fuseState({
+      hookState: 'working',
+      hookTs: now,
+      eventStatus: null,
+      scrapeStatus: AgentStatus.IDLE,
+      currentStatus: AgentStatus.IDLE,
+      currentTs: 0,
+    });
+    expect(result).toBe(AgentStatus.BUSY);
+  });
+
+  test('scrape IDLE clears a stale permit', () => {
+    // Old "waiting" status file but the screen now shows an idle prompt —
+    // the prompt was answered, so the stale PERMIT must clear.
+    const result = fuseState({
+      hookState: 'waiting',
+      hookTs: now - 5,
+      eventStatus: null,
+      scrapeStatus: AgentStatus.IDLE,
+      currentStatus: AgentStatus.IDLE,
+      currentTs: 0,
+    });
+    expect(result).toBe(AgentStatus.IDLE);
+  });
+
+  test('scrape BUSY wins over an idle hook', () => {
+    const result = fuseState({
+      hookState: 'done',
+      hookTs: now,
+      eventStatus: null,
+      scrapeStatus: AgentStatus.BUSY,
+      currentStatus: AgentStatus.IDLE,
+      currentTs: 0,
+    });
+    expect(result).toBe(AgentStatus.BUSY);
+  });
+
+  test('working hook past the timeout decays to idle', () => {
+    const result = fuseState({
+      hookState: 'working',
+      hookTs: now - 200,
+      eventStatus: null,
+      scrapeStatus: null,
+      currentStatus: AgentStatus.IDLE,
+      currentTs: 0,
+    });
+    expect(result).toBe(AgentStatus.IDLE);
+  });
 });

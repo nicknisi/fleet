@@ -18,13 +18,30 @@ describe('detectFromPaneContent', () => {
     expect(detectFromPaneContent(lines)).toBe(AgentStatus.QUESTION);
   });
 
-  test('detects working spinner', () => {
-    const lines = ['✶ Thinking…', '', '❯'];
+  test('detects working via token counter (minutes)', () => {
+    const lines = ['✻ Trapping Gollum… (1m 11s · ↓ 3.4k tokens)', '', '❯'];
+    expect(detectFromPaneContent(lines)).toBe(AgentStatus.BUSY);
+  });
+
+  test('detects working via token counter (seconds only)', () => {
+    const lines = ['✢ Sharting… (8s · ↑ 240 tokens)', '', '❯'];
+    expect(detectFromPaneContent(lines)).toBe(AgentStatus.BUSY);
+  });
+
+  test('detects working via esc to interrupt', () => {
+    const lines = ['Running command…', '', '(esc to interrupt)', '❯'];
     expect(detectFromPaneContent(lines)).toBe(AgentStatus.BUSY);
   });
 
   test('detects idle prompt as IDLE', () => {
     const lines = ['Done! Created the file.', '', '❯'];
+    expect(detectFromPaneContent(lines)).toBe(AgentStatus.IDLE);
+  });
+
+  test('animated spinner glyph alone is not enough — needs counter', () => {
+    // A bare spinner verb with no counter and a visible prompt reads as IDLE,
+    // and the fusion engine keeps a fresh hook BUSY from being overridden.
+    const lines = ['✶ Thinking…', '', '❯'];
     expect(detectFromPaneContent(lines)).toBe(AgentStatus.IDLE);
   });
 
