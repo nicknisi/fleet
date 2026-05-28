@@ -150,7 +150,7 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
   const legend = [
     `${C.permit}⚠ ${C.gray}waiting${C.reset}`,
     `${C.question}? ${C.gray}asking${C.reset}`,
-    `${C.done}▸ ${C.gray}ready${C.reset}`,
+    `${C.done}● ${C.gray}ready${C.reset}`,
     `${C.busy}◉ ${C.gray}working${C.reset}`,
     `${C.idle}● ${C.gray}idle${C.reset}`,
   ];

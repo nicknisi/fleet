@@ -84,7 +84,7 @@ Fleet tracks seven states, sorted by urgency. The icon and color tell you what's
 | ---- | ----------- | -------------------------------------------------- |
 | `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt)              |
 | `?`  | **asking**  | Agent asked you a question (`AskUserQuestion`)     |
-| `▸`  | **ready**   | Turn ended — your move (finished, or asked in prose) |
+| `●`  | **ready**   | Turn ended — your move (finished, or asked in prose); green dot |
 | `◉`  | **working** | Thinking or running tools                          |
 | `●`  | **idle**    | Up but no recent activity                          |
 | `■`  | **shell**   | No agent running (hidden by default)               |
@@ -159,7 +159,7 @@ Fleet supports two levels of tmux integration:
 fleet statusline --inject
 ```
 
-Each entry is clickable (tmux 3.2+) — click an agent name to switch to that session. Only agents that are actively blocked on you appear: PERMIT (tool approval) and QUESTION (a question to answer). Working, done, idle, and shell sessions stay out of the bar — they don't need you to act, so they'd just be noise. Watch those in the dashboard instead.
+Each entry is clickable (tmux 3.2+) — click an agent name to switch to that session. Only agents whose turn it is for you appear: PERMIT (tool approval), QUESTION (a question to answer), and DONE/ready (finished, waiting on your next move). Working and idle sessions stay out of the bar — they don't need you to act, so they'd just be noise. Watch those in the dashboard instead.
 
 **Status-right icon (lightweight):** A single icon in your existing status bar:
 

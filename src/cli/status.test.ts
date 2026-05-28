@@ -87,7 +87,7 @@ describe('formatStatusLine', () => {
     expect(formatStatusLine([])).toBe('');
   });
 
-  test('includes only PERMIT and QUESTION, excludes DONE/BUSY/IDLE/SHELL/DOWN', () => {
+  test('includes PERMIT/QUESTION/DONE, excludes BUSY/IDLE/SHELL/DOWN', () => {
     const states = [
       makeState({ status: AgentStatus.PERMIT, session: 'permit-s' }),
       makeState({ status: AgentStatus.QUESTION, session: 'question-s', paneId: '%2' }),
@@ -100,7 +100,7 @@ describe('formatStatusLine', () => {
     const result = formatStatusLine(states);
     expect(result).toContain('permit-s');
     expect(result).toContain('question-s');
-    expect(result).not.toContain('done-s');
+    expect(result).toContain('done-s');
     expect(result).not.toContain('busy-s');
     expect(result).not.toContain('idle-s');
     expect(result).not.toContain('shell-s');

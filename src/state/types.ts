@@ -31,7 +31,7 @@ export function compareStatus(a: AgentStatus, b: AgentStatus): number {
 export const STATUS_DISPLAY: Record<AgentStatus, { icon: string; label: string; color: string }> = {
   [AgentStatus.PERMIT]: { icon: '⚠', label: 'waiting', color: '#f9e2af' },
   [AgentStatus.QUESTION]: { icon: '?', label: 'asking', color: '#cba6f7' },
-  [AgentStatus.DONE]: { icon: '▸', label: 'ready', color: '#a6e3a1' },
+  [AgentStatus.DONE]: { icon: '●', label: 'ready', color: '#a6e3a1' },
   [AgentStatus.BUSY]: { icon: '◉', label: 'working', color: '#fab387' },
   [AgentStatus.IDLE]: { icon: '●', label: 'idle', color: '#89b4fa' },
   [AgentStatus.SHELL]: { icon: '■', label: 'shell', color: '#6c7086' },

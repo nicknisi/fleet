@@ -11,10 +11,11 @@ export function formatAge(ts: number): string {
 }
 
 export function formatStatusLine(states: AgentState[]): string {
-  // The status line is for agents that need you to act: waiting on a permission
-  // prompt (PERMIT) or asking a question (QUESTION). Working agents are fine on
-  // their own, and DONE shows in the dashboard — neither belongs in the bar.
-  const visible: AgentStatus[] = [AgentStatus.PERMIT, AgentStatus.QUESTION];
+  // The status line is for agents whose turn it is for you to act on: waiting on
+  // a permission prompt (PERMIT), asking a question (QUESTION), or finished and
+  // waiting on your next move (DONE/ready). Working and idle agents don't need
+  // you, so they stay out of the bar.
+  const visible: AgentStatus[] = [AgentStatus.PERMIT, AgentStatus.QUESTION, AgentStatus.DONE];
   const filtered = states.filter((s) => visible.includes(s.status));
   if (filtered.length === 0) return '';
 
