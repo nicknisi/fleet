@@ -1,4 +1,17 @@
 import { AgentStatus } from './types.ts';
+import { capturePane } from '../tmux/sessions.ts';
+
+const SCRAPE_LINES = 50;
+
+export function scrapePane(paneId: string): AgentStatus | null {
+  let lines: string[];
+  try {
+    lines = capturePane(paneId, SCRAPE_LINES);
+  } catch {
+    return null;
+  }
+  return detectFromPaneContent(lines);
+}
 
 export function detectFromPaneContent(lines: string[]): AgentStatus | null {
   const bottom = lines.slice(-15);

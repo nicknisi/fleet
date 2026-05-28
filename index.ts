@@ -15,6 +15,7 @@ import {
 import { fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
 import { readLastEvent, deriveStatusFromLastEvent } from './src/state/events.ts';
+import { scrapePane } from './src/state/scraper.ts';
 import { AgentStatus, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import { listPanes, switchClient, gitBranch } from './src/tmux/sessions.ts';
@@ -67,9 +68,10 @@ function shortenPath(path: string): string {
   return path;
 }
 
-// Slow caches (git branches, ports) — refreshed every SLOW_REFRESH_MS
+// Slow caches (git branches, ports, scrape) — refreshed every SLOW_REFRESH_MS
 const branchCache = new Map<string, string | null>();
 let portCache = new Map<string, number[]>();
+const scrapeCache = new Map<string, AgentStatus | null>();
 
 function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): void {
   const paths = new Set<string>();
@@ -88,6 +90,16 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): vo
     }
   } catch {}
   portCache = newPorts;
+
+  // Layer 3: pane scraping (~50ms per pane) — slow cycle only
+  const seen = new Set<string>();
+  for (const p of panes) {
+    seen.add(p.paneId);
+    scrapeCache.set(p.paneId, scrapePane(p.paneId));
+  }
+  for (const paneId of scrapeCache.keys()) {
+    if (!seen.has(paneId)) scrapeCache.delete(paneId);
+  }
 }
 
 // Fast refresh: ONE tmux call + status file reads + last-line JSONL reads. No git, no lsof.
@@ -127,7 +139,7 @@ function refreshStates(statusDirs: string[]): AgentState[] {
         hookState: hook.state,
         hookTs: hook.ts,
         eventStatus,
-        scrapeStatus: null,
+        scrapeStatus: scrapeCache.get(pane.paneId) ?? null,
         currentStatus: AgentStatus.IDLE,
         currentTs: 0,
       });

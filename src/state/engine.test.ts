@@ -53,6 +53,18 @@ describe('fuseState', () => {
     expect(result).toBe(AgentStatus.PERMIT);
   });
 
+  test('scrape PERMIT overrides hook BUSY with no event', () => {
+    const result = fuseState({
+      hookState: 'working',
+      hookTs: now,
+      eventStatus: null,
+      scrapeStatus: AgentStatus.PERMIT,
+      currentStatus: AgentStatus.IDLE,
+      currentTs: now - 10,
+    });
+    expect(result).toBe(AgentStatus.PERMIT);
+  });
+
   test('DONE decays to IDLE after 60s', () => {
     const result = fuseState({
       hookState: 'completed',
