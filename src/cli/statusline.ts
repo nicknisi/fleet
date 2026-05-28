@@ -19,7 +19,7 @@ export function buildInjectCommands(): string[][] {
       'if-shell',
       '-F',
       '#{&&:#{==:#{mouse_status_line},1},#{m:%*,#{mouse_status_range}}}',
-      'run-shell "tmux switch-client -t \\"#{mouse_status_range}\\""',
+      'run-shell "fleet switch \\"#{mouse_status_range}\\""',
       'select-window -t=',
     ],
   ];

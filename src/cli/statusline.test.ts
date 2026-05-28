@@ -27,7 +27,7 @@ describe('buildInjectCommands', () => {
     expect(bindCmd).toContain('if-shell');
     const condArg = bindCmd!.find((a) => a.includes('mouse_status_line'));
     expect(condArg).toBeDefined();
-    const trueArg = bindCmd!.find((a) => a.includes('switch-client'));
+    const trueArg = bindCmd!.find((a) => a.includes('fleet switch'));
     expect(trueArg).toBeDefined();
     const falseArg = bindCmd!.find((a) => a.includes('select-window'));
     expect(falseArg).toBeDefined();

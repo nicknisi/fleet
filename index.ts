@@ -147,9 +147,8 @@ function verifyPaneState(state: AgentState, statusDirs: string[]): void {
 // Switching to a ready agent is your acknowledgement — you've seen it, so drop
 // it out of the attention tier. Recorded as an event (the newest signal wins,
 // and any later agent activity supersedes it) rather than a separate store.
-function acknowledgeIfDone(state: AgentState, statusDirs: string[]): void {
-  if (state.status !== AgentStatus.DONE) return;
-  const paneNum = state.paneId.replace('%', '');
+function appendAck(paneId: string, statusDirs: string[]): void {
+  const paneNum = paneId.replace('%', '');
   const line = JSON.stringify({ event: 'Acknowledged', ts: Math.floor(Date.now() / 1000) }) + '\n';
   for (const dir of statusDirs) {
     const eventsFile = join(dir, `${paneNum}.events.jsonl`);
@@ -162,6 +161,21 @@ function acknowledgeIfDone(state: AgentState, statusDirs: string[]): void {
       return;
     }
   }
+}
+
+function acknowledgeIfDone(state: AgentState, statusDirs: string[]): void {
+  if (state.status === AgentStatus.DONE) appendAck(state.paneId, statusDirs);
+}
+
+// Cheap status read for a single pane from its event log — no full scrape. Used
+// by the statusline click path, where a full refresh would lag the switch.
+function eventStatusForPane(paneId: string, statusDirs: string[]): AgentStatus | null {
+  const paneNum = paneId.replace('%', '');
+  for (const dir of statusDirs) {
+    const recent = readLastEvents(join(dir, `${paneNum}.events.jsonl`), 12);
+    if (recent.length > 0) return deriveStatusFromEvents(recent);
+  }
+  return null;
 }
 
 function shortenPath(path: string): string {
@@ -296,6 +310,24 @@ function handleCli(args: string[]): number | null {
     case 'next': {
       const states = fullRefreshStates(statusDirs);
       return runNext(states);
+    }
+    case 'switch': {
+      // Invoked by the statusline mouse binding. Acknowledge a ready agent (so a
+      // click counts the same as Enter in the dashboard), then switch to it.
+      const target = args[1];
+      if (!target) {
+        process.stderr.write('Usage: fleet switch <pane-id>\n');
+        return 1;
+      }
+      if (eventStatusForPane(target, statusDirs) === AgentStatus.DONE) {
+        appendAck(target, statusDirs);
+      }
+      try {
+        switchClient(target);
+      } catch {
+        // Pane may have closed
+      }
+      return 0;
     }
     case 'send': {
       const session = args[1];
