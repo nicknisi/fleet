@@ -28,6 +28,7 @@ import { runInstall, runUninstall } from './src/cli/install.ts';
 import { runDoctor } from './src/cli/doctor.ts';
 import { runReconcile } from './src/cli/reconcile.ts';
 import { runStatusLineInject, runStatusLineRemove } from './src/cli/statusline.ts';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const VERSION: string = packageJson.version;
@@ -86,6 +87,53 @@ function printHelp(): number {
     ].join('\n'),
   );
   return 0;
+}
+
+function verifyPaneState(state: AgentState, statusDirs: string[]): void {
+  const scraped = scrapePane(state.paneId);
+  if (scraped === null) return;
+  if (scraped === state.status) return;
+
+  const paneNum = state.paneId.replace('%', '');
+  const now = Math.floor(Date.now() / 1000);
+  const tmuxPid = (() => {
+    try {
+      const result = Bun.spawnSync({ cmd: ['tmux', 'display-message', '-p', '#{pid}'], stdout: 'pipe' });
+      return parseInt(result.stdout.toString().trim(), 10) || 0;
+    } catch {
+      return 0;
+    }
+  })();
+
+  const hookStateMap: Record<string, string> = {
+    PERMIT: 'permit',
+    QUESTION: 'question',
+    DONE: 'done',
+    BUSY: 'working',
+    IDLE: 'idle',
+  };
+  const newHookState = hookStateMap[scraped] ?? 'idle';
+
+  for (const dir of statusDirs) {
+    const file = join(dir, `${paneNum}.status`);
+    try {
+      const content = readFileSync(file, 'utf-8');
+      const existing = JSON.parse(content);
+      if (existing.pane === state.paneId) {
+        const updated = JSON.stringify({
+          state: newHookState,
+          pane: state.paneId,
+          session: state.session,
+          tool: '',
+          ts: now,
+          tmux_pid: tmuxPid,
+        });
+        writeFileSync(file, updated + '\n');
+        scrapeCache.set(state.paneId, scraped);
+        return;
+      }
+    } catch {}
+  }
 }
 
 function shortenPath(path: string): string {
@@ -261,7 +309,12 @@ function handleCli(args: string[]): number | null {
   }
 }
 
-function handleFilterInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, finish: (code: number) => void): void {
+function handleFilterInput(
+  app: TuiApp,
+  key: ReturnType<typeof parseKeyEvent>,
+  finish: (code: number) => void,
+  statusDirs: string[],
+): void {
   switch (key.type) {
     case 'escape':
       app.clearFilter();
@@ -285,6 +338,7 @@ function handleFilterInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, f
     case 'enter': {
       const selected = app.selectedState();
       if (selected) {
+        verifyPaneState(selected, statusDirs);
         finish(0);
         switchClient(selected.paneId);
       }
@@ -450,7 +504,7 @@ async function launchTui(): Promise<number> {
 
       // Filter mode
       if (app.isFiltering()) {
-        handleFilterInput(app, key, finish);
+        handleFilterInput(app, key, finish, statusDirs);
         needsRender = true;
         return;
       }
@@ -529,6 +583,7 @@ async function launchTui(): Promise<number> {
         case 'enter': {
           const selected = app.selectedState();
           if (selected) {
+            verifyPaneState(selected, statusDirs);
             finish(0);
             switchClient(selected.paneId);
             return;
