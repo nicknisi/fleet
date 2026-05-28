@@ -11,7 +11,10 @@ export function formatAge(ts: number): string {
 }
 
 export function formatStatusLine(states: AgentState[]): string {
-  const visible: AgentStatus[] = [AgentStatus.PERMIT, AgentStatus.QUESTION, AgentStatus.DONE, AgentStatus.BUSY];
+  // The status line is for agents that need you to act: waiting on a permission
+  // prompt (PERMIT) or asking a question (QUESTION). Working agents are fine on
+  // their own, and DONE shows in the dashboard — neither belongs in the bar.
+  const visible: AgentStatus[] = [AgentStatus.PERMIT, AgentStatus.QUESTION];
   const filtered = states.filter((s) => visible.includes(s.status));
   if (filtered.length === 0) return '';
 

@@ -87,7 +87,7 @@ describe('formatStatusLine', () => {
     expect(formatStatusLine([])).toBe('');
   });
 
-  test('includes PERMIT, QUESTION, DONE, BUSY but excludes IDLE/SHELL/DOWN', () => {
+  test('includes only PERMIT and QUESTION, excludes DONE/BUSY/IDLE/SHELL/DOWN', () => {
     const states = [
       makeState({ status: AgentStatus.PERMIT, session: 'permit-s' }),
       makeState({ status: AgentStatus.QUESTION, session: 'question-s', paneId: '%2' }),
@@ -100,29 +100,23 @@ describe('formatStatusLine', () => {
     const result = formatStatusLine(states);
     expect(result).toContain('permit-s');
     expect(result).toContain('question-s');
-    expect(result).toContain('done-s');
-    expect(result).toContain('busy-s');
+    expect(result).not.toContain('done-s');
+    expect(result).not.toContain('busy-s');
     expect(result).not.toContain('idle-s');
     expect(result).not.toContain('shell-s');
     expect(result).not.toContain('down-s');
   });
 
-  test('sorts PERMIT before QUESTION before DONE before BUSY', () => {
+  test('sorts PERMIT before QUESTION', () => {
     const states = [
-      makeState({ status: AgentStatus.BUSY, session: 'b-busy', paneId: '%1' }),
-      makeState({ status: AgentStatus.DONE, session: 'b-done', paneId: '%2' }),
       makeState({ status: AgentStatus.QUESTION, session: 'b-question', paneId: '%3' }),
       makeState({ status: AgentStatus.PERMIT, session: 'b-permit', paneId: '%4' }),
     ];
     const result = formatStatusLine(states);
     const permitIdx = result.indexOf('b-permit');
     const questionIdx = result.indexOf('b-question');
-    const doneIdx = result.indexOf('b-done');
-    const busyIdx = result.indexOf('b-busy');
     expect(permitIdx).toBeGreaterThanOrEqual(0);
     expect(permitIdx).toBeLessThan(questionIdx);
-    expect(questionIdx).toBeLessThan(doneIdx);
-    expect(doneIdx).toBeLessThan(busyIdx);
   });
 
   test('formats each entry with icon, bold session, and age', () => {
@@ -139,7 +133,7 @@ describe('formatStatusLine', () => {
   test('wraps each entry in a clickable range with the pane id', () => {
     const states = [
       makeState({ status: AgentStatus.PERMIT, session: 'a', paneId: '%42' }),
-      makeState({ status: AgentStatus.BUSY, session: 'b', paneId: '%7' }),
+      makeState({ status: AgentStatus.QUESTION, session: 'b', paneId: '%7' }),
     ];
     const result = formatStatusLine(states);
     expect(result).toContain('#[range=user|%42]');
@@ -153,7 +147,7 @@ describe('formatStatusLine', () => {
   test('joins multiple entries with the dim separator', () => {
     const states = [
       makeState({ status: AgentStatus.PERMIT, session: 'a', paneId: '%1' }),
-      makeState({ status: AgentStatus.BUSY, session: 'b', paneId: '%2' }),
+      makeState({ status: AgentStatus.QUESTION, session: 'b', paneId: '%2' }),
     ];
     const result = formatStatusLine(states);
     expect(result).toContain(' #[fg=#45475a]│ ');
