@@ -3,7 +3,7 @@ import { TuiApp, TuiMode } from './src/tui/app.ts';
 import { render } from './src/tui/render.ts';
 import { canSendTo } from './src/tui/send.ts';
 import { parseKeyEvent } from './src/terminal/input.ts';
-import { isMouseSequence } from './src/terminal/mouse.ts';
+import { isMouseSequence, parseMouseEvent } from './src/terminal/mouse.ts';
 import {
   enterAlternateScreen,
   hideCursor,
@@ -469,7 +469,25 @@ async function launchTui(): Promise<number> {
     };
 
     const handleInput = (buf: Buffer) => {
-      if (isMouseSequence(buf)) return;
+      if (isMouseSequence(buf)) {
+        const mouse = parseMouseEvent(buf);
+        if (!mouse) return;
+        if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
+          const sz = getTerminalSize();
+          const dividerCol = app.listWidth(sz.cols) + 1;
+          if (mouse.button === 'left' && mouse.type === 'press' && Math.abs(mouse.x - dividerCol) <= 1) {
+            app.startDrag();
+            needsRender = true;
+          } else if (mouse.type === 'move' && app.dragging) {
+            app.updateDrag(mouse.x, sz.cols);
+            needsRender = true;
+          } else if (mouse.type === 'release' && app.dragging) {
+            app.endDrag();
+            needsRender = true;
+          }
+        }
+        return;
+      }
 
       // Passthrough mode — forward raw bytes, only Esc and Ctrl-C escape
       if (app.mode === TuiMode.PASSTHROUGH) {

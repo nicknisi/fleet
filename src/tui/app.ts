@@ -18,6 +18,10 @@ export interface Summary {
   busy: number;
 }
 
+const MIN_SPLIT = 0.2;
+const MAX_SPLIT = 0.8;
+const DEFAULT_SPLIT = 0.45;
+
 export class TuiApp {
   private states: AgentState[] = [];
   private filter: string = '';
@@ -27,6 +31,8 @@ export class TuiApp {
   private modeBeforeSend: TuiMode = TuiMode.DASHBOARD;
   sendBuffer: string = '';
   shouldQuit: boolean = false;
+  splitRatio: number = DEFAULT_SPLIT;
+  dragging: boolean = false;
 
   updateStates(newStates: AgentState[]): void {
     const selectedPaneId = this.selectedState()?.paneId ?? null;
@@ -135,6 +141,23 @@ export class TuiApp {
       done: this.states.filter((s) => s.status === AgentStatus.DONE).length,
       busy: this.states.filter((s) => s.status === AgentStatus.BUSY).length,
     };
+  }
+
+  listWidth(cols: number): number {
+    return Math.floor(cols * this.splitRatio);
+  }
+
+  startDrag(): void {
+    this.dragging = true;
+  }
+
+  updateDrag(x: number, cols: number): void {
+    if (!this.dragging) return;
+    this.splitRatio = Math.max(MIN_SPLIT, Math.min(MAX_SPLIT, x / cols));
+  }
+
+  endDrag(): void {
+    this.dragging = false;
   }
 
   private clampSelection(): void {

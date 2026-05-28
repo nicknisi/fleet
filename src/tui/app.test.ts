@@ -104,3 +104,38 @@ describe('TuiApp', () => {
     expect(app.mode as string).toBe('PREVIEW');
   });
 });
+
+describe('split drag', () => {
+  test('listWidth uses splitRatio', () => {
+    const app = new TuiApp();
+    expect(app.listWidth(100)).toBe(45);
+  });
+
+  test('drag updates splitRatio', () => {
+    const app = new TuiApp();
+    app.startDrag();
+    expect(app.dragging).toBe(true);
+    app.updateDrag(30, 100);
+    expect(app.splitRatio).toBeCloseTo(0.3);
+    app.endDrag();
+    expect(app.dragging).toBe(false);
+    expect(app.listWidth(100)).toBe(30);
+  });
+
+  test('drag clamps to min/max', () => {
+    const app = new TuiApp();
+    app.startDrag();
+    app.updateDrag(5, 100);
+    expect(app.splitRatio).toBeCloseTo(0.2);
+    app.updateDrag(95, 100);
+    expect(app.splitRatio).toBeCloseTo(0.8);
+    app.endDrag();
+  });
+
+  test('updateDrag is no-op when not dragging', () => {
+    const app = new TuiApp();
+    const before = app.splitRatio;
+    app.updateDrag(30, 100);
+    expect(app.splitRatio).toBe(before);
+  });
+});

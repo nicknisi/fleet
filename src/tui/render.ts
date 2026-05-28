@@ -48,7 +48,7 @@ export function render(app: TuiApp, size: TerminalSize): string {
   } else if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
     const selected = app.selectedState();
     const isPassthrough = app.mode === TuiMode.PASSTHROUGH;
-    const listWidth = Math.floor(cols * 0.45);
+    const listWidth = app.listWidth(cols);
     const previewWidth = cols - listWidth - 1;
 
     out.push('\x1b[K\r\n');
@@ -62,7 +62,7 @@ export function render(app: TuiApp, size: TerminalSize): string {
       out.push(sessionLine);
       const sessionVis = visibleLengthFast(sessionLine);
       if (sessionVis < listWidth) out.push(' '.repeat(listWidth - sessionVis));
-      out.push(`${C.gray}│${C.reset}`);
+      out.push(app.dragging ? `${C.cyan}│${C.reset}` : `${C.gray}│${C.reset}`);
       out.push(previewLine);
       out.push('\x1b[K\r\n');
       linesWritten++;
