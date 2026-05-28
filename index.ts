@@ -40,24 +40,48 @@ function printVersion(): number {
 }
 
 function printHelp(): number {
+  const isTTY = process.stdout.isTTY;
+  const c = (s: string) => (isTTY ? s : '');
+  const r = c('\x1b[0m');
+  const dim = c('\x1b[2m');
+  const bold = c('\x1b[1m');
+  const gray = c('\x1b[90m');
+  const permit = c('\x1b[38;2;249;226;175m');
+  const question = c('\x1b[38;2;203;166;247m');
+  const done = c('\x1b[38;2;166;227;161m');
+  const busy = c('\x1b[38;2;250;179;135m');
+  const idle = c('\x1b[38;2;137;180;250m');
+
+  const logo = `${permit}f${question}l${done}e${busy}e${idle}t${r}`;
+  const quips = ['herding agents', 'cat wrangling', 'mission control', 'pane management', 'vibes: immaculate'];
+  const quip = quips[Math.floor(Math.random() * quips.length)];
+
   process.stdout.write(
     [
-      'fleet — agent dashboard TUI',
       '',
-      'Usage:',
-      '  fleet [--preview|--no-preview]  Launch TUI dashboard',
-      '  fleet status [--tmux] <session> Query agent state',
-      '  fleet status --statusline      Render multi-agent tmux status line',
-      '  fleet next                     Jump to next waiting agent',
-      '  fleet send <session> <prompt>  Send prompt to session',
-      '  fleet install                  Register as Claude Code plugin',
-      '  fleet uninstall                Remove plugin registration',
-      '  fleet doctor                   Health check',
-      '  fleet reconcile [--dry-run]    Sweep orphan status files',
-      '  fleet statusline --inject      Add fleet status to tmux row 2',
-      '  fleet statusline --remove      Remove fleet status from tmux',
-      '  fleet --version, -v            Print version',
-      '  fleet --help, -h               Show this help',
+      `  ${bold}${logo}${r}  ${dim}— ${quip}${r}`,
+      '',
+      `  ${bold}Dashboard${r}`,
+      `    ${idle}fleet${r}                           ${gray}Launch TUI ${dim}(preview auto-opens on wide terms)${r}`,
+      `    ${idle}fleet${r} --preview | --no-preview   ${gray}Force preview on/off${r}`,
+      '',
+      `  ${bold}Commands${r}`,
+      `    ${idle}fleet status${r} [--tmux] <session>  ${gray}Query agent state${r}`,
+      `    ${idle}fleet status${r} --statusline        ${gray}Render multi-agent tmux status line${r}`,
+      `    ${idle}fleet next${r}                       ${gray}Jump to next waiting agent${r}`,
+      `    ${idle}fleet send${r} <session> <prompt>    ${gray}Send prompt to session${r}`,
+      `    ${idle}fleet reconcile${r} [--dry-run]      ${gray}Sweep orphan status files${r}`,
+      '',
+      `  ${bold}Plugin${r}`,
+      `    ${idle}fleet install${r}                    ${gray}Register as Claude Code plugin${r}`,
+      `    ${idle}fleet uninstall${r}                  ${gray}Remove plugin registration${r}`,
+      `    ${idle}fleet doctor${r}                     ${gray}Health check${r}`,
+      '',
+      `  ${bold}Tmux${r}`,
+      `    ${idle}fleet statusline${r} --inject        ${gray}Add fleet status to tmux row 2${r}`,
+      `    ${idle}fleet statusline${r} --remove        ${gray}Remove fleet status from tmux${r}`,
+      '',
+      `  ${permit}⚠ waiting${r}  ${question}? asking${r}  ${done}✓ done${r}  ${busy}◉ working${r}  ${idle}● idle${r}`,
       '',
     ].join('\n'),
   );
