@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.4.0](https://github.com/nicknisi/fleet/compare/v0.3.0...v0.4.0) (2026-05-28)
+
+
+### Features
+
+* add fleet status --statusline for multi-agent tmux row ([93df94a](https://github.com/nicknisi/fleet/commit/93df94a2ac02df992d7386a235908d771e8bd304))
+* add fleet statusline --inject/--remove ([4ae5568](https://github.com/nicknisi/fleet/commit/4ae556873af99f6abcf99f7a656125fa0b20fe9a))
+* add whimsy to --help with rainbow logo, quips, and state legend ([db4e795](https://github.com/nicknisi/fleet/commit/db4e7952d47136a6c1535745843c4b7287e9803b))
+* draggable split divider between session list and preview ([c9ce7fe](https://github.com/nicknisi/fleet/commit/c9ce7fec68b52337c6f4abb2f6c51d209f4e9490))
+* make fleet statusline entries clickable in tmux ([6764dda](https://github.com/nicknisi/fleet/commit/6764ddaff1c699f531b631818eaf1c10b481654d))
+* manage tmux.conf integration during fleet install/uninstall ([afec36f](https://github.com/nicknisi/fleet/commit/afec36fdcb069534ba861e810307fb911118c54e))
+* show Claude session name in detail column ([74c376c](https://github.com/nicknisi/fleet/commit/74c376cafabff0523c443b309f150e1faa26f690))
+* status line shows only PERMIT and QUESTION ([38ddce0](https://github.com/nicknisi/fleet/commit/38ddce028c280e329e08cfc0285a7b03943762eb))
+* wire layer 3 pane scraping into refresh loop ([6821ae0](https://github.com/nicknisi/fleet/commit/6821ae08c37c79e8dd43e4303e0c9c6005675242))
+
+
+### Bug Fixes
+
+* decay stale PERMIT/QUESTION states after 10 minutes ([ff6b313](https://github.com/nicknisi/fleet/commit/ff6b313450c05d6040e57b135ad5ae2efc9c7e55))
+* distinguish permit/question/done states in hooks and engine ([b64400b](https://github.com/nicknisi/fleet/commit/b64400b1b5612359588e5fa07cfd52b6d8eb1b6e))
+* notification hook read wrong field, never wrote permit/question/done ([2b02856](https://github.com/nicknisi/fleet/commit/2b02856afcb1179df065fd98a460d66b6cb781ac))
+* plugin symlink pointed to / in compiled binary, drag mode unused ([e58720a](https://github.com/nicknisi/fleet/commit/e58720ac9d0f534b4620bb4eb55e77a5411e04eb))
+* preserve default window-click behavior on top status row ([451d83f](https://github.com/nicknisi/fleet/commit/451d83f37cfe9f3e9fbed2c8cfa7d414c0c9e2f1))
+* scraper IDLE no longer overrides live BUSY; detect Claude's spinner ([004ba09](https://github.com/nicknisi/fleet/commit/004ba09b8289abe4c872672ae392f5e10de1e684))
+* scraper overrides all stale states, not just PERMIT ([424b574](https://github.com/nicknisi/fleet/commit/424b57426386c3cdcc5f5c4b8b808c95bb1a4250))
+* scraper returns IDLE for prompt, QUESTION for AskUserQuestion ([af2f416](https://github.com/nicknisi/fleet/commit/af2f416d48ec4c2bdb30610389bf20358043fd7a))
+* use MouseDown1Status instead of invalid Status key name ([7117a7f](https://github.com/nicknisi/fleet/commit/7117a7f634f8a24413b7af5c9e95fcb4e5a44621))
+* verify pane state on switch instead of using timeouts ([12ceac1](https://github.com/nicknisi/fleet/commit/12ceac1d55623906da63ecd128c439ca11eee6d1))
+
 ## [0.3.0](https://github.com/nicknisi/fleet/compare/v0.2.0...v0.3.0) (2026-05-28)
 
 
