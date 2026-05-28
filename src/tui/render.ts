@@ -2,6 +2,7 @@ import { TuiMode, type TuiApp } from './app.ts';
 import { renderHeader, renderSessionList, renderFooter } from './dashboard.ts';
 import { renderPreview } from './preview.ts';
 import { renderSendMode } from './send.ts';
+import { renderKillConfirm } from './kill.ts';
 import { renderHelp } from './help.ts';
 import { C } from '../terminal/colors.ts';
 import type { TerminalSize } from '../terminal/terminal.ts';
@@ -42,6 +43,17 @@ export function render(app: TuiApp, size: TerminalSize): string {
       const sendLines = renderSendMode(selected, app.sendBuffer, cols);
       for (let i = 0; i < contentRows - 1 && i < sendLines.length; i++) {
         out.push(sendLines[i]! + '\x1b[K\r\n');
+        linesWritten++;
+      }
+    }
+  } else if (app.mode === TuiMode.CONFIRM_KILL) {
+    const selected = app.selectedState();
+    if (selected) {
+      out.push('\x1b[K\r\n');
+      linesWritten++;
+      const killLines = renderKillConfirm(selected);
+      for (let i = 0; i < contentRows - 1 && i < killLines.length; i++) {
+        out.push(killLines[i]! + '\x1b[K\r\n');
         linesWritten++;
       }
     }

@@ -11,9 +11,7 @@ export function renderHelp(): string[] {
   lines.push(`  ${C.yellowBold}p${C.reset}${C.gray}           Toggle preview pane${C.reset}`);
   lines.push(`  ${C.yellowBold}s${C.reset}${C.gray}           Send prompt to session${C.reset}`);
   lines.push(`  ${C.yellowBold}/${C.reset}${C.gray}           Filter sessions by name${C.reset}`);
-  lines.push(`  ${C.yellowBold}a${C.reset}${C.gray}           Create new agent session${C.reset}`);
-  lines.push(`  ${C.yellowBold}x${C.reset}${C.gray}           Kill selected session${C.reset}`);
-  lines.push(`  ${C.yellowBold}d${C.reset}${C.gray}           Doctor — inline health check${C.reset}`);
+  lines.push(`  ${C.yellowBold}x${C.reset}${C.gray}           Kill selected session (asks to confirm)${C.reset}`);
   lines.push(`  ${C.yellowBold}?${C.reset}${C.gray}           This help${C.reset}`);
   lines.push(`  ${C.yellowBold}q or Esc${C.reset}${C.gray}    Quit${C.reset}`);
   lines.push('');

@@ -6,6 +6,7 @@ export const TuiMode = {
   SEND: 'SEND',
   HELP: 'HELP',
   PASSTHROUGH: 'PASSTHROUGH',
+  CONFIRM_KILL: 'CONFIRM_KILL',
 } as const;
 
 export type TuiMode = (typeof TuiMode)[keyof typeof TuiMode];
@@ -29,6 +30,7 @@ export class TuiApp {
   selectedIndex: number = 0;
   mode: TuiMode = TuiMode.DASHBOARD;
   private modeBeforeSend: TuiMode = TuiMode.DASHBOARD;
+  private modeBeforeKill: TuiMode = TuiMode.DASHBOARD;
   sendBuffer: string = '';
   shouldQuit: boolean = false;
   splitRatio: number = DEFAULT_SPLIT;
@@ -114,6 +116,15 @@ export class TuiApp {
   exitSend(): void {
     this.mode = this.modeBeforeSend;
     this.sendBuffer = '';
+  }
+
+  enterKillConfirm(): void {
+    this.modeBeforeKill = this.mode;
+    this.mode = TuiMode.CONFIRM_KILL;
+  }
+
+  exitKillConfirm(): void {
+    this.mode = this.modeBeforeKill;
   }
 
   enterPassthrough(): void {

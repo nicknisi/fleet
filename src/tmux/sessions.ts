@@ -57,6 +57,10 @@ export function switchClient(target: string): void {
   tmuxOrThrow(['switch-client', '-t', target], `switch-client failed for '${target}'`);
 }
 
+export function killPane(paneId: string): void {
+  tmuxOrThrow(['kill-pane', '-t', paneId], `kill-pane failed for '${paneId}'`);
+}
+
 export function displayMessage(msg: string, durationMs: number = 3000): void {
   tmux(['display-message', '-d', String(durationMs), msg]);
 }

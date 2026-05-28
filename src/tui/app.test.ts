@@ -103,6 +103,23 @@ describe('TuiApp', () => {
     app.exitSend();
     expect(app.mode as string).toBe('PREVIEW');
   });
+
+  test('enterKillConfirm / exitKillConfirm restores the prior mode from dashboard', () => {
+    const app = new TuiApp();
+    app.enterKillConfirm();
+    expect(app.mode as string).toBe('CONFIRM_KILL');
+    app.exitKillConfirm();
+    expect(app.mode as string).toBe('DASHBOARD');
+  });
+
+  test('enterKillConfirm from preview restores to preview', () => {
+    const app = new TuiApp();
+    app.mode = TuiMode.PREVIEW;
+    app.enterKillConfirm();
+    expect(app.mode as string).toBe('CONFIRM_KILL');
+    app.exitKillConfirm();
+    expect(app.mode as string).toBe('PREVIEW');
+  });
 });
 
 describe('split drag', () => {

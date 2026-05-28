@@ -2,6 +2,7 @@ import packageJson from './package.json' with { type: 'json' };
 import { TuiApp, TuiMode } from './src/tui/app.ts';
 import { render } from './src/tui/render.ts';
 import { canSendTo } from './src/tui/send.ts';
+import { canKillSession } from './src/tui/kill.ts';
 import { parseKeyEvent } from './src/terminal/input.ts';
 import { isMouseSequence, parseMouseEvent } from './src/terminal/mouse.ts';
 import {
@@ -18,7 +19,7 @@ import { readLastEvent, deriveStatusFromLastEvent } from './src/state/events.ts'
 import { scrapePane } from './src/state/scraper.ts';
 import { AgentStatus, extractClaudeName, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
-import { listPanes, switchClient, gitBranch } from './src/tmux/sessions.ts';
+import { listPanes, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
 import { detectPorts } from './src/tmux/ports.ts';
 import { sendKeys, sendRawKey } from './src/tmux/send.ts';
 import { runStatus } from './src/cli/status.ts';
@@ -377,6 +378,22 @@ function handleSendInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, _fi
   }
 }
 
+function handleKillConfirmInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, statusDirs: string[]): void {
+  if (key.type === 'char' && (key.char === 'y' || key.char === 'x')) {
+    const selected = app.selectedState();
+    if (selected && canKillSession(selected).ok) {
+      try {
+        killPane(selected.paneId);
+      } catch {
+        // Pane may already be gone — refresh will drop it either way
+      }
+      app.updateStates(fullRefreshStates(statusDirs));
+    }
+  }
+  // Any other key (or a rejected confirm) just returns to the prior mode.
+  app.exitKillConfirm();
+}
+
 function handlePassthroughInput(app: TuiApp, buf: Buffer): void {
   const selected = app.selectedState();
   if (!selected) {
@@ -515,6 +532,12 @@ async function launchTui(): Promise<number> {
         return;
       }
 
+      if (app.mode === TuiMode.CONFIRM_KILL) {
+        handleKillConfirmInput(app, key, statusDirs);
+        needsRender = true;
+        return;
+      }
+
       if (app.mode === TuiMode.SEND) {
         handleSendInput(app, key, finish);
         needsRender = true;
@@ -589,6 +612,10 @@ async function launchTui(): Promise<number> {
                   app.enterSend();
                 }
               }
+              break;
+            }
+            case 'x': {
+              if (app.selectedState()) app.enterKillConfirm();
               break;
             }
             case '?':

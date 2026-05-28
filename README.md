@@ -58,6 +58,8 @@ fleet --no-preview      # Force preview pane off
 
 The dashboard shows every Claude Code pane grouped by urgency. Agents that need you sort to the top. Plain shell panes are hidden — you're here for the agents.
 
+Each row leads with the tmux session name. When Claude Code has auto-named a session (the descriptive title it generates per task), Fleet shows that name in the detail column so you can tell sessions apart at a glance. Filtering with `/` matches on session name, Claude name, and project path.
+
 ### Keybindings
 
 | Key                        | Action                              |
@@ -70,6 +72,7 @@ The dashboard shows every Claude Code pane grouped by urgency. Agents that need 
 | `i`                        | Enter passthrough (preview mode)    |
 | `y`                        | Approve permission prompt (preview) |
 | `/`                        | Filter sessions by name or project  |
+| `x`                        | Kill selected session (confirms first) |
 | `?`                        | Help overlay                        |
 | `q` or `Esc`               | Quit (or clear filter)              |
 
@@ -93,6 +96,12 @@ Press `s` to send a prompt to the selected agent. Fleet auto-selects the first s
 
 **State gating:** Fleet refuses to send to sessions with permission prompts (won't accidentally approve), sessions asking questions (won't answer for you), or dead sessions. Use `--force` in the CLI to override the busy check.
 
+### Kill Session
+
+Press `x` to kill the selected session's pane. Fleet asks you to confirm (`y`) before closing it — any other key cancels.
+
+**State gating:** Same philosophy as send. Fleet only reaps sessions that are finished, idle, or already dead. It refuses to kill a working agent, one waiting on a permission prompt, or one asking a question — so you don't discard work or a pending decision by reflex.
+
 ### Preview Pane
 
 Press `p` to toggle a live `tmux capture-pane` view of the selected session. Shows actual terminal output so you can verify state visually. Opens automatically on terminals wider than 120 columns.
@@ -103,6 +112,8 @@ The preview shows:
 - State badge and current tool
 - Listening ports (e.g., `⌁3000`)
 - Context-aware quick actions based on agent state
+
+**Resize the split:** Drag the divider between the session list and the preview with the mouse, just like dragging a tmux pane border. The divider highlights while you drag and the split clamps between 20% and 80%.
 
 ### Quick Actions
 
@@ -146,7 +157,7 @@ Fleet supports two levels of tmux integration:
 fleet statusline --inject
 ```
 
-Each entry is clickable (tmux 3.2+) — click an agent name to switch to that session. Only agents that need you (PERMIT, QUESTION, DONE, BUSY) appear. IDLE sessions are hidden.
+Each entry is clickable (tmux 3.2+) — click an agent name to switch to that session. Only agents that are actively blocked on you appear: PERMIT (tool approval) and QUESTION (a question to answer). Working, done, idle, and shell sessions stay out of the bar — they don't need you to act, so they'd just be noise. Watch those in the dashboard instead.
 
 **Status-right icon (lightweight):** A single icon in your existing status bar:
 
@@ -190,7 +201,7 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 
 2. **JSONL event stream** (Layer 2) — Each hook appends to a per-pane event log. The TUI reads only the last event. Key insight: a `stop_reason` of `tool_use` means the agent is about to run another tool (BUSY), while `end_turn` means actually done.
 
-3. **Pane scraping** (Layer 3, ~50ms) — `tmux capture-pane` as the visual arbiter. Detects permission prompts (`[y/n]`), question dialogs (`Enter to select`), spinners, and idle prompts. When the scraper has a result, it wins — it sees what's actually on screen.
+3. **Pane scraping** (Layer 3, ~50ms) — `tmux capture-pane` as the visual arbiter. Detects permission prompts (`[y/n]`), question dialogs (`Enter to select`), the working token counter (`(1m 11s · ↓ 3.4k tokens)`), and idle prompts. The scraper is authoritative only for what it can read unambiguously off the screen — `PERMIT` and `QUESTION` always win. For working-vs-idle it defers to the hooks: a scraper miss (Claude's spinner animates between capture frames) can't downgrade a fresh `working` hook to idle, but a scraped idle prompt does clear a stale permission.
 
 **Freshness invariant:** A state transition is only accepted if its timestamp is newer than the current state's timestamp. Prevents out-of-order hook deliveries from causing flicker.
 
@@ -256,7 +267,7 @@ Fleet is a zero-dependency Bun project.
 bun install              # Install dev dependencies
 bun run dev              # Run without compiling
 bun run build            # Compile to standalone binary (dist/fleet)
-bun test                 # Run tests (74 tests, ~30ms)
+bun test                 # Run tests (141 tests, ~50ms)
 bun run typecheck        # tsc --noEmit
 bun run lint             # oxlint
 bun run format           # oxfmt
@@ -268,7 +279,7 @@ bun run format:check     # oxfmt --check
 Tests are collocated (`*.test.ts` next to source). The state engine, ANSI utilities, TUI model, and CLI commands are unit-tested. Tmux-dependent code has integration-style tests that gracefully degrade outside tmux.
 
 ```bash
-bun test                 # 113 tests, ~40ms
+bun test                 # 141 tests, ~50ms
 bun test src/state/      # State engine only
 bun test src/terminal/   # Terminal primitives only
 bun test src/tui/        # TUI model only

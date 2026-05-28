@@ -191,6 +191,7 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
       `${chip('p')} ${C.gray}preview${C.reset}`,
       `${chip('s')} ${C.gray}send${C.reset}`,
       `${chip('n')} ${C.gray}next${C.reset}`,
+      `${chip('x')} ${C.gray}kill${C.reset}`,
       `${chip('?')} ${C.gray}help${C.reset}`,
     ];
     lines.push(truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${hints.join('  ')}`, cols));
