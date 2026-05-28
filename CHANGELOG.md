@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/nicknisi/fleet/compare/v0.4.0...v0.5.0) (2026-05-28)
+
+
+### Features
+
+* acknowledge ready agents on statusline click too ([fda4715](https://github.com/nicknisi/fleet/commit/fda47154bd829a18ce4600d645cbc9472a76b804))
+* honest ready/asking states ([9725fff](https://github.com/nicknisi/fleet/commit/9725fff1fc028469e9e78190a9b08f522b2bfea8))
+* kill sessions from the dashboard with x ([7eb2641](https://github.com/nicknisi/fleet/commit/7eb26417fe8a6d780d9f6c6e7e598c34b0b952a0))
+* ready is a green dot and shows in the statusline ([b3d8ffa](https://github.com/nicknisi/fleet/commit/b3d8ffa06f827e0e958f39af3c50ae0b65eea8d5))
+* sort working above ready in the dashboard ([de924d7](https://github.com/nicknisi/fleet/commit/de924d72cdec1c8a7ecbeae1d9dec1daecadc954))
+* switching to a ready agent acknowledges it ([baefdaf](https://github.com/nicknisi/fleet/commit/baefdaf7c990e78e6e9a6644a95557e43fbf4868))
+
+
+### Bug Fixes
+
+* acknowledgement actually clears agents (anchor on status file) ([95501c0](https://github.com/nicknisi/fleet/commit/95501c0c2ea83b342a6942b115289ab4147da285))
+* ready state never auto-decays to idle ([e65f192](https://github.com/nicknisi/fleet/commit/e65f192f27574abcc4109500640592ab536f923c))
+* stop the scraper from demoting DONE to IDLE ([ef346b4](https://github.com/nicknisi/fleet/commit/ef346b45c699d985f3c535071035fa7ceda2246c))
+
 ## [0.4.0](https://github.com/nicknisi/fleet/compare/v0.3.0...v0.4.0) (2026-05-28)
 
 
