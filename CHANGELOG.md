@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/nicknisi/fleet/compare/v0.2.0...v0.3.0) (2026-05-28)
+
+
+### Features
+
+* add passthrough mode and quick actions to preview pane ([9eea934](https://github.com/nicknisi/fleet/commit/9eea9343849e8ac7d0dd49db0db3700f69109542))
+
 ## [0.2.0](https://github.com/nicknisi/fleet/compare/v0.1.0...v0.2.0) (2026-05-27)
 
 
