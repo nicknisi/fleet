@@ -27,6 +27,7 @@ import { runSend } from './src/cli/send.ts';
 import { runInstall, runUninstall } from './src/cli/install.ts';
 import { runDoctor } from './src/cli/doctor.ts';
 import { runReconcile } from './src/cli/reconcile.ts';
+import { runStatusLineInject, runStatusLineRemove } from './src/cli/statusline.ts';
 import { join } from 'node:path';
 
 const VERSION: string = packageJson.version;
@@ -53,6 +54,8 @@ function printHelp(): number {
       '  fleet uninstall                Remove plugin registration',
       '  fleet doctor                   Health check',
       '  fleet reconcile [--dry-run]    Sweep orphan status files',
+      '  fleet statusline --inject      Add fleet status to tmux row 2',
+      '  fleet statusline --remove      Remove fleet status from tmux',
       '  fleet --version, -v            Print version',
       '  fleet --help, -h               Show this help',
       '',
@@ -217,6 +220,16 @@ function handleCli(args: string[]): number | null {
       const dryRun = args.includes('--dry-run');
       const verbose = args.includes('--verbose');
       return runReconcile(dryRun, verbose);
+    }
+    case 'statusline': {
+      if (args.includes('--inject') || args.includes('--install')) {
+        return runStatusLineInject();
+      }
+      if (args.includes('--remove') || args.includes('--uninstall')) {
+        return runStatusLineRemove();
+      }
+      process.stderr.write('Usage: fleet statusline --inject | --remove\n');
+      return 1;
     }
     default:
       process.stderr.write(`Unknown command: ${command}\n`);
