@@ -1,6 +1,10 @@
-import { existsSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { runStatusLineInject, runStatusLineRemove } from './statusline.ts';
+
+const FLEET_MANAGED_MARKER = '# fleet-managed';
+const FLEET_TMUX_LINE = `run-shell "fleet statusline --inject" ${FLEET_MANAGED_MARKER}`;
 
 function fleetPluginDir(): string {
   return resolve(import.meta.dir, '../..');
@@ -8,6 +12,46 @@ function fleetPluginDir(): string {
 
 function marketplaceDir(): string {
   return join(homedir(), '.local', 'share', 'fleet-marketplace');
+}
+
+export function tmuxConfPath(): string {
+  const xdgConfig = Bun.env.XDG_CONFIG_HOME || join(homedir(), '.config');
+  const xdgPath = join(xdgConfig, 'tmux', 'tmux.conf');
+  if (existsSync(xdgPath)) return xdgPath;
+
+  const legacyPath = join(homedir(), '.tmux.conf');
+  if (existsSync(legacyPath)) return legacyPath;
+
+  // Prefer XDG path even when neither exists — caller checks before writing.
+  return xdgPath;
+}
+
+export function addTmuxConfLine(path: string = tmuxConfPath()): boolean {
+  if (!existsSync(path)) return false;
+
+  const contents = readFileSync(path, 'utf8');
+  if (contents.includes(FLEET_MANAGED_MARKER)) return true;
+
+  const separator = contents.length === 0 || contents.endsWith('\n') ? '\n' : '\n\n';
+  const next = contents + separator + FLEET_TMUX_LINE + '\n';
+  writeFileSync(path, next);
+  return true;
+}
+
+export function removeTmuxConfLine(path: string = tmuxConfPath()): boolean {
+  if (!existsSync(path)) return false;
+
+  const contents = readFileSync(path, 'utf8');
+  if (!contents.includes(FLEET_MANAGED_MARKER)) return true;
+
+  const filtered = contents
+    .split('\n')
+    .filter((line) => !line.includes(FLEET_MANAGED_MARKER))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n');
+
+  writeFileSync(path, filtered);
+  return true;
 }
 
 function ensureMarketplace(fleetDir: string): string {
@@ -55,10 +99,27 @@ export function runInstall(): number {
     stdout: 'inherit',
     stderr: 'inherit',
   });
-  return install.exitCode ?? 1;
+  if (install.exitCode !== 0) return install.exitCode ?? 1;
+
+  const confPath = tmuxConfPath();
+  if (addTmuxConfLine(confPath)) {
+    process.stdout.write(`Added fleet statusline hook to ${confPath}\n`);
+  } else {
+    process.stderr.write(`tmux.conf not found at ${confPath} — skipping tmux integration\n`);
+  }
+
+  runStatusLineInject();
+  return 0;
 }
 
 export function runUninstall(): number {
+  runStatusLineRemove();
+
+  const confPath = tmuxConfPath();
+  if (removeTmuxConfLine(confPath)) {
+    process.stdout.write(`Removed fleet statusline hook from ${confPath}\n`);
+  }
+
   const uninstall = Bun.spawnSync({
     cmd: ['claude', 'plugin', 'uninstall', 'fleet'],
     stdout: 'inherit',
