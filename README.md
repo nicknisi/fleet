@@ -33,9 +33,14 @@ Fleet hooks into Claude Code's event system to track agent state in real time. I
 fleet install
 ```
 
-This registers Fleet as a local marketplace and installs the plugin. The hooks start firing immediately in all new Claude Code sessions — no `settings.json` editing required.
+This does three things:
+1. Registers Fleet as a Claude Code plugin (hooks fire automatically in all new sessions)
+2. Adds a second tmux status row showing all active agents
+3. Adds a `run-shell` line to your tmux.conf (marked `# fleet-managed`)
 
-To remove:
+No `settings.json` editing required.
+
+To remove everything cleanly:
 
 ```bash
 fleet uninstall
@@ -121,16 +126,29 @@ Fleet also works as a non-interactive CLI for scripting and tmux integration.
 | Command                                   | Description                                                                      |
 | ----------------------------------------- | -------------------------------------------------------------------------------- |
 | `fleet status [--tmux] <session>`         | Query agent state. `--tmux` outputs a tmux format string for status bars.        |
+| `fleet status --statusline`               | Render a full multi-agent status line for tmux's second row.                     |
 | `fleet next`                              | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE). |
 | `fleet send <session> <prompt>`           | Send a prompt to a session. Refuses unsafe states unless `--force`.              |
 | `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.        |
 | `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.             |
-| `fleet install`                           | Register Fleet as a Claude Code plugin.                                          |
-| `fleet uninstall`                         | Remove the plugin registration.                                                  |
+| `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.             |
+| `fleet uninstall`                         | Remove plugin registration + tmux status row.                                    |
+| `fleet statusline --inject`               | Manually add the second tmux status row.                                         |
+| `fleet statusline --remove`               | Manually remove the second tmux status row.                                      |
 
 ### Tmux Status Bar Integration
 
-Add to your tmux config to show agent status in the status bar:
+Fleet supports two levels of tmux integration:
+
+**Second status row (recommended):** A dedicated row showing all agents that need attention, with clickable entries. Set up automatically by `fleet install`, or manually:
+
+```bash
+fleet statusline --inject
+```
+
+Each entry is clickable (tmux 3.2+) — click an agent name to switch to that session. Only agents that need you (PERMIT, QUESTION, DONE, BUSY) appear. IDLE sessions are hidden.
+
+**Status-right icon (lightweight):** A single icon in your existing status bar:
 
 ```
 set -g status-right '#(fleet status --tmux #{session_name})'
@@ -141,7 +159,7 @@ Shows a colored icon when agents in the current session need attention. Empty ot
 ### Tmux Keybindings
 
 ```
-bind-key y display-popup -E -w 90% -h 50% "fleet"
+bind-key y display-popup -E -w 90% -h 70% "fleet"
 bind-key n run-shell "fleet next"
 ```
 
@@ -172,9 +190,11 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 
 2. **JSONL event stream** (Layer 2) — Each hook appends to a per-pane event log. The TUI reads only the last event. Key insight: a `stop_reason` of `tool_use` means the agent is about to run another tool (BUSY), while `end_turn` means actually done.
 
-3. **Pane scraping** (Layer 3, ~50ms) — `tmux capture-pane` as the visual arbiter. Detects `[y/n]` permission prompts visually. Used as a tiebreaker when layers 1+2 disagree.
+3. **Pane scraping** (Layer 3, ~50ms) — `tmux capture-pane` as the visual arbiter. Detects permission prompts (`[y/n]`), question dialogs (`Enter to select`), spinners, and idle prompts. When the scraper has a result, it wins — it sees what's actually on screen.
 
 **Freshness invariant:** A state transition is only accepted if its timestamp is newer than the current state's timestamp. Prevents out-of-order hook deliveries from causing flicker.
+
+**Verify on switch:** When you navigate to a pane (Enter or click), Fleet scrapes it immediately and updates the status file. Stale states get corrected the moment you look at them.
 
 **Decay:** `done` decays to `idle` after 60 seconds. `working` times out to `idle` after 3 minutes.
 
@@ -182,7 +202,7 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 
 The Claude Code plugin (`hooks/`) fires on five events:
 
-- **Notification** — Splits into three sub-types: `permission_prompt` (waiting), `elicitation_dialog` (asking), `idle_prompt` (done)
+- **Notification** — Splits into three sub-types: `permission_prompt` → permit, `elicitation_dialog` → question, `idle_prompt` → done
 - **PreToolUse** — Agent is running a tool (working)
 - **Stop** — Agent stopped. `tool_use` stop reason = still working. `end_turn` = actually done. Background tasks suppress completion. 3-second grace period before marking done.
 - **SubagentStop** — Subagent finished; parent keeps working
@@ -194,9 +214,10 @@ Each hook script sources `hooks/lib.sh` which handles status file writes, JSONL 
 
 The TUI separates cheap and expensive operations:
 
-- **Every 500ms:** Re-read `.status` files + one `tmux list-panes` call. No subprocesses beyond that.
-- **Every 5s:** Refresh git branches (`git rev-parse` per unique path) and port detection (`lsof`).
+- **Every 500ms:** Re-read `.status` files + one `tmux list-panes` call + JSONL last-line read. No subprocesses beyond that.
+- **Every 5s:** Refresh git branches (`git rev-parse` per unique path), port detection (`lsof`), and pane scraping (`tmux capture-pane` per pane, ~50ms each).
 - **On keypress:** Zero subprocess calls. Just redraws from cached state.
+- **On switch:** Scrapes the target pane and corrects the status file before switching. Stale states are fixed the moment you navigate to them.
 - **During send/filter:** All refresh timers pause. The event loop is yours.
 - **JSONL reads:** Only the last line is parsed (not the entire file).
 
@@ -244,13 +265,14 @@ bun run format:check     # oxfmt --check
 
 ### Testing
 
-Tests are collocated (`*.test.ts` next to source). The state engine, ANSI utilities, and TUI model are unit-tested. Tmux-dependent code has integration-style tests that gracefully degrade outside tmux.
+Tests are collocated (`*.test.ts` next to source). The state engine, ANSI utilities, TUI model, and CLI commands are unit-tested. Tmux-dependent code has integration-style tests that gracefully degrade outside tmux.
 
 ```bash
-bun test                 # 74 tests, ~30ms
+bun test                 # 113 tests, ~40ms
 bun test src/state/      # State engine only
 bun test src/terminal/   # Terminal primitives only
 bun test src/tui/        # TUI model only
+bun test src/cli/        # CLI commands
 ```
 
 ## Demo video
