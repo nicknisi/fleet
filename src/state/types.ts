@@ -42,6 +42,7 @@ export interface AgentState {
   paneId: string;
   paneNum: number;
   session: string;
+  claudeName: string | null;
   status: AgentStatus;
   tool: string | null;
   project: string | null;
@@ -49,6 +50,17 @@ export interface AgentState {
   ports: number[];
   ts: number;
   agentType: string;
+}
+
+export function extractClaudeName(paneTitle: string): string | null {
+  const trimmed = paneTitle.trim();
+  if (!trimmed.startsWith('✳')) return null;
+  const name = trimmed.slice(1).trim();
+  return name.length > 0 ? name : null;
+}
+
+export function displayName(state: AgentState): string {
+  return state.claudeName ?? state.session;
 }
 
 export interface HookStatus {

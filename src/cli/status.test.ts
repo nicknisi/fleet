@@ -6,6 +6,7 @@ const makeState = (overrides: Partial<AgentState>): AgentState => ({
   paneId: '%42',
   paneNum: 42,
   session: 'test',
+  claudeName: null,
   status: AgentStatus.IDLE,
   tool: null,
   project: '~/Developer/test',
@@ -156,5 +157,11 @@ describe('formatStatusLine', () => {
     ];
     const result = formatStatusLine(states);
     expect(result).toContain(' #[fg=#45475a]│ ');
+  });
+
+  test('uses session name even when claudeName is set', () => {
+    const states = [makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', claudeName: 'Fix auth bug' })];
+    const result = formatStatusLine(states);
+    expect(result).toContain('dotfiles');
   });
 });

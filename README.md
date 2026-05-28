@@ -4,7 +4,6 @@ A terminal dashboard for managing multiple AI agent sessions in tmux.
 
 Fleet watches your Claude Code sessions, shows which agents need attention, and lets you send prompts — all from a single pane. It replaces a sprawl of bash scripts with a compiled Bun binary and a Claude Code plugin that hooks into the event system automatically.
 
-
 <img width="3744" height="2402" alt="capture_20260527_180922" src="https://github.com/user-attachments/assets/0ad4ea10-948f-4e64-a509-9ad7ca2a2db4" />
 
 ## Install
@@ -34,6 +33,7 @@ fleet install
 ```
 
 This does three things:
+
 1. Registers Fleet as a Claude Code plugin (hooks fire automatically in all new sessions)
 2. Adds a second tmux status row showing all active agents
 3. Adds a `run-shell` line to your tmux.conf (marked `# fleet-managed`)

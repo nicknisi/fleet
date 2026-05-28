@@ -54,9 +54,7 @@ export function render(app: TuiApp, size: TerminalSize): string {
     out.push('\x1b[K\r\n');
     linesWritten++;
     const sessionLines = renderSessionList(app, contentRows, listWidth);
-    const previewLines = selected
-      ? renderPreview(selected, previewWidth, contentRows, isPassthrough)
-      : [];
+    const previewLines = selected ? renderPreview(selected, previewWidth, contentRows, isPassthrough) : [];
 
     for (let row = 0; row < contentRows - 1; row++) {
       const sessionLine = sessionLines[row] ?? '';

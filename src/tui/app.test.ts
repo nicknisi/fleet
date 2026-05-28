@@ -6,6 +6,7 @@ const makeState = (session: string, status: AgentStatus, paneId?: string): Agent
   paneId: paneId ?? `%${Math.floor(Math.random() * 1000)}`,
   paneNum: Math.floor(Math.random() * 1000),
   session,
+  claudeName: null,
   status,
   tool: null,
   project: `~/Developer/${session}`,

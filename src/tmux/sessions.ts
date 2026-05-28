@@ -7,9 +7,10 @@ export interface PaneInfo {
   windowName: string;
   currentPath: string;
   panePid: number;
+  paneTitle: string;
 }
 
-const PANE_FORMAT = '#{pane_id}\t#{session_name}\t#{window_name}\t#{pane_current_path}\t#{pane_pid}';
+const PANE_FORMAT = '#{pane_id}\t#{session_name}\t#{window_name}\t#{pane_current_path}\t#{pane_pid}\t#{pane_title}';
 
 export function listPanes(): PaneInfo[] {
   const result = tmux(['list-panes', '-a', '-F', PANE_FORMAT]);
@@ -19,7 +20,7 @@ export function listPanes(): PaneInfo[] {
   for (const line of result.stdout.split('\n')) {
     if (line.length === 0) continue;
     const parts = line.split('\t');
-    if (parts.length < 5) continue;
+    if (parts.length < 6) continue;
     const paneId = parts[0]!;
     panes.push({
       paneId,
@@ -28,6 +29,7 @@ export function listPanes(): PaneInfo[] {
       windowName: parts[2]!,
       currentPath: parts[3]!,
       panePid: parseInt(parts[4]!, 10),
+      paneTitle: parts[5]!,
     });
   }
   return panes;

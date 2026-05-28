@@ -72,8 +72,12 @@ function formatSessionRow(state: AgentState, cols: number, selected: boolean): s
   const nameColor = selected ? C.bold : '';
   const name = state.session.padEnd(15);
 
-  let project = state.project ?? '';
-  project = project.replace(/^~\/Developer\//, '');
+  let detail = '';
+  if (state.claudeName) {
+    detail = state.claudeName;
+  } else {
+    detail = (state.project ?? '').replace(/^~\/Developer\//, '');
+  }
 
   const branch = state.branch ?? '';
   const branchColor = branch && branch !== 'main' && branch !== 'master' ? C.purple : C.gray;
@@ -85,7 +89,8 @@ function formatSessionRow(state: AgentState, cols: number, selected: boolean): s
 
   const fixedW = 3 + 15 + 1 + 14 + 5;
   const projectW = Math.max(8, cols - fixedW);
-  const row = `${sel} ${stColor}${display.icon}${C.reset} ${nameColor}${name}${C.reset}${C.gray}${truncate(project, projectW).padEnd(projectW)}${C.reset} ${branchColor}${truncate(branch, 12).padEnd(12)}${C.reset} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
+  const detailColor = state.claudeName ? C.dim : C.gray;
+  const row = `${sel} ${stColor}${display.icon}${C.reset} ${nameColor}${name}${C.reset}${detailColor}${truncate(detail, projectW).padEnd(projectW)}${C.reset} ${branchColor}${truncate(branch, 12).padEnd(12)}${C.reset} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
 
   return truncateAnsi(row, cols);
 }
@@ -167,10 +172,7 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
     );
   } else if (app.mode === TuiMode.PREVIEW) {
     const selected = app.selectedState();
-    const hints = [
-      `${chip('↑↓')} ${C.gray}nav${C.reset}`,
-      `${chip('i')} ${C.gray}passthrough${C.reset}`,
-    ];
+    const hints = [`${chip('↑↓')} ${C.gray}nav${C.reset}`, `${chip('i')} ${C.gray}passthrough${C.reset}`];
     if (selected?.status === AgentStatus.PERMIT) {
       hints.push(`${chip('y')} ${C.gray}approve${C.reset}`);
       hints.push(`${chip('n')} ${C.gray}deny${C.reset}`);

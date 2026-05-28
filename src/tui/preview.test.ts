@@ -9,6 +9,7 @@ const makeState = (status: AgentStatus): AgentState => ({
   paneId: '%1',
   paneNum: 1,
   session: 'test',
+  claudeName: null,
   status,
   tool: null,
   project: '~/Developer/test',

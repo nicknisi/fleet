@@ -33,7 +33,8 @@ export function renderPreview(
   const display = STATUS_DISPLAY[state.status];
 
   const modeTag = passthrough ? ` ${C.cyan}● LIVE${C.reset}` : '';
-  const title = `${display.icon} ${state.session} · ${state.status}${modeTag}`;
+  const claudeInfo = state.claudeName ? ` · ${state.claudeName}` : '';
+  const title = `${display.icon} ${state.session} · ${state.status}${claudeInfo}${modeTag}`;
   const toolInfo = state.tool ? ` · ${state.tool}` : '';
   const portInfo = state.ports.length > 0 ? ` · ⌁${state.ports.join(',')}` : '';
   lines.push(truncateAnsi(`${C.bold}${title}${C.reset}${C.gray}${toolInfo}${portInfo}${C.reset}`, width));

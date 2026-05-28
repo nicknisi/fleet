@@ -83,7 +83,10 @@ describe('removeTmuxConfLine', () => {
   });
 
   test('collapses triple+ newlines to double', () => {
-    writeFileSync(confFile, 'set -g mouse on\n\n\nrun-shell "fleet statusline --inject" # fleet-managed\n\n\nset -g foo bar\n');
+    writeFileSync(
+      confFile,
+      'set -g mouse on\n\n\nrun-shell "fleet statusline --inject" # fleet-managed\n\n\nset -g foo bar\n',
+    );
     expect(removeTmuxConfLine(confFile)).toBe(true);
     const result = readFileSync(confFile, 'utf8');
     expect(result).not.toMatch(/\n{3,}/);

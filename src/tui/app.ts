@@ -65,7 +65,10 @@ export class TuiApp {
     if (this.filter.length === 0) return states;
     const lower = this.filter.toLowerCase();
     return states.filter(
-      (s) => s.session.toLowerCase().includes(lower) || (s.project?.toLowerCase().includes(lower) ?? false),
+      (s) =>
+        s.session.toLowerCase().includes(lower) ||
+        (s.claudeName?.toLowerCase().includes(lower) ?? false) ||
+        (s.project?.toLowerCase().includes(lower) ?? false),
     );
   }
 
