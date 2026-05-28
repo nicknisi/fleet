@@ -2,6 +2,7 @@ import { AgentStatus } from './types.ts';
 
 const DONE_DECAY_SECS = 60;
 const WORKING_TIMEOUT_SECS = 180;
+const ATTENTION_TIMEOUT_SECS = 600;
 
 export interface FuseInput {
   hookState: string;
@@ -42,6 +43,12 @@ export function fuseState(input: FuseInput): AgentStatus {
     if (input.currentStatus === AgentStatus.BUSY && age >= WORKING_TIMEOUT_SECS) {
       return AgentStatus.IDLE;
     }
+    if (
+      (input.currentStatus === AgentStatus.PERMIT || input.currentStatus === AgentStatus.QUESTION) &&
+      age >= ATTENTION_TIMEOUT_SECS
+    ) {
+      return AgentStatus.IDLE;
+    }
     return input.currentStatus;
   }
 
@@ -64,6 +71,9 @@ export function fuseState(input: FuseInput): AgentStatus {
     status = AgentStatus.IDLE;
   }
   if (status === AgentStatus.BUSY && hookAge >= WORKING_TIMEOUT_SECS) {
+    status = AgentStatus.IDLE;
+  }
+  if ((status === AgentStatus.PERMIT || status === AgentStatus.QUESTION) && hookAge >= ATTENTION_TIMEOUT_SECS) {
     status = AgentStatus.IDLE;
   }
 
