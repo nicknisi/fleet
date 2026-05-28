@@ -13,9 +13,9 @@ describe('detectFromPaneContent', () => {
     expect(detectFromPaneContent(lines)).toBe(AgentStatus.PERMIT);
   });
 
-  test('detects Enter to select pattern', () => {
-    const lines = ['Enter to select  ↑/↓  Esc to cancel  Tab to amend'];
-    expect(detectFromPaneContent(lines)).toBe(AgentStatus.PERMIT);
+  test('detects Enter to select as QUESTION', () => {
+    const lines = ['1. Option A', '2. Option B', 'Enter to select · ↑/↓ to navigate · Esc to cancel'];
+    expect(detectFromPaneContent(lines)).toBe(AgentStatus.QUESTION);
   });
 
   test('detects working spinner', () => {
@@ -23,9 +23,9 @@ describe('detectFromPaneContent', () => {
     expect(detectFromPaneContent(lines)).toBe(AgentStatus.BUSY);
   });
 
-  test('detects idle prompt', () => {
+  test('detects idle prompt as IDLE', () => {
     const lines = ['Done! Created the file.', '', '❯'];
-    expect(detectFromPaneContent(lines)).toBe(AgentStatus.DONE);
+    expect(detectFromPaneContent(lines)).toBe(AgentStatus.IDLE);
   });
 
   test('returns null for unrecognized content', () => {

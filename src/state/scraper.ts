@@ -19,7 +19,7 @@ export function detectFromPaneContent(lines: string[]): AgentStatus | null {
 
   if (/\[y\/n\]|\[Y\/n\]/i.test(bottomText)) return AgentStatus.PERMIT;
   if (/Do you want to (proceed|allow)/.test(bottomText)) return AgentStatus.PERMIT;
-  if (/Enter to select.*[↑↓]|Esc to cancel.*Tab to amend/.test(bottomText)) return AgentStatus.PERMIT;
+  if (/Enter to select.*[↑↓]|Esc to cancel/.test(bottomText)) return AgentStatus.QUESTION;
 
   let promptLine = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -39,5 +39,5 @@ export function detectFromPaneContent(lines: string[]): AgentStatus | null {
     return AgentStatus.BUSY;
   }
 
-  return AgentStatus.DONE;
+  return AgentStatus.IDLE;
 }
