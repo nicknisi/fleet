@@ -29,7 +29,7 @@ import { runInstall, runUninstall } from './src/cli/install.ts';
 import { runDoctor } from './src/cli/doctor.ts';
 import { runReconcile } from './src/cli/reconcile.ts';
 import { runStatusLineInject, runStatusLineRemove } from './src/cli/statusline.ts';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const VERSION: string = packageJson.version;
@@ -141,6 +141,26 @@ function verifyPaneState(state: AgentState, statusDirs: string[]): void {
         return;
       }
     } catch {}
+  }
+}
+
+// Switching to a ready agent is your acknowledgement — you've seen it, so drop
+// it out of the attention tier. Recorded as an event (the newest signal wins,
+// and any later agent activity supersedes it) rather than a separate store.
+function acknowledgeIfDone(state: AgentState, statusDirs: string[]): void {
+  if (state.status !== AgentStatus.DONE) return;
+  const paneNum = state.paneId.replace('%', '');
+  const line = JSON.stringify({ event: 'Acknowledged', ts: Math.floor(Date.now() / 1000) }) + '\n';
+  for (const dir of statusDirs) {
+    const eventsFile = join(dir, `${paneNum}.events.jsonl`);
+    if (existsSync(eventsFile)) {
+      try {
+        appendFileSync(eventsFile, line);
+      } catch {
+        // Best effort — acknowledgement is non-critical
+      }
+      return;
+    }
   }
 }
 
@@ -348,6 +368,7 @@ function handleFilterInput(
       const selected = app.selectedState();
       if (selected) {
         verifyPaneState(selected, statusDirs);
+        acknowledgeIfDone(selected, statusDirs);
         finish(0);
         switchClient(selected.paneId);
       }
@@ -637,6 +658,7 @@ async function launchTui(): Promise<number> {
           const selected = app.selectedState();
           if (selected) {
             verifyPaneState(selected, statusDirs);
+            acknowledgeIfDone(selected, statusDirs);
             finish(0);
             switchClient(selected.paneId);
             return;

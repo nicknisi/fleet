@@ -93,6 +93,10 @@ export function deriveStatusFromEvents(events: EventEntry[]): AgentStatus | null
 
   const last = events[events.length - 1]!;
 
+  // Fleet writes this when you switch to a ready agent — you've seen it, so it
+  // drops out of the attention tier until the agent does something new.
+  if (last.event === 'Acknowledged') return AgentStatus.IDLE;
+
   if (last.event === 'Stop' || last.event === 'SubagentStop') {
     if (last.background_tasks) return AgentStatus.BUSY;
     if (last.stop_reason === 'tool_use') return AgentStatus.BUSY;

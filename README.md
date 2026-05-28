@@ -209,6 +209,8 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 
 **Verify on switch:** When you navigate to a pane (Enter or click), Fleet scrapes it immediately and updates the status file. Stale states get corrected the moment you look at them.
 
+**Acknowledge on switch:** Switching to a `ready` agent counts as acknowledgement — you've seen it, so it drops to `idle` and leaves the attention tier. This is recorded as an `Acknowledged` event in the pane's log (the newest signal wins, and any later agent activity supersedes it), so the acknowledgement survives across Fleet restarts without a separate store. So: green `ready` = needs your eyes; blue `idle` = seen, nothing pending.
+
 **Decay:** `ready` never auto-decays — a finished turn is waiting on you and stays until you act on it (switch to it, send a prompt, or it starts working again). Only `working` times out to `idle`, after 3 minutes, so a crashed turn doesn't spin forever.
 
 ### Hook Details

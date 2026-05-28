@@ -85,4 +85,16 @@ describe('deriveStatusFromEvents', () => {
     const events = parseEventLog('{"event":"Notification","ts":1,"notification_type":"permission_prompt"}');
     expect(deriveStatusFromEvents(events)).toBe(AgentStatus.PERMIT);
   });
+
+  test('an Acknowledged event clears a ready turn to IDLE', () => {
+    const events = parseEventLog(
+      '{"event":"Stop","ts":1,"stop_reason":"end_turn"}\n{"event":"Acknowledged","ts":2}',
+    );
+    expect(deriveStatusFromEvents(events)).toBe(AgentStatus.IDLE);
+  });
+
+  test('real activity after an Acknowledged event overrides it', () => {
+    const events = parseEventLog('{"event":"Acknowledged","ts":1}\n{"event":"PreToolUse","ts":2,"tool":"Edit"}');
+    expect(deriveStatusFromEvents(events)).toBe(AgentStatus.BUSY);
+  });
 });
