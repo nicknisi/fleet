@@ -76,6 +76,8 @@ Each row leads with the tmux session name. When Claude Code has auto-named a ses
 | `?`                        | Help overlay                        |
 | `q` or `Esc`               | Quit (or clear filter)              |
 
+You can also **click** a session row to select it; clicking a `ready` agent acknowledges it in place (see [Acknowledge](#agent-states)).
+
 ### Agent States
 
 Fleet tracks seven states, sorted by urgency. The icon and color tell you what's happening at a glance:
@@ -141,6 +143,8 @@ Fleet also works as a non-interactive CLI for scripting and tmux integration.
 | `fleet status [--tmux] <session>`         | Query agent state. `--tmux` outputs a tmux format string for status bars.        |
 | `fleet status --statusline`               | Render a full multi-agent status line for tmux's second row.                     |
 | `fleet next`                              | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE). |
+| `fleet switch <pane-id>`                  | Acknowledge a ready agent and switch to it (used by the statusline click binding). |
+| `fleet ack <pane-id>`                     | Acknowledge a ready agent in place (clear it from the attention tier, no switch). |
 | `fleet send <session> <prompt>`           | Send a prompt to a session. Refuses unsafe states unless `--force`.              |
 | `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.        |
 | `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.             |
@@ -209,7 +213,13 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 
 **Verify on switch:** When you navigate to a pane (Enter or click), Fleet scrapes it immediately and updates the status file. Stale states get corrected the moment you look at them.
 
-**Acknowledge on switch:** Switching to a `ready` agent counts as acknowledgement — you've seen it, so it drops to `idle` and leaves the attention tier. This is recorded as an `Acknowledged` event in the pane's log (the newest signal wins, and any later agent activity supersedes it), so the acknowledgement survives across Fleet restarts without a separate store. So: green `ready` = needs your eyes; blue `idle` = seen, nothing pending.
+**Acknowledge:** Once you've seen a `ready` agent it drops to `idle` and leaves the attention tier (and the statusline). Three ways to acknowledge:
+
+- **Click it in the dashboard** — acknowledges in place, so you can clear several finished agents without leaving Fleet.
+- **Switch to it** (Enter, or click its statusline entry) — acknowledges, then takes you there.
+- **`fleet ack <pane>`** — from the CLI, for scripting or bulk-clearing.
+
+Acknowledgement is anchored on the hook status file (the one signal that always exists for a tracked pane — the event log may not), flipping a ready state to `idle`; when an event log is present it also appends an `Acknowledged` event so an event-derived completion can't re-assert. It survives Fleet restarts with no separate store. So: green `ready` = needs your eyes; blue `idle` = seen, nothing pending.
 
 **Decay:** `ready` never auto-decays — a finished turn is waiting on you and stays until you act on it (switch to it, send a prompt, or it starts working again). Only `working` times out to `idle`, after 3 minutes, so a crashed turn doesn't spin forever.
 

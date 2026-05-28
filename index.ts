@@ -1,6 +1,7 @@
 import packageJson from './package.json' with { type: 'json' };
 import { TuiApp, TuiMode } from './src/tui/app.ts';
 import { render } from './src/tui/render.ts';
+import { renderHeader } from './src/tui/dashboard.ts';
 import { canSendTo } from './src/tui/send.ts';
 import { canKillSession } from './src/tui/kill.ts';
 import { parseKeyEvent } from './src/terminal/input.ts';
@@ -16,6 +17,7 @@ import {
 import { fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
+import { acknowledgedStatus } from './src/state/acknowledge.ts';
 import { scrapePane } from './src/state/scraper.ts';
 import { AgentStatus, extractClaudeName, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
@@ -144,38 +146,41 @@ function verifyPaneState(state: AgentState, statusDirs: string[]): void {
   }
 }
 
-// Switching to a ready agent is your acknowledgement — you've seen it, so drop
-// it out of the attention tier. Recorded as an event (the newest signal wins,
-// and any later agent activity supersedes it) rather than a separate store.
-function appendAck(paneId: string, statusDirs: string[]): void {
+// Acknowledging a ready agent marks it seen — you've looked, so it drops out of
+// the attention tier. Anchored on the hook status file, which always exists for
+// a tracked pane (the event log may not). Flips a ready status to idle, and when
+// an event log is present also appends an Acknowledged event so an event-derived
+// DONE can't re-assert over the idle write on the next refresh. Self-gating: a
+// non-ready agent (working/waiting/asking) is left untouched.
+function acknowledgePane(paneId: string, statusDirs: string[]): void {
   const paneNum = paneId.replace('%', '');
-  const line = JSON.stringify({ event: 'Acknowledged', ts: Math.floor(Date.now() / 1000) }) + '\n';
+  const now = Math.floor(Date.now() / 1000);
   for (const dir of statusDirs) {
+    const statusFile = join(dir, `${paneNum}.status`);
+    let current: Record<string, unknown>;
+    try {
+      current = JSON.parse(readFileSync(statusFile, 'utf-8')) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (current.pane !== paneId) continue;
+    const updated = acknowledgedStatus(current, now);
+    if (!updated) return;
+    try {
+      writeFileSync(statusFile, JSON.stringify(updated) + '\n');
+    } catch {
+      // Best effort — acknowledgement is non-critical
+    }
     const eventsFile = join(dir, `${paneNum}.events.jsonl`);
     if (existsSync(eventsFile)) {
       try {
-        appendFileSync(eventsFile, line);
+        appendFileSync(eventsFile, JSON.stringify({ event: 'Acknowledged', ts: now }) + '\n');
       } catch {
-        // Best effort — acknowledgement is non-critical
+        // Best effort
       }
-      return;
     }
+    return;
   }
-}
-
-function acknowledgeIfDone(state: AgentState, statusDirs: string[]): void {
-  if (state.status === AgentStatus.DONE) appendAck(state.paneId, statusDirs);
-}
-
-// Cheap status read for a single pane from its event log — no full scrape. Used
-// by the statusline click path, where a full refresh would lag the switch.
-function eventStatusForPane(paneId: string, statusDirs: string[]): AgentStatus | null {
-  const paneNum = paneId.replace('%', '');
-  for (const dir of statusDirs) {
-    const recent = readLastEvents(join(dir, `${paneNum}.events.jsonl`), 12);
-    if (recent.length > 0) return deriveStatusFromEvents(recent);
-  }
-  return null;
 }
 
 function shortenPath(path: string): string {
@@ -311,6 +316,17 @@ function handleCli(args: string[]): number | null {
       const states = fullRefreshStates(statusDirs);
       return runNext(states);
     }
+    case 'ack': {
+      // Acknowledge a ready agent without switching to it (clears it from the
+      // attention tier in place). Handy for scripting or bulk-clearing.
+      const target = args[1];
+      if (!target) {
+        process.stderr.write('Usage: fleet ack <pane-id>\n');
+        return 1;
+      }
+      acknowledgePane(target, statusDirs);
+      return 0;
+    }
     case 'switch': {
       // Invoked by the statusline mouse binding. Acknowledge a ready agent (so a
       // click counts the same as Enter in the dashboard), then switch to it.
@@ -319,9 +335,7 @@ function handleCli(args: string[]): number | null {
         process.stderr.write('Usage: fleet switch <pane-id>\n');
         return 1;
       }
-      if (eventStatusForPane(target, statusDirs) === AgentStatus.DONE) {
-        appendAck(target, statusDirs);
-      }
+      acknowledgePane(target, statusDirs);
       try {
         switchClient(target);
       } catch {
@@ -400,7 +414,7 @@ function handleFilterInput(
       const selected = app.selectedState();
       if (selected) {
         verifyPaneState(selected, statusDirs);
-        acknowledgeIfDone(selected, statusDirs);
+        acknowledgePane(selected.paneId, statusDirs);
         finish(0);
         switchClient(selected.paneId);
       }
@@ -549,18 +563,50 @@ async function launchTui(): Promise<number> {
       if (isMouseSequence(buf)) {
         const mouse = parseMouseEvent(buf);
         if (!mouse) return;
+        const sz = getTerminalSize();
+
+        // Divider drag (preview / passthrough)
         if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
-          const sz = getTerminalSize();
           const dividerCol = app.listWidth(sz.cols) + 1;
           if (mouse.button === 'left' && mouse.type === 'press' && Math.abs(mouse.x - dividerCol) <= 1) {
             app.startDrag();
             needsRender = true;
-          } else if (mouse.type === 'move' && app.dragging) {
+            return;
+          }
+          if (mouse.type === 'move' && app.dragging) {
             app.updateDrag(mouse.x, sz.cols);
             needsRender = true;
-          } else if (mouse.type === 'release' && app.dragging) {
+            return;
+          }
+          if (mouse.type === 'release' && app.dragging) {
             app.endDrag();
             needsRender = true;
+            return;
+          }
+        }
+
+        // Click a session row → select it, and acknowledge it in place if it's
+        // ready. Lets you clear finished agents by clicking, without leaving the
+        // dashboard (statusline clicks switch instead — see `fleet switch`).
+        if (
+          mouse.button === 'left' &&
+          mouse.type === 'press' &&
+          (app.mode === TuiMode.DASHBOARD || app.mode === TuiMode.PREVIEW)
+        ) {
+          const inList = app.mode === TuiMode.DASHBOARD || mouse.x <= app.listWidth(sz.cols);
+          if (inList) {
+            const headerHeight = renderHeader(app, sz.cols).length;
+            const idx = mouse.y - headerHeight - 2;
+            const visible = app.visibleStates();
+            if (idx >= 0 && idx < visible.length) {
+              app.selectedIndex = idx;
+              const sel = visible[idx];
+              if (sel && sel.status === AgentStatus.DONE) {
+                acknowledgePane(sel.paneId, statusDirs);
+                app.updateStates(refreshStates(statusDirs));
+              }
+              needsRender = true;
+            }
           }
         }
         return;
@@ -690,7 +736,7 @@ async function launchTui(): Promise<number> {
           const selected = app.selectedState();
           if (selected) {
             verifyPaneState(selected, statusDirs);
-            acknowledgeIfDone(selected, statusDirs);
+            acknowledgePane(selected.paneId, statusDirs);
             finish(0);
             switchClient(selected.paneId);
             return;
