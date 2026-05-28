@@ -10,6 +10,7 @@ export function buildInjectCommands(): string[][] {
   return [
     ['tmux', 'set', '-g', 'status', '2'],
     ['tmux', 'set', '-g', 'status-format[1]', '#[align=left]#(fleet status --statusline)'],
+    ['tmux', 'bind', '-T', 'root', 'Status', 'run-shell', 'tmux switch-client -t "#{mouse_status_range}"'],
   ];
 }
 
@@ -17,6 +18,7 @@ export function buildRemoveCommands(): string[][] {
   return [
     ['tmux', 'set', '-g', '-u', 'status-format[1]'],
     ['tmux', 'set', '-g', 'status', 'on'],
+    ['tmux', 'unbind', '-T', 'root', 'Status'],
   ];
 }
 

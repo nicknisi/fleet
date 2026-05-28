@@ -135,6 +135,20 @@ describe('formatStatusLine', () => {
     expect(result).toContain('10s');
   });
 
+  test('wraps each entry in a clickable range with the pane id', () => {
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, session: 'a', paneId: '%42' }),
+      makeState({ status: AgentStatus.BUSY, session: 'b', paneId: '%7' }),
+    ];
+    const result = formatStatusLine(states);
+    expect(result).toContain('#[range=user|%42]');
+    expect(result).toContain('#[range=user|%7]');
+    expect(result).toContain('#[norange]');
+    // Two entries -> two range openings and two norange closings
+    expect(result.match(/#\[range=user\|/g)?.length).toBe(2);
+    expect(result.match(/#\[norange\]/g)?.length).toBe(2);
+  });
+
   test('joins multiple entries with the dim separator', () => {
     const states = [
       makeState({ status: AgentStatus.PERMIT, session: 'a', paneId: '%1' }),

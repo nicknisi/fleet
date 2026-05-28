@@ -19,7 +19,7 @@ export function formatStatusLine(states: AgentState[]): string {
 
   const entries = filtered.map((s) => {
     const display = STATUS_DISPLAY[s.status];
-    return `#[fg=${display.color}]${display.icon} #[bold]${s.session}#[nobold] ${formatAge(s.ts)}`;
+    return `#[range=user|${s.paneId}]#[fg=${display.color}]${display.icon} #[bold]${s.session}#[nobold] ${formatAge(s.ts)}#[norange]`;
   });
 
   return entries.join(' #[fg=#45475a]│ ');
