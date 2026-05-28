@@ -46,6 +46,7 @@ function printHelp(): number {
       'Usage:',
       '  fleet [--preview|--no-preview]  Launch TUI dashboard',
       '  fleet status [--tmux] <session> Query agent state',
+      '  fleet status --statusline      Render multi-agent tmux status line',
       '  fleet next                     Jump to next waiting agent',
       '  fleet send <session> <prompt>  Send prompt to session',
       '  fleet install                  Register as Claude Code plugin',

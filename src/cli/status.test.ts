@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { formatTmuxStatus, formatPlainStatus } from './status.ts';
+import { formatTmuxStatus, formatPlainStatus, formatStatusLine, formatAge } from './status.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 
 const makeState = (overrides: Partial<AgentState>): AgentState => ({
@@ -45,5 +45,102 @@ describe('formatTmuxStatus', () => {
   test('returns empty for busy session', () => {
     const states = [makeState({ status: AgentStatus.BUSY })];
     expect(formatTmuxStatus(states, 'test')).toBe('');
+  });
+});
+
+describe('formatAge', () => {
+  const now = Math.floor(Date.now() / 1000);
+  test('returns "now" for very recent ts', () => {
+    expect(formatAge(now)).toBe('now');
+    expect(formatAge(now - 4)).toBe('now');
+  });
+  test('returns seconds under a minute', () => {
+    expect(formatAge(now - 5)).toBe('5s');
+    expect(formatAge(now - 59)).toBe('59s');
+  });
+  test('returns minutes under an hour', () => {
+    expect(formatAge(now - 60)).toBe('1m');
+    expect(formatAge(now - 3599)).toBe('59m');
+  });
+  test('returns hours under a day', () => {
+    expect(formatAge(now - 3600)).toBe('1h');
+    expect(formatAge(now - 86399)).toBe('23h');
+  });
+  test('returns days otherwise', () => {
+    expect(formatAge(now - 86400)).toBe('1d');
+    expect(formatAge(now - 86400 * 3)).toBe('3d');
+  });
+});
+
+describe('formatStatusLine', () => {
+  test('returns empty string when all idle/shell/down', () => {
+    const states = [
+      makeState({ status: AgentStatus.IDLE, session: 'a' }),
+      makeState({ status: AgentStatus.SHELL, session: 'b', paneId: '%2' }),
+      makeState({ status: AgentStatus.DOWN, session: 'c', paneId: '%3' }),
+    ];
+    expect(formatStatusLine(states)).toBe('');
+  });
+
+  test('returns empty string for no states', () => {
+    expect(formatStatusLine([])).toBe('');
+  });
+
+  test('includes PERMIT, QUESTION, DONE, BUSY but excludes IDLE/SHELL/DOWN', () => {
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, session: 'permit-s' }),
+      makeState({ status: AgentStatus.QUESTION, session: 'question-s', paneId: '%2' }),
+      makeState({ status: AgentStatus.DONE, session: 'done-s', paneId: '%3' }),
+      makeState({ status: AgentStatus.BUSY, session: 'busy-s', paneId: '%4' }),
+      makeState({ status: AgentStatus.IDLE, session: 'idle-s', paneId: '%5' }),
+      makeState({ status: AgentStatus.SHELL, session: 'shell-s', paneId: '%6' }),
+      makeState({ status: AgentStatus.DOWN, session: 'down-s', paneId: '%7' }),
+    ];
+    const result = formatStatusLine(states);
+    expect(result).toContain('permit-s');
+    expect(result).toContain('question-s');
+    expect(result).toContain('done-s');
+    expect(result).toContain('busy-s');
+    expect(result).not.toContain('idle-s');
+    expect(result).not.toContain('shell-s');
+    expect(result).not.toContain('down-s');
+  });
+
+  test('sorts PERMIT before QUESTION before DONE before BUSY', () => {
+    const states = [
+      makeState({ status: AgentStatus.BUSY, session: 'b-busy', paneId: '%1' }),
+      makeState({ status: AgentStatus.DONE, session: 'b-done', paneId: '%2' }),
+      makeState({ status: AgentStatus.QUESTION, session: 'b-question', paneId: '%3' }),
+      makeState({ status: AgentStatus.PERMIT, session: 'b-permit', paneId: '%4' }),
+    ];
+    const result = formatStatusLine(states);
+    const permitIdx = result.indexOf('b-permit');
+    const questionIdx = result.indexOf('b-question');
+    const doneIdx = result.indexOf('b-done');
+    const busyIdx = result.indexOf('b-busy');
+    expect(permitIdx).toBeGreaterThanOrEqual(0);
+    expect(permitIdx).toBeLessThan(questionIdx);
+    expect(questionIdx).toBeLessThan(doneIdx);
+    expect(doneIdx).toBeLessThan(busyIdx);
+  });
+
+  test('formats each entry with icon, bold session, and age', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const states = [makeState({ status: AgentStatus.PERMIT, session: 'mysession', ts: now - 10 })];
+    const result = formatStatusLine(states);
+    // Icon for PERMIT is ⚠ with color #f9e2af
+    expect(result).toContain('#[fg=#f9e2af]');
+    expect(result).toContain('⚠');
+    expect(result).toContain('#[bold]mysession#[nobold]');
+    expect(result).toContain('10s');
+  });
+
+  test('joins multiple entries with the dim separator', () => {
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, session: 'a', paneId: '%1' }),
+      makeState({ status: AgentStatus.BUSY, session: 'b', paneId: '%2' }),
+    ];
+    const result = formatStatusLine(states);
+    expect(result).toContain(' #[fg=#45475a]│ ');
   });
 });
