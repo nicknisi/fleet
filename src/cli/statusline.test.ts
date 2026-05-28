@@ -19,14 +19,18 @@ describe('buildInjectCommands', () => {
     }
   });
 
-  test('bind uses MouseDown1Status key and guards on mouse_status_range', () => {
+  test('bind uses MouseDown1Status with if-shell guard for row 1 only', () => {
     const cmds = buildInjectCommands();
     const bindCmd = cmds.find((c) => c[1] === 'bind');
     expect(bindCmd).toBeDefined();
     expect(bindCmd).toContain('MouseDown1Status');
-    const shellArg = bindCmd!.find((a) => a.includes('mouse_status_range'));
-    expect(shellArg).toBeDefined();
-    expect(shellArg).toContain('switch-client');
+    expect(bindCmd).toContain('if-shell');
+    const condArg = bindCmd!.find((a) => a.includes('mouse_status_line'));
+    expect(condArg).toBeDefined();
+    const trueArg = bindCmd!.find((a) => a.includes('switch-client'));
+    expect(trueArg).toBeDefined();
+    const falseArg = bindCmd!.find((a) => a.includes('select-window'));
+    expect(falseArg).toBeDefined();
   });
 });
 
