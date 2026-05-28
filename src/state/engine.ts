@@ -45,9 +45,9 @@ export function fuseState(input: FuseInput): AgentStatus {
     return input.currentStatus;
   }
 
-  // Scrape layer is the visual arbiter — PERMIT from scrape always wins
-  if (input.scrapeStatus === AgentStatus.PERMIT) {
-    return AgentStatus.PERMIT;
+  // Scrape layer is the visual arbiter — it sees what's actually on screen
+  if (input.scrapeStatus !== null) {
+    return input.scrapeStatus;
   }
 
   // Event layer is more specific than hook layer

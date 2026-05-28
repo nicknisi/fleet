@@ -17,7 +17,7 @@ export function buildInjectCommands(): string[][] {
       'root',
       'MouseDown1Status',
       'run-shell',
-      'if [ -n "#{mouse_status_range}" ]; then tmux switch-client -t "#{mouse_status_range}"; fi',
+      'case "#{mouse_status_range}" in %*) tmux switch-client -t "#{mouse_status_range}" ;; esac',
     ],
   ];
 }
