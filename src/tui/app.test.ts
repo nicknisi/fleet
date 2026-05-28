@@ -84,4 +84,22 @@ describe('TuiApp', () => {
     app.moveUp();
     expect(app.selectedIndex).toBe(1);
   });
+
+  test('enterPassthrough / exitPassthrough', () => {
+    const app = new TuiApp();
+    app.mode = TuiMode.PREVIEW;
+    app.enterPassthrough();
+    expect(app.mode as string).toBe('PASSTHROUGH');
+    app.exitPassthrough();
+    expect(app.mode as string).toBe('PREVIEW');
+  });
+
+  test('enterSend from preview restores to preview', () => {
+    const app = new TuiApp();
+    app.mode = TuiMode.PREVIEW;
+    app.enterSend();
+    expect(app.mode as string).toBe('SEND');
+    app.exitSend();
+    expect(app.mode as string).toBe('PREVIEW');
+  });
 });

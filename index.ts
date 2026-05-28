@@ -19,7 +19,7 @@ import { AgentStatus, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import { listPanes, switchClient, gitBranch } from './src/tmux/sessions.ts';
 import { detectPorts } from './src/tmux/ports.ts';
-import { sendKeys } from './src/tmux/send.ts';
+import { sendKeys, sendRawKey } from './src/tmux/send.ts';
 import { runStatus } from './src/cli/status.ts';
 import { runNext } from './src/cli/next.ts';
 import { runSend } from './src/cli/send.ts';
@@ -272,6 +272,26 @@ function handleSendInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, _fi
   }
 }
 
+function handlePassthroughInput(app: TuiApp, buf: Buffer): void {
+  const selected = app.selectedState();
+  if (!selected) {
+    app.exitPassthrough();
+    return;
+  }
+
+  const first = buf[0];
+  if (first === 0x1b && buf.length === 1) {
+    app.exitPassthrough();
+    return;
+  }
+
+  try {
+    sendRawKey(selected.paneId, buf);
+  } catch {
+    // Silently fail — pane may have closed
+  }
+}
+
 async function launchTui(): Promise<number> {
   const registry = new AgentRegistry();
   const statusDirs = registry.statusDirs();
@@ -346,6 +366,19 @@ async function launchTui(): Promise<number> {
     const handleInput = (buf: Buffer) => {
       if (isMouseSequence(buf)) return;
 
+      // Passthrough mode — forward raw bytes, only Esc and Ctrl-C escape
+      if (app.mode === TuiMode.PASSTHROUGH) {
+        const first = buf[0];
+        if (first === 0x03) {
+          app.shouldQuit = true;
+          needsRender = true;
+          return;
+        }
+        handlePassthroughInput(app, buf);
+        needsRender = true;
+        return;
+      }
+
       const key = parseKeyEvent(buf);
 
       if (key.type === 'ctrl' && key.char === 'c') {
@@ -390,6 +423,37 @@ async function launchTui(): Promise<number> {
             case 'p':
               app.mode = app.mode === TuiMode.PREVIEW ? TuiMode.DASHBOARD : TuiMode.PREVIEW;
               break;
+            case 'i':
+              if (app.mode === TuiMode.PREVIEW && app.selectedState()) {
+                app.enterPassthrough();
+              }
+              break;
+            case 'y':
+              if (app.mode === TuiMode.PREVIEW) {
+                const sel = app.selectedState();
+                if (sel && sel.status === AgentStatus.PERMIT) {
+                  try {
+                    sendRawKey(sel.paneId, Buffer.from('y'));
+                  } catch {}
+                }
+              }
+              break;
+            case 'n':
+              if (app.mode === TuiMode.PREVIEW) {
+                const sel = app.selectedState();
+                if (sel && sel.status === AgentStatus.PERMIT) {
+                  try {
+                    sendRawKey(sel.paneId, Buffer.from('n'));
+                  } catch {}
+                  break;
+                }
+              }
+              {
+                const states = fullRefreshStates(statusDirs);
+                runNext(states);
+                finish(0);
+                return;
+              }
             case 's': {
               const selected = app.selectedState();
               if (selected && canSendTo(selected).ok) {
@@ -403,12 +467,6 @@ async function launchTui(): Promise<number> {
                 }
               }
               break;
-            }
-            case 'n': {
-              const states = fullRefreshStates(statusDirs);
-              runNext(states);
-              finish(0);
-              return;
             }
             case '?':
               app.mode = TuiMode.HELP;
@@ -451,16 +509,18 @@ async function launchTui(): Promise<number> {
       tick();
     });
 
-    // Fast timer: skip if user is actively typing (send/filter mode)
+    const isTyping = () => app.mode === TuiMode.SEND || app.isFiltering();
+
+    // Fast timer: keep running in passthrough (preview needs live updates), skip during typing
     refreshTimer = setInterval(() => {
-      if (app.mode === TuiMode.SEND || app.isFiltering()) return;
+      if (isTyping()) return;
       doRefresh();
       tick();
     }, FAST_REFRESH_MS);
 
     // Slow timer: skip if user is actively typing
     const slowTimer = setInterval(() => {
-      if (app.mode === TuiMode.SEND || app.isFiltering()) return;
+      if (isTyping()) return;
       doFullRefresh();
       tick();
     }, SLOW_REFRESH_MS);

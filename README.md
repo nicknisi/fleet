@@ -62,6 +62,8 @@ The dashboard shows every Claude Code pane grouped by urgency. Agents that need 
 | `n`                        | Jump to next waiting agent (cycles) |
 | `p`                        | Toggle preview pane                 |
 | `s`                        | Send prompt to selected session     |
+| `i`                        | Enter passthrough (preview mode)    |
+| `y`                        | Approve permission prompt (preview) |
 | `/`                        | Filter sessions by name or project  |
 | `?`                        | Help overlay                        |
 | `q` or `Esc`               | Quit (or clear filter)              |
@@ -95,6 +97,22 @@ The preview shows:
 - Live pane content (ANSI color preserved)
 - State badge and current tool
 - Listening ports (e.g., `⌁3000`)
+- Context-aware quick actions based on agent state
+
+### Quick Actions
+
+When the preview pane is open, Fleet shows context-aware actions at the bottom of the preview based on the agent's current state:
+
+- **waiting** — `y` to approve, `n` to deny the permission prompt
+- **asking** — `i` to answer inline via passthrough, `s` to send a prompt
+- **done/idle** — `i` for passthrough, `s` to send the next prompt
+- **working** — `i` for passthrough (watch and interact)
+
+### Passthrough Mode
+
+Press `i` from the preview to enter passthrough mode. Every keystroke is forwarded directly to the agent's tmux pane — the preview updates live so you can see the result without leaving Fleet. Press `Esc` to exit back to the dashboard.
+
+This is the power feature: approve prompts, answer questions, type commands, and watch the output — all without switching panes. The footer shows `● LIVE` when passthrough is active.
 
 ## CLI Commands
 

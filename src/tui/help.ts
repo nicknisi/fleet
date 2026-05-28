@@ -17,6 +17,13 @@ export function renderHelp(): string[] {
   lines.push(`  ${C.yellowBold}?${C.reset}${C.gray}           This help${C.reset}`);
   lines.push(`  ${C.yellowBold}q or Esc${C.reset}${C.gray}    Quit${C.reset}`);
   lines.push('');
+  lines.push(`  ${C.bold}Preview Quick Actions${C.reset}`);
+  lines.push('');
+  lines.push(`  ${C.yellowBold}i${C.reset}${C.gray}           Enter passthrough (forward keys to pane)${C.reset}`);
+  lines.push(`  ${C.yellowBold}y${C.reset}${C.gray}           Approve permission prompt${C.reset}`);
+  lines.push(`  ${C.yellowBold}n${C.reset}${C.gray}           Deny permission prompt (or next agent)${C.reset}`);
+  lines.push(`  ${C.yellowBold}Esc${C.reset}${C.gray}         Exit passthrough mode${C.reset}`);
+  lines.push('');
   lines.push(`  ${C.gray}Press any key to close${C.reset}`);
   return lines;
 }

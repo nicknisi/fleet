@@ -1,7 +1,7 @@
 import { C } from '../terminal/colors.ts';
 import { truncateAnsi } from '../terminal/ansi.ts';
 import { AgentStatus, STATUS_DISPLAY, type AgentState } from '../state/types.ts';
-import type { TuiApp } from './app.ts';
+import { TuiMode, type TuiApp } from './app.ts';
 
 const BOX_H = '─';
 
@@ -151,13 +151,36 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
   ];
   lines.push(truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${legend.join('  ')}`, cols));
 
-  if (app.isFiltering()) {
+  if (app.mode === TuiMode.PASSTHROUGH) {
+    lines.push(
+      truncateAnsi(
+        `${C.gray}${BOX_H}${C.reset} ${C.cyan}● LIVE${C.reset} ${C.gray}— keystrokes forwarded to pane${C.reset}  ${chip('Esc')} ${C.gray}exit${C.reset}`,
+        cols,
+      ),
+    );
+  } else if (app.isFiltering()) {
     lines.push(
       truncateAnsi(
         `${C.gray}${BOX_H}${C.reset} ${C.cyan}/${app.getFilter()}${C.reset}█ ${C.gray}${BOX_H} ${C.reset}${chip('Esc')} ${C.gray}clear${C.reset}`,
         cols,
       ),
     );
+  } else if (app.mode === TuiMode.PREVIEW) {
+    const selected = app.selectedState();
+    const hints = [
+      `${chip('↑↓')} ${C.gray}nav${C.reset}`,
+      `${chip('i')} ${C.gray}passthrough${C.reset}`,
+    ];
+    if (selected?.status === AgentStatus.PERMIT) {
+      hints.push(`${chip('y')} ${C.gray}approve${C.reset}`);
+      hints.push(`${chip('n')} ${C.gray}deny${C.reset}`);
+    } else {
+      hints.push(`${chip('s')} ${C.gray}send${C.reset}`);
+      hints.push(`${chip('n')} ${C.gray}next${C.reset}`);
+    }
+    hints.push(`${chip('p')} ${C.gray}close${C.reset}`);
+    hints.push(`${chip('?')} ${C.gray}help${C.reset}`);
+    lines.push(truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${hints.join('  ')}`, cols));
   } else {
     const hints = [
       `${chip('↑↓')} ${C.gray}nav${C.reset}`,

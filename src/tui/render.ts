@@ -45,15 +45,18 @@ export function render(app: TuiApp, size: TerminalSize): string {
         linesWritten++;
       }
     }
-  } else if (app.mode === TuiMode.PREVIEW) {
+  } else if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
     const selected = app.selectedState();
+    const isPassthrough = app.mode === TuiMode.PASSTHROUGH;
     const listWidth = Math.floor(cols * 0.45);
     const previewWidth = cols - listWidth - 1;
 
     out.push('\x1b[K\r\n');
     linesWritten++;
     const sessionLines = renderSessionList(app, contentRows, listWidth);
-    const previewLines = selected ? renderPreview(selected, previewWidth, contentRows) : [];
+    const previewLines = selected
+      ? renderPreview(selected, previewWidth, contentRows, isPassthrough)
+      : [];
 
     for (let row = 0; row < contentRows - 1; row++) {
       const sessionLine = sessionLines[row] ?? '';

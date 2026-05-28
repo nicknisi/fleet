@@ -5,6 +5,7 @@ export const TuiMode = {
   PREVIEW: 'PREVIEW',
   SEND: 'SEND',
   HELP: 'HELP',
+  PASSTHROUGH: 'PASSTHROUGH',
 } as const;
 
 export type TuiMode = (typeof TuiMode)[keyof typeof TuiMode];
@@ -104,6 +105,14 @@ export class TuiApp {
   exitSend(): void {
     this.mode = this.modeBeforeSend;
     this.sendBuffer = '';
+  }
+
+  enterPassthrough(): void {
+    this.mode = TuiMode.PASSTHROUGH;
+  }
+
+  exitPassthrough(): void {
+    this.mode = TuiMode.PREVIEW;
   }
 
   moveUp(): void {
