@@ -1,13 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { runStatusLineInject, runStatusLineRemove } from './statusline.ts';
 
 const FLEET_MANAGED_MARKER = '# fleet-managed';
 const FLEET_TMUX_LINE = `run-shell "fleet statusline --inject" ${FLEET_MANAGED_MARKER}`;
 
 function fleetPluginDir(): string {
-  return resolve(import.meta.dir, '../..');
+  const binDir = dirname(process.execPath);
+  const fromBin = resolve(binDir, '..');
+  if (existsSync(join(fromBin, 'hooks', 'hooks.json'))) return fromBin;
+  const fromDev = resolve(import.meta.dir, '../..');
+  if (existsSync(join(fromDev, 'hooks', 'hooks.json'))) return fromDev;
+  return fromBin;
 }
 
 function marketplaceDir(): string {
