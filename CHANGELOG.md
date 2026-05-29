@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/nicknisi/fleet/compare/v0.5.0...v0.5.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* seal preview pane ANSI so diff backgrounds don't bleed into list ([040bdc4](https://github.com/nicknisi/fleet/commit/040bdc4a00ea6e6d55b46607e751f18399104fb0))
+
 ## [0.5.0](https://github.com/nicknisi/fleet/compare/v0.4.0...v0.5.0) (2026-05-28)
 
 
