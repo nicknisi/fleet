@@ -76,6 +76,12 @@ export function render(app: TuiApp, size: TerminalSize): string {
       if (sessionVis < listWidth) out.push(' '.repeat(listWidth - sessionVis));
       out.push(app.dragging ? `${C.cyan}│${C.reset}` : `${C.gray}│${C.reset}`);
       out.push(previewLine);
+      // Preview content is untrusted captured pane ANSI and may leave an open
+      // SGR (e.g. a diff line's background). Seal the boundary with a literal
+      // reset — unconditional, since the leaking codes are real ANSI even when
+      // our own colors are disabled — so it can't bleed through `\x1b[K` or
+      // into the next row's list column.
+      out.push('\x1b[0m');
       out.push('\x1b[K\r\n');
       linesWritten++;
     }
