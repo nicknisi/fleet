@@ -61,8 +61,40 @@ function acknowledgeAllReady(statusDirs: string[]): void {
 }
 ```
 
-Reuses the DONE-only gating in `acknowledgedStatus` (called inside
-`acknowledgePane`), so `PERMIT`/`QUESTION` are left untouched for free.
+Iterates every tracked pane and delegates the ready-only gating to
+`acknowledgePane`, so `PERMIT`/`QUESTION` are left untouched.
+
+### Root-cause correction — acknowledgement must clear *either* DONE source
+
+The initial design assumed `acknowledgePane` could "reuse the DONE-only gating in
+`acknowledgedStatus`". That was wrong and produced a "cleared some but not all"
+bug. A ready agent's `DONE` has **two independent sources**:
+
+1. The hook status file says `done`/`completed`.
+2. The event stream derives `DONE` from a `Stop`/`SubagentStop` turn-end —
+   `fuseState` lets this event status override the hook state, so the bar shows
+   `DONE` while the status file commonly lags at `idle`.
+
+`acknowledgedStatus` gates only on (1), so for the (common) event-derived case it
+returned `null` and `acknowledgePane` bailed **before** appending the
+`Acknowledged` event — a silent no-op. This was a pre-existing latent bug
+(single-click hit it too); clear-all merely exposed it at scale.
+
+Fix: a pure `acknowledgePlan(current, recentEvents, now)` in
+`src/state/acknowledge.ts` returns both actions —
+
+```ts
+export function acknowledgePlan(current, recentEvents, now): AckPlan {
+  return {
+    status: acknowledgedStatus(current, now),                      // flip a ready status file
+    appendAck: deriveStatusFromEvents(recentEvents) === AgentStatus.DONE, // retire event-derived DONE
+  };
+}
+```
+
+`acknowledgePane` reads the recent events, applies the plan (write status iff
+`status`, append `Acknowledged` iff `appendAck`). `PERMIT`/`QUESTION` derive
+neither, so they remain non-dismissible.
 
 ### CLI routing — `index.ts`
 
