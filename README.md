@@ -62,19 +62,19 @@ Each row leads with the tmux session name. When Claude Code has auto-named a ses
 
 ### Keybindings
 
-| Key                        | Action                              |
-| -------------------------- | ----------------------------------- |
-| `j` / `k` or `Up` / `Down` | Navigate sessions                   |
-| `Enter`                    | Switch to selected session          |
-| `n`                        | Jump to next waiting agent (cycles) |
-| `p`                        | Toggle preview pane                 |
-| `s`                        | Send prompt to selected session     |
-| `i`                        | Enter passthrough (preview mode)    |
-| `y`                        | Approve permission prompt (preview) |
-| `/`                        | Filter sessions by name or project  |
+| Key                        | Action                                 |
+| -------------------------- | -------------------------------------- |
+| `j` / `k` or `Up` / `Down` | Navigate sessions                      |
+| `Enter`                    | Switch to selected session             |
+| `n`                        | Jump to next waiting agent (cycles)    |
+| `p`                        | Toggle preview pane                    |
+| `s`                        | Send prompt to selected session        |
+| `i`                        | Enter passthrough (preview mode)       |
+| `y`                        | Approve permission prompt (preview)    |
+| `/`                        | Filter sessions by name or project     |
 | `x`                        | Kill selected session (confirms first) |
-| `?`                        | Help overlay                        |
-| `q` or `Esc`               | Quit (or clear filter)              |
+| `?`                        | Help overlay                           |
+| `q` or `Esc`               | Quit (or clear filter)                 |
 
 You can also **click** a session row to select it; clicking a `ready` agent acknowledges it in place (see [Acknowledge](#agent-states)).
 
@@ -82,15 +82,15 @@ You can also **click** a session row to select it; clicking a `ready` agent ackn
 
 Fleet tracks seven states, sorted by urgency. The icon and color tell you what's happening at a glance:
 
-| Icon | State       | Meaning                                            |
-| ---- | ----------- | -------------------------------------------------- |
-| `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt)              |
-| `?`  | **asking**  | Agent asked you a question (`AskUserQuestion`)     |
-| `◉`  | **working** | Thinking or running tools                          |
+| Icon | State       | Meaning                                                         |
+| ---- | ----------- | --------------------------------------------------------------- |
+| `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt)                           |
+| `?`  | **asking**  | Agent asked you a question (`AskUserQuestion`)                  |
+| `◉`  | **working** | Thinking or running tools                                       |
 | `●`  | **ready**   | Turn ended — your move (finished, or asked in prose); green dot |
-| `●`  | **idle**    | Up but no recent activity (blue dot)               |
-| `■`  | **shell**   | No agent running (hidden by default)               |
-| `○`  | **down**    | No live process (hidden by default)                |
+| `●`  | **idle**    | Up but no recent activity (blue dot)                            |
+| `■`  | **shell**   | No agent running (hidden by default)                            |
+| `○`  | **down**    | No live process (hidden by default)                             |
 
 **asking vs. ready:** A turn that ends — whether the agent finished the task or asked you something in prose — looks identical at the hook layer (both are a plain `Stop`). Fleet can't tell them apart, so both land in **ready** ("your move"). The dedicated **asking** state is only reachable through structured signals the agent emits: the `AskUserQuestion` tool and MCP elicitation dialogs. Either way both sort into the attention tier, so nothing that needs you gets buried.
 
@@ -138,20 +138,20 @@ This is the power feature: approve prompts, answer questions, type commands, and
 
 Fleet also works as a non-interactive CLI for scripting and tmux integration.
 
-| Command                                   | Description                                                                      |
-| ----------------------------------------- | -------------------------------------------------------------------------------- |
-| `fleet status [--tmux] <session>`         | Query agent state. `--tmux` outputs a tmux format string for status bars.        |
-| `fleet status --statusline`               | Render a full multi-agent status line for tmux's second row.                     |
-| `fleet next`                              | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE). |
+| Command                                   | Description                                                                        |
+| ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| `fleet status [--tmux] <session>`         | Query agent state. `--tmux` outputs a tmux format string for status bars.          |
+| `fleet status --statusline`               | Render a full multi-agent status line for tmux's second row.                       |
+| `fleet next`                              | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE).   |
 | `fleet switch <pane-id>`                  | Acknowledge a ready agent and switch to it (used by the statusline click binding). |
-| `fleet ack <pane-id>`                     | Acknowledge a ready agent in place (clear it from the attention tier, no switch). |
-| `fleet send <session> <prompt>`           | Send a prompt to a session. Refuses unsafe states unless `--force`.              |
-| `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.        |
-| `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.             |
-| `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.             |
-| `fleet uninstall`                         | Remove plugin registration + tmux status row.                                    |
-| `fleet statusline --inject`               | Manually add the second tmux status row.                                         |
-| `fleet statusline --remove`               | Manually remove the second tmux status row.                                      |
+| `fleet ack <pane-id>`                     | Acknowledge a ready agent in place (clear it from the attention tier, no switch).  |
+| `fleet send <session> <prompt>`           | Send a prompt to a session. Refuses unsafe states unless `--force`.                |
+| `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.          |
+| `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.               |
+| `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.               |
+| `fleet uninstall`                         | Remove plugin registration + tmux status row.                                      |
+| `fleet statusline --inject`               | Manually add the second tmux status row.                                           |
+| `fleet statusline --remove`               | Manually remove the second tmux status row.                                        |
 
 ### Tmux Status Bar Integration
 
@@ -163,7 +163,9 @@ Fleet supports two levels of tmux integration:
 fleet statusline --inject
 ```
 
-Each entry is clickable (tmux 3.2+) — click an agent name to switch to that session. Only agents whose turn it is for you appear: PERMIT (tool approval), QUESTION (a question to answer), and DONE/ready (finished, waiting on your next move). Working and idle sessions stay out of the bar — they don't need you to act, so they'd just be noise. Watch those in the dashboard instead.
+Each entry is clickable (tmux 3.2+). **Left-click** an agent name to switch to that session; **right-click** to mark it read in place without switching. When any agent is ready, a `✕ clear` chip appears at the end of the row — click it to dismiss every ready agent at once. Only agents whose turn it is for you appear: PERMIT (tool approval), QUESTION (a question to answer), and DONE/ready (finished, waiting on your next move). Working and idle sessions stay out of the bar — they don't need you to act, so they'd just be noise. Watch those in the dashboard instead.
+
+(After upgrading Fleet, re-run `fleet statusline --inject` to pick up the right-click binding and clear chip.)
 
 **Status-right icon (lightweight):** A single icon in your existing status bar:
 
@@ -213,13 +215,15 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 
 **Verify on switch:** When you navigate to a pane (Enter or click), Fleet scrapes it immediately and updates the status file. Stale states get corrected the moment you look at them.
 
-**Acknowledge:** Once you've seen a `ready` agent it drops to `idle` and leaves the attention tier (and the statusline). Three ways to acknowledge:
+**Acknowledge:** Once you've seen a `ready` agent it drops to `idle` and leaves the attention tier (and the statusline). Ways to acknowledge:
 
 - **Click it in the dashboard** — acknowledges in place, so you can clear several finished agents without leaving Fleet.
-- **Switch to it** (Enter, or click its statusline entry) — acknowledges, then takes you there.
+- **Switch to it** (Enter, or left-click its statusline entry) — acknowledges, then takes you there.
+- **Right-click its statusline entry** — acknowledges in place, without switching.
+- **Click the `✕ clear` chip** at the end of the statusline — acknowledges every ready agent at once.
 - **`fleet ack <pane>`** — from the CLI, for scripting or bulk-clearing.
 
-Acknowledgement is anchored on the hook status file (the one signal that always exists for a tracked pane — the event log may not), flipping a ready state to `idle`; when an event log is present it also appends an `Acknowledged` event so an event-derived completion can't re-assert. It survives Fleet restarts with no separate store. So: green `ready` = needs your eyes; blue `idle` = seen, nothing pending.
+A ready agent's completion can come from two independent places: the hook status file (`done`/`completed`) or an event-derived turn-end (a `Stop`/`SubagentStop` the status file may not reflect yet — the bar shows `ready` from the event stream while the file lags at `idle`). Acknowledgement retires both: it flips a ready status file to `idle`, and when the event stream shows a completion it appends an `Acknowledged` event so the derived `ready` can't re-assert. It survives Fleet restarts with no separate store. So: green `ready` = needs your eyes; blue `idle` = seen, nothing pending.
 
 **Decay:** `ready` never auto-decays — a finished turn is waiting on you and stays until you act on it (switch to it, send a prompt, or it starts working again). Only `working` times out to `idle`, after 3 minutes, so a crashed turn doesn't spin forever.
 
@@ -281,7 +285,7 @@ Fleet is a zero-dependency Bun project.
 bun install              # Install dev dependencies
 bun run dev              # Run without compiling
 bun run build            # Compile to standalone binary (dist/fleet)
-bun test                 # Run tests (147 tests, ~50ms)
+bun test                 # Run tests (166 tests, ~50ms)
 bun run typecheck        # tsc --noEmit
 bun run lint             # oxlint
 bun run format           # oxfmt
@@ -293,7 +297,7 @@ bun run format:check     # oxfmt --check
 Tests are collocated (`*.test.ts` next to source). The state engine, ANSI utilities, TUI model, and CLI commands are unit-tested. Tmux-dependent code has integration-style tests that gracefully degrade outside tmux.
 
 ```bash
-bun test                 # 147 tests, ~50ms
+bun test                 # 166 tests, ~50ms
 bun test src/state/      # State engine only
 bun test src/terminal/   # Terminal primitives only
 bun test src/tui/        # TUI model only

@@ -1,4 +1,4 @@
-import { AgentStatus, compareStatus, STATUS_DISPLAY, type AgentState } from '../state/types.ts';
+import { AgentStatus, ACK_ALL_RANGE, compareStatus, STATUS_DISPLAY, type AgentState } from '../state/types.ts';
 
 export function formatAge(ts: number): string {
   const now = Math.floor(Date.now() / 1000);
@@ -25,6 +25,12 @@ export function formatStatusLine(states: AgentState[]): string {
     const display = STATUS_DISPLAY[s.status];
     return `#[range=user|${s.paneId}]#[fg=${display.color}]${display.icon} #[bold]${s.session}#[nobold] ${formatAge(s.ts)}#[norange]`;
   });
+
+  // A "clear all" chip dismisses every ready agent at once. Only ready (DONE)
+  // agents are dismissible, so the chip only appears when one is present.
+  if (filtered.some((s) => s.status === AgentStatus.DONE)) {
+    entries.push(`#[range=user|${ACK_ALL_RANGE}]#[fg=#6c7086]✕ clear#[norange]`);
+  }
 
   return entries.join(' #[fg=#45475a]│ ');
 }

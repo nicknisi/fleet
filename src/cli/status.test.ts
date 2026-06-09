@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { formatTmuxStatus, formatPlainStatus, formatStatusLine, formatAge } from './status.ts';
-import { AgentStatus, type AgentState } from '../state/types.ts';
+import { AgentStatus, ACK_ALL_RANGE, type AgentState } from '../state/types.ts';
 
 const makeState = (overrides: Partial<AgentState>): AgentState => ({
   paneId: '%42',
@@ -157,5 +157,27 @@ describe('formatStatusLine', () => {
     const states = [makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', claudeName: 'Fix auth bug' })];
     const result = formatStatusLine(states);
     expect(result).toContain('dotfiles');
+  });
+
+  test('appends a clickable clear-all chip when a ready agent is present', () => {
+    const states = [makeState({ status: AgentStatus.DONE, session: 'done-s', paneId: '%3' })];
+    const result = formatStatusLine(states);
+    expect(result).toContain(`#[range=user|${ACK_ALL_RANGE}]`);
+    expect(result).toContain('clear');
+    // The chip trails the agent entry, after a separator.
+    expect(result.indexOf('done-s')).toBeLessThan(result.indexOf(ACK_ALL_RANGE));
+  });
+
+  test('omits the clear-all chip when nothing is ready', () => {
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, session: 'permit-s', paneId: '%1' }),
+      makeState({ status: AgentStatus.QUESTION, session: 'question-s', paneId: '%2' }),
+    ];
+    const result = formatStatusLine(states);
+    expect(result).not.toContain(ACK_ALL_RANGE);
+  });
+
+  test('omits the clear-all chip for an empty bar', () => {
+    expect(formatStatusLine([])).not.toContain(ACK_ALL_RANGE);
   });
 });

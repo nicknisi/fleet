@@ -17,9 +17,9 @@ import {
 import { fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
-import { acknowledgedStatus } from './src/state/acknowledge.ts';
+import { acknowledgePlan } from './src/state/acknowledge.ts';
 import { scrapePane } from './src/state/scraper.ts';
-import { AgentStatus, extractClaudeName, type AgentState } from './src/state/types.ts';
+import { AgentStatus, ACK_ALL_RANGE, extractClaudeName, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import { listPanes, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
 import { detectPorts } from './src/tmux/ports.ts';
@@ -147,11 +147,12 @@ function verifyPaneState(state: AgentState, statusDirs: string[]): void {
 }
 
 // Acknowledging a ready agent marks it seen — you've looked, so it drops out of
-// the attention tier. Anchored on the hook status file, which always exists for
-// a tracked pane (the event log may not). Flips a ready status to idle, and when
-// an event log is present also appends an Acknowledged event so an event-derived
-// DONE can't re-assert over the idle write on the next refresh. Self-gating: a
-// non-ready agent (working/waiting/asking) is left untouched.
+// the attention tier. A ready agent's DONE has two independent sources, so
+// acknowledgePlan decides both actions: flip a ready status file to idle, and
+// append an Acknowledged event when the event stream derives DONE (the common
+// case — the bar shows DONE from a Stop event while the status file lags at
+// idle). Either signal alone is enough to clear the agent. Self-gating: a
+// working/waiting/asking agent derives neither, so it's left untouched.
 function acknowledgePane(paneId: string, statusDirs: string[]): void {
   const paneNum = paneId.replace('%', '');
   const now = Math.floor(Date.now() / 1000);
@@ -164,15 +165,19 @@ function acknowledgePane(paneId: string, statusDirs: string[]): void {
       continue;
     }
     if (current.pane !== paneId) continue;
-    const updated = acknowledgedStatus(current, now);
-    if (!updated) return;
-    try {
-      writeFileSync(statusFile, JSON.stringify(updated) + '\n');
-    } catch {
-      // Best effort — acknowledgement is non-critical
-    }
+
     const eventsFile = join(dir, `${paneNum}.events.jsonl`);
-    if (existsSync(eventsFile)) {
+    const recent = existsSync(eventsFile) ? readLastEvents(eventsFile, 12) : [];
+    const plan = acknowledgePlan(current, recent, now);
+
+    if (plan.status) {
+      try {
+        writeFileSync(statusFile, JSON.stringify(plan.status) + '\n');
+      } catch {
+        // Best effort — acknowledgement is non-critical
+      }
+    }
+    if (plan.appendAck && existsSync(eventsFile)) {
       try {
         appendFileSync(eventsFile, JSON.stringify({ event: 'Acknowledged', ts: now }) + '\n');
       } catch {
@@ -180,6 +185,25 @@ function acknowledgePane(paneId: string, statusDirs: string[]): void {
       }
     }
     return;
+  }
+}
+
+// Acknowledge every ready agent across all tracked panes in one sweep — backs
+// the status-line "clear all" chip. Reuses acknowledgePane's ready-only gating,
+// so working/waiting/asking agents are left untouched.
+function acknowledgeAllReady(statusDirs: string[]): void {
+  for (const hook of readAllStatusDirs(statusDirs)) {
+    acknowledgePane(hook.pane, statusDirs);
+  }
+}
+
+// Force the tmux status bar to redraw now. Without this, an ack-in-place click
+// wouldn't visibly clear until the next status-interval (~15s). Best-effort.
+function refreshTmuxStatus(): void {
+  try {
+    Bun.spawnSync({ cmd: ['tmux', 'refresh-client', '-S'] });
+  } catch {
+    // Not in tmux, or refresh failed — non-critical
   }
 }
 
@@ -318,22 +342,35 @@ function handleCli(args: string[]): number | null {
     }
     case 'ack': {
       // Acknowledge a ready agent without switching to it (clears it from the
-      // attention tier in place). Handy for scripting or bulk-clearing.
+      // attention tier in place). Bound to right-click on the status line, and
+      // handy for scripting. The ACK_ALL_RANGE sentinel clears every ready agent.
       const target = args[1];
       if (!target) {
         process.stderr.write('Usage: fleet ack <pane-id>\n');
         return 1;
       }
-      acknowledgePane(target, statusDirs);
+      if (target === ACK_ALL_RANGE) {
+        acknowledgeAllReady(statusDirs);
+      } else {
+        acknowledgePane(target, statusDirs);
+      }
+      refreshTmuxStatus();
       return 0;
     }
     case 'switch': {
-      // Invoked by the statusline mouse binding. Acknowledge a ready agent (so a
-      // click counts the same as Enter in the dashboard), then switch to it.
+      // Invoked by the statusline left-click binding. The ACK_ALL_RANGE sentinel
+      // (the "clear all" chip) clears every ready agent without switching.
+      // Otherwise acknowledge the target (so a click counts the same as Enter in
+      // the dashboard) and switch to it.
       const target = args[1];
       if (!target) {
         process.stderr.write('Usage: fleet switch <pane-id>\n');
         return 1;
+      }
+      if (target === ACK_ALL_RANGE) {
+        acknowledgeAllReady(statusDirs);
+        refreshTmuxStatus();
+        return 0;
       }
       acknowledgePane(target, statusDirs);
       try {
