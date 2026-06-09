@@ -163,7 +163,9 @@ Fleet supports two levels of tmux integration:
 fleet statusline --inject
 ```
 
-Each entry is clickable (tmux 3.2+) — click an agent name to switch to that session. Only agents whose turn it is for you appear: PERMIT (tool approval), QUESTION (a question to answer), and DONE/ready (finished, waiting on your next move). Working and idle sessions stay out of the bar — they don't need you to act, so they'd just be noise. Watch those in the dashboard instead.
+Each entry is clickable (tmux 3.2+). **Left-click** an agent name to switch to that session; **right-click** to mark it read in place without switching. When any agent is ready, a `✕ clear` chip appears at the end of the row — click it to dismiss every ready agent at once. Only agents whose turn it is for you appear: PERMIT (tool approval), QUESTION (a question to answer), and DONE/ready (finished, waiting on your next move). Working and idle sessions stay out of the bar — they don't need you to act, so they'd just be noise. Watch those in the dashboard instead.
+
+(After upgrading Fleet, re-run `fleet statusline --inject` to pick up the right-click binding and clear chip.)
 
 **Status-right icon (lightweight):** A single icon in your existing status bar:
 
@@ -213,13 +215,15 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 
 **Verify on switch:** When you navigate to a pane (Enter or click), Fleet scrapes it immediately and updates the status file. Stale states get corrected the moment you look at them.
 
-**Acknowledge:** Once you've seen a `ready` agent it drops to `idle` and leaves the attention tier (and the statusline). Three ways to acknowledge:
+**Acknowledge:** Once you've seen a `ready` agent it drops to `idle` and leaves the attention tier (and the statusline). Ways to acknowledge:
 
 - **Click it in the dashboard** — acknowledges in place, so you can clear several finished agents without leaving Fleet.
-- **Switch to it** (Enter, or click its statusline entry) — acknowledges, then takes you there.
+- **Switch to it** (Enter, or left-click its statusline entry) — acknowledges, then takes you there.
+- **Right-click its statusline entry** — acknowledges in place, without switching.
+- **Click the `✕ clear` chip** at the end of the statusline — acknowledges every ready agent at once.
 - **`fleet ack <pane>`** — from the CLI, for scripting or bulk-clearing.
 
-Acknowledgement is anchored on the hook status file (the one signal that always exists for a tracked pane — the event log may not), flipping a ready state to `idle`; when an event log is present it also appends an `Acknowledged` event so an event-derived completion can't re-assert. It survives Fleet restarts with no separate store. So: green `ready` = needs your eyes; blue `idle` = seen, nothing pending.
+A ready agent's completion can come from two independent places: the hook status file (`done`/`completed`) or an event-derived turn-end (a `Stop`/`SubagentStop` the status file may not reflect yet — the bar shows `ready` from the event stream while the file lags at `idle`). Acknowledgement retires both: it flips a ready status file to `idle`, and when the event stream shows a completion it appends an `Acknowledged` event so the derived `ready` can't re-assert. It survives Fleet restarts with no separate store. So: green `ready` = needs your eyes; blue `idle` = seen, nothing pending.
 
 **Decay:** `ready` never auto-decays — a finished turn is waiting on you and stays until you act on it (switch to it, send a prompt, or it starts working again). Only `working` times out to `idle`, after 3 minutes, so a crashed turn doesn't spin forever.
 
@@ -281,7 +285,7 @@ Fleet is a zero-dependency Bun project.
 bun install              # Install dev dependencies
 bun run dev              # Run without compiling
 bun run build            # Compile to standalone binary (dist/fleet)
-bun test                 # Run tests (147 tests, ~50ms)
+bun test                 # Run tests (166 tests, ~50ms)
 bun run typecheck        # tsc --noEmit
 bun run lint             # oxlint
 bun run format           # oxfmt
@@ -293,7 +297,7 @@ bun run format:check     # oxfmt --check
 Tests are collocated (`*.test.ts` next to source). The state engine, ANSI utilities, TUI model, and CLI commands are unit-tested. Tmux-dependent code has integration-style tests that gracefully degrade outside tmux.
 
 ```bash
-bun test                 # 147 tests, ~50ms
+bun test                 # 166 tests, ~50ms
 bun test src/state/      # State engine only
 bun test src/terminal/   # Terminal primitives only
 bun test src/tui/        # TUI model only
