@@ -15,10 +15,7 @@ const READY_HOOK_STATES = new Set(['done', 'completed']);
 // Given the current parsed status-file object, return the updated object that
 // marks the agent acknowledged (idle), or null if it isn't in a ready state —
 // we only clear finished turns, never a working/waiting/asking agent.
-export function acknowledgedStatus(
-  current: Record<string, unknown>,
-  now: number,
-): Record<string, unknown> | null {
+export function acknowledgedStatus(current: Record<string, unknown>, now: number): Record<string, unknown> | null {
   if (!READY_HOOK_STATES.has(String(current.state))) return null;
   return { ...current, state: 'idle', ts: now };
 }
@@ -34,11 +31,7 @@ export interface AckPlan {
 // object and recent events. Either signal being ready is enough to clear it; a
 // non-DONE event stream (working/waiting/asking) leaves appendAck false, so
 // PERMIT/QUESTION agents are never dismissed.
-export function acknowledgePlan(
-  current: Record<string, unknown>,
-  recentEvents: EventEntry[],
-  now: number,
-): AckPlan {
+export function acknowledgePlan(current: Record<string, unknown>, recentEvents: EventEntry[], now: number): AckPlan {
   return {
     status: acknowledgedStatus(current, now),
     appendAck: deriveStatusFromEvents(recentEvents) === AgentStatus.DONE,

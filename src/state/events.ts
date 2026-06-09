@@ -71,7 +71,10 @@ export function readLastEvents(path: string, maxLines: number): EventEntry[] {
       const readBytes = Math.min(size, TAIL_BYTES);
       const buf = Buffer.alloc(readBytes);
       readSync(fd, buf, 0, readBytes, size - readBytes);
-      const lines = buf.toString('utf-8').split('\n').filter((l) => l.length > 0);
+      const lines = buf
+        .toString('utf-8')
+        .split('\n')
+        .filter((l) => l.length > 0);
       // If we didn't reach the start of the file, the first line may be partial.
       const usable = size > readBytes ? lines.slice(1) : lines;
       return parseEventLog(usable.slice(-maxLines).join('\n'));
