@@ -87,9 +87,7 @@ describe('deriveStatusFromEvents', () => {
   });
 
   test('an Acknowledged event clears a ready turn to IDLE', () => {
-    const events = parseEventLog(
-      '{"event":"Stop","ts":1,"stop_reason":"end_turn"}\n{"event":"Acknowledged","ts":2}',
-    );
+    const events = parseEventLog('{"event":"Stop","ts":1,"stop_reason":"end_turn"}\n{"event":"Acknowledged","ts":2}');
     expect(deriveStatusFromEvents(events)).toBe(AgentStatus.IDLE);
   });
 

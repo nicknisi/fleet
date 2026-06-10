@@ -62,19 +62,19 @@ Each row leads with the tmux session name. When Claude Code has auto-named a ses
 
 ### Keybindings
 
-| Key                        | Action                              |
-| -------------------------- | ----------------------------------- |
-| `j` / `k` or `Up` / `Down` | Navigate sessions                   |
-| `Enter`                    | Switch to selected session          |
-| `n`                        | Jump to next waiting agent (cycles) |
-| `p`                        | Toggle preview pane                 |
-| `s`                        | Send prompt to selected session     |
-| `i`                        | Enter passthrough (preview mode)    |
-| `y`                        | Approve permission prompt (preview) |
-| `/`                        | Filter sessions by name or project  |
+| Key                        | Action                                 |
+| -------------------------- | -------------------------------------- |
+| `j` / `k` or `Up` / `Down` | Navigate sessions                      |
+| `Enter`                    | Switch to selected session             |
+| `n`                        | Jump to next waiting agent (cycles)    |
+| `p`                        | Toggle preview pane                    |
+| `s`                        | Send prompt to selected session        |
+| `i`                        | Enter passthrough (preview mode)       |
+| `y`                        | Approve permission prompt (preview)    |
+| `/`                        | Filter sessions by name or project     |
 | `x`                        | Kill selected session (confirms first) |
-| `?`                        | Help overlay                        |
-| `q` or `Esc`               | Quit (or clear filter)              |
+| `?`                        | Help overlay                           |
+| `q` or `Esc`               | Quit (or clear filter)                 |
 
 You can also **click** a session row to select it; clicking a `ready` agent acknowledges it in place (see [Acknowledge](#agent-states)).
 
@@ -82,15 +82,15 @@ You can also **click** a session row to select it; clicking a `ready` agent ackn
 
 Fleet tracks seven states, sorted by urgency. The icon and color tell you what's happening at a glance:
 
-| Icon | State       | Meaning                                            |
-| ---- | ----------- | -------------------------------------------------- |
-| `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt)              |
-| `?`  | **asking**  | Agent asked you a question (`AskUserQuestion`)     |
-| `◉`  | **working** | Thinking or running tools                          |
+| Icon | State       | Meaning                                                         |
+| ---- | ----------- | --------------------------------------------------------------- |
+| `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt)                           |
+| `?`  | **asking**  | Agent asked you a question (`AskUserQuestion`)                  |
+| `◉`  | **working** | Thinking or running tools                                       |
 | `●`  | **ready**   | Turn ended — your move (finished, or asked in prose); green dot |
-| `●`  | **idle**    | Up but no recent activity (blue dot)               |
-| `■`  | **shell**   | No agent running (hidden by default)               |
-| `○`  | **down**    | No live process (hidden by default)                |
+| `●`  | **idle**    | Up but no recent activity (blue dot)                            |
+| `■`  | **shell**   | No agent running (hidden by default)                            |
+| `○`  | **down**    | No live process (hidden by default)                             |
 
 **asking vs. ready:** A turn that ends — whether the agent finished the task or asked you something in prose — looks identical at the hook layer (both are a plain `Stop`). Fleet can't tell them apart, so both land in **ready** ("your move"). The dedicated **asking** state is only reachable through structured signals the agent emits: the `AskUserQuestion` tool and MCP elicitation dialogs. Either way both sort into the attention tier, so nothing that needs you gets buried.
 
@@ -138,20 +138,20 @@ This is the power feature: approve prompts, answer questions, type commands, and
 
 Fleet also works as a non-interactive CLI for scripting and tmux integration.
 
-| Command                                   | Description                                                                      |
-| ----------------------------------------- | -------------------------------------------------------------------------------- |
-| `fleet status [--tmux] <session>`         | Query agent state. `--tmux` outputs a tmux format string for status bars.        |
-| `fleet status --statusline`               | Render a full multi-agent status line for tmux's second row.                     |
-| `fleet next`                              | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE). |
+| Command                                   | Description                                                                        |
+| ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| `fleet status [--tmux] <session>`         | Query agent state. `--tmux` outputs a tmux format string for status bars.          |
+| `fleet status --statusline`               | Render a full multi-agent status line for tmux's second row.                       |
+| `fleet next`                              | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE).   |
 | `fleet switch <pane-id>`                  | Acknowledge a ready agent and switch to it (used by the statusline click binding). |
-| `fleet ack <pane-id>`                     | Acknowledge a ready agent in place (clear it from the attention tier, no switch). |
-| `fleet send <session> <prompt>`           | Send a prompt to a session. Refuses unsafe states unless `--force`.              |
-| `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.        |
-| `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.             |
-| `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.             |
-| `fleet uninstall`                         | Remove plugin registration + tmux status row.                                    |
-| `fleet statusline --inject`               | Manually add the second tmux status row.                                         |
-| `fleet statusline --remove`               | Manually remove the second tmux status row.                                      |
+| `fleet ack <pane-id>`                     | Acknowledge a ready agent in place (clear it from the attention tier, no switch).  |
+| `fleet send <session> <prompt>`           | Send a prompt to a session. Refuses unsafe states unless `--force`.                |
+| `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.          |
+| `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.               |
+| `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.               |
+| `fleet uninstall`                         | Remove plugin registration + tmux status row.                                      |
+| `fleet statusline --inject`               | Manually add the second tmux status row.                                           |
+| `fleet statusline --remove`               | Manually remove the second tmux status row.                                        |
 
 ### Tmux Status Bar Integration
 

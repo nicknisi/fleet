@@ -34,6 +34,8 @@ export function renderKillConfirm(state: AgentState): string[] {
     return lines;
   }
 
-  lines.push(`${C.gray}This closes the tmux pane. ${C.reset}${C.yellowBold}y${C.reset}${C.gray} to confirm, Esc to cancel${C.reset}`);
+  lines.push(
+    `${C.gray}This closes the tmux pane. ${C.reset}${C.yellowBold}y${C.reset}${C.gray} to confirm, Esc to cancel${C.reset}`,
+  );
   return lines;
 }

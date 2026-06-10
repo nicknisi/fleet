@@ -11,7 +11,7 @@ interaction is a left-click, bound to `fleet switch <paneId>`, which both
 acknowledges a ready agent (flips `DONE` → `idle`) **and** switches the tmux
 client to that pane.
 
-There is no way to clear a ready notification *without* jumping to its pane, and
+There is no way to clear a ready notification _without_ jumping to its pane, and
 no way to clear all of them at once. `fleet ack <pane-id>` already acknowledges
 in place without switching, but nothing in tmux is bound to it.
 
@@ -87,12 +87,12 @@ Reuses the DONE-only gating in `acknowledgedStatus` (called inside
 
 ## Behavior summary
 
-| Interaction                  | Result                                  |
-| ---------------------------- | --------------------------------------- |
-| Left-click a ready entry     | Switch to pane + acknowledge (unchanged)|
-| Right-click a ready entry    | Acknowledge in place (no switch)        |
-| Click `✕ clear`              | Acknowledge all ready agents            |
-| PERMIT / QUESTION entries    | Never dismissible                       |
+| Interaction               | Result                                   |
+| ------------------------- | ---------------------------------------- |
+| Left-click a ready entry  | Switch to pane + acknowledge (unchanged) |
+| Right-click a ready entry | Acknowledge in place (no switch)         |
+| Click `✕ clear`           | Acknowledge all ready agents             |
+| PERMIT / QUESTION entries | Never dismissible                        |
 
 ## Testing
 
