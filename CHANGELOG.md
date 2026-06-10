@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/nicknisi/fleet/compare/v0.7.0...v0.8.0) (2026-06-10)
+
+
+### Features
+
+* group dashboard rows by session and label agents by window ([#13](https://github.com/nicknisi/fleet/issues/13)) ([b404541](https://github.com/nicknisi/fleet/commit/b40454116adff5f00761de8af938cffb2cd9ebdf))
+
 ## [0.7.0](https://github.com/nicknisi/fleet/compare/v0.6.1...v0.7.0) (2026-06-10)
 
 
