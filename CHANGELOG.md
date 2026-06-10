@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/nicknisi/fleet/compare/v0.6.0...v0.6.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* ship plugin hooks in homebrew package and fail loudly on hookless install ([#9](https://github.com/nicknisi/fleet/issues/9)) ([48458eb](https://github.com/nicknisi/fleet/commit/48458eb65a7cac03ba41b052230491ddd5f201ed))
+
 ## [0.6.0](https://github.com/nicknisi/fleet/compare/v0.5.1...v0.6.0) (2026-06-09)
 
 
