@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/nicknisi/fleet/compare/v0.6.1...v0.7.0) (2026-06-10)
+
+
+### Features
+
+* show tmux window in agent names ([#11](https://github.com/nicknisi/fleet/issues/11)) ([03f9df6](https://github.com/nicknisi/fleet/commit/03f9df6ecc1af8794f1904769b3918bb9a76c307))
+
 ## [0.6.1](https://github.com/nicknisi/fleet/compare/v0.6.0...v0.6.1) (2026-06-10)
 
 
