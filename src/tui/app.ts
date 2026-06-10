@@ -1,4 +1,10 @@
-import { AgentStatus, compareStatus, type AgentState } from '../state/types.ts';
+import { AgentStatus, compareStatus, windowLabel, type AgentState } from '../state/types.ts';
+
+// A rendered dashboard line: sessions with 2+ agents get a header row followed
+// by grouped (indented, window-named) agent rows; singletons render inline.
+export type DashboardRow =
+  | { kind: 'header'; session: string; count: number; aggregate: AgentStatus }
+  | { kind: 'agent'; state: AgentState; grouped: boolean };
 
 export const TuiMode = {
   DASHBOARD: 'DASHBOARD',
@@ -59,10 +65,61 @@ export class TuiApp {
     });
   }
 
+  // Flat agent list in rendered (grouped) order. Group order is each session's
+  // first appearance in the urgency sort — i.e. its most urgent member's rank —
+  // so an agent needing attention pulls its whole session to the top. Within a
+  // group, rows sort by urgency then window name. dashboardRows() derives from
+  // this, so selection indices stay valid against this list.
   visibleStates(): AgentState[] {
     const sorted = this.sortedStates();
     const noShell = sorted.filter((s) => s.status !== AgentStatus.SHELL && s.status !== AgentStatus.DOWN);
-    return this.applyFilter(noShell);
+    const filtered = this.applyFilter(noShell);
+
+    const groups = new Map<string, AgentState[]>();
+    for (const s of filtered) {
+      const members = groups.get(s.session);
+      if (members) members.push(s);
+      else groups.set(s.session, [s]);
+    }
+
+    const out: AgentState[] = [];
+    for (const members of groups.values()) {
+      members.sort((a, b) => {
+        const cmp = compareStatus(a.status, b.status);
+        if (cmp !== 0) return cmp;
+        return windowLabel(a).localeCompare(windowLabel(b));
+      });
+      out.push(...members);
+    }
+    return out;
+  }
+
+  dashboardRows(): DashboardRow[] {
+    const states = this.visibleStates();
+    const rows: DashboardRow[] = [];
+    let i = 0;
+    while (i < states.length) {
+      const session = states[i]!.session;
+      let j = i;
+      while (j < states.length && states[j]!.session === session) j++;
+      const members = states.slice(i, j);
+      if (members.length === 1) {
+        rows.push({ kind: 'agent', state: members[0]!, grouped: false });
+      } else {
+        rows.push({ kind: 'header', session, count: members.length, aggregate: members[0]!.status });
+        for (const member of members) rows.push({ kind: 'agent', state: member, grouped: true });
+      }
+      i = j;
+    }
+    return rows;
+  }
+
+  // Row index (header lines included) of the selected agent, for scroll math.
+  selectedRowIndex(): number {
+    const selected = this.selectedState();
+    if (!selected) return 0;
+    const idx = this.dashboardRows().findIndex((r) => r.kind === 'agent' && r.state.paneId === selected.paneId);
+    return Math.max(0, idx);
   }
 
   shellCount(): number {

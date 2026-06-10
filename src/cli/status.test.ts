@@ -90,45 +90,65 @@ describe('formatStatusLine', () => {
 
   test('includes PERMIT/QUESTION/DONE, excludes BUSY/IDLE/SHELL/DOWN', () => {
     const states = [
-      makeState({ status: AgentStatus.PERMIT, session: 'permit-s' }),
-      makeState({ status: AgentStatus.QUESTION, session: 'question-s', paneId: '%2' }),
-      makeState({ status: AgentStatus.DONE, session: 'done-s', paneId: '%3' }),
-      makeState({ status: AgentStatus.BUSY, session: 'busy-s', paneId: '%4' }),
-      makeState({ status: AgentStatus.IDLE, session: 'idle-s', paneId: '%5' }),
-      makeState({ status: AgentStatus.SHELL, session: 'shell-s', paneId: '%6' }),
-      makeState({ status: AgentStatus.DOWN, session: 'down-s', paneId: '%7' }),
+      makeState({ status: AgentStatus.PERMIT, session: 'permit-s', window: 'permit-w' }),
+      makeState({ status: AgentStatus.QUESTION, session: 'question-s', window: 'question-w', paneId: '%2' }),
+      makeState({ status: AgentStatus.DONE, session: 'done-s', window: 'done-w', paneId: '%3' }),
+      makeState({ status: AgentStatus.BUSY, session: 'busy-s', window: 'busy-w', paneId: '%4' }),
+      makeState({ status: AgentStatus.IDLE, session: 'idle-s', window: 'idle-w', paneId: '%5' }),
+      makeState({ status: AgentStatus.SHELL, session: 'shell-s', window: 'shell-w', paneId: '%6' }),
+      makeState({ status: AgentStatus.DOWN, session: 'down-s', window: 'down-w', paneId: '%7' }),
     ];
     const result = formatStatusLine(states);
-    expect(result).toContain('permit-s');
-    expect(result).toContain('question-s');
-    expect(result).toContain('done-s');
-    expect(result).not.toContain('busy-s');
-    expect(result).not.toContain('idle-s');
-    expect(result).not.toContain('shell-s');
-    expect(result).not.toContain('down-s');
+    expect(result).toContain('permit-w');
+    expect(result).toContain('question-w');
+    expect(result).toContain('done-w');
+    expect(result).not.toContain('busy-w');
+    expect(result).not.toContain('idle-w');
+    expect(result).not.toContain('shell-w');
+    expect(result).not.toContain('down-w');
   });
 
   test('sorts PERMIT before QUESTION', () => {
     const states = [
-      makeState({ status: AgentStatus.QUESTION, session: 'b-question', paneId: '%3' }),
-      makeState({ status: AgentStatus.PERMIT, session: 'b-permit', paneId: '%4' }),
+      makeState({ status: AgentStatus.QUESTION, session: 'b-question', window: 'q-win', paneId: '%3' }),
+      makeState({ status: AgentStatus.PERMIT, session: 'b-permit', window: 'p-win', paneId: '%4' }),
     ];
     const result = formatStatusLine(states);
-    const permitIdx = result.indexOf('b-permit');
-    const questionIdx = result.indexOf('b-question');
+    const permitIdx = result.indexOf('p-win');
+    const questionIdx = result.indexOf('q-win');
     expect(permitIdx).toBeGreaterThanOrEqual(0);
     expect(permitIdx).toBeLessThan(questionIdx);
   });
 
-  test('formats each entry with icon, bold session, and age', () => {
+  test('formats each entry with icon, bold window name, and age', () => {
     const now = Math.floor(Date.now() / 1000);
-    const states = [makeState({ status: AgentStatus.PERMIT, session: 'mysession', ts: now - 10 })];
+    const states = [makeState({ status: AgentStatus.PERMIT, session: 'mysession', window: 'task-window', ts: now - 10 })];
     const result = formatStatusLine(states);
     // Icon for PERMIT is ⚠ with color #f9e2af
     expect(result).toContain('#[fg=#f9e2af]');
     expect(result).toContain('⚠');
-    expect(result).toContain('#[bold]mysession#[nobold]');
+    expect(result).toContain('#[bold]task-window#[nobold]');
     expect(result).toContain('10s');
+  });
+
+  test('falls back to the session name when the window is empty', () => {
+    const states = [makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', window: '' })];
+    expect(formatStatusLine(states)).toContain('#[bold]dotfiles#[nobold]');
+  });
+
+  test('falls back to the session name when the window equals the session', () => {
+    const states = [makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', window: 'dotfiles' })];
+    expect(formatStatusLine(states)).toContain('#[bold]dotfiles#[nobold]');
+  });
+
+  test('two same-session agents in different windows render distinguishable chips', () => {
+    const states = [
+      makeState({ status: AgentStatus.DONE, session: 'cli', window: 'alpha', paneId: '%1' }),
+      makeState({ status: AgentStatus.DONE, session: 'cli', window: 'beta', paneId: '%2' }),
+    ];
+    const result = formatStatusLine(states);
+    expect(result).toContain('#[bold]alpha#[nobold]');
+    expect(result).toContain('#[bold]beta#[nobold]');
   });
 
   test('wraps each entry in a clickable range with the pane id', () => {
@@ -154,10 +174,13 @@ describe('formatStatusLine', () => {
     expect(result).toContain(' #[fg=#45475a]│ ');
   });
 
-  test('uses session name even when claudeName is set', () => {
-    const states = [makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', claudeName: 'Fix auth bug' })];
+  test('uses the window name even when claudeName is set', () => {
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', window: 'editor', claudeName: 'Fix auth bug' }),
+    ];
     const result = formatStatusLine(states);
-    expect(result).toContain('dotfiles');
+    expect(result).toContain('editor');
+    expect(result).not.toContain('Fix auth bug');
   });
 
   test('appends a clickable clear-all chip when a ready agent is present', () => {

@@ -1,7 +1,7 @@
 import { C } from '../terminal/colors.ts';
-import { truncateAnsi } from '../terminal/ansi.ts';
-import { AgentStatus, STATUS_DISPLAY, sessionLabel, type AgentState } from '../state/types.ts';
-import { TuiMode, type TuiApp } from './app.ts';
+import { padAnsi, truncateAnsi, truncateWidth, visibleLength } from '../terminal/ansi.ts';
+import { AgentStatus, STATUS_DISPLAY, windowLabel, type AgentState } from '../state/types.ts';
+import { TuiMode, type DashboardRow, type TuiApp } from './app.ts';
 
 const BOX_H = '─';
 
@@ -44,33 +44,87 @@ export function renderHeader(app: TuiApp, cols: number): string[] {
 }
 
 export function renderSessionList(app: TuiApp, maxRows: number, cols: number): string[] {
-  const visible = app.visibleStates();
+  const rows = app.dashboardRows();
   const lines: string[] = [];
 
-  if (visible.length === 0) {
+  if (rows.length === 0) {
     lines.push('');
     lines.push(`${C.gray}  No agents found${C.reset}`);
     return lines;
   }
 
-  const scrollOffset = calculateScroll(app.selectedIndex, maxRows, visible.length);
+  const widths = computeColumnWidths(rows, cols);
+  const scrollOffset = calculateScroll(app.selectedRowIndex(), maxRows, rows.length);
+  const selectedPane = app.selectedState()?.paneId ?? null;
 
-  for (let i = scrollOffset; i < visible.length && lines.length < maxRows; i++) {
-    const selected = i === app.selectedIndex;
-    lines.push(formatSessionRow(visible[i]!, cols, selected));
+  for (let i = scrollOffset; i < rows.length && lines.length < maxRows; i++) {
+    const row = rows[i]!;
+    if (row.kind === 'header') {
+      lines.push(formatHeaderRow(row, cols));
+    } else {
+      lines.push(formatAgentRow(row, widths, cols, row.state.paneId === selectedPane));
+    }
   }
 
   return lines;
 }
 
-function formatSessionRow(state: AgentState, cols: number, selected: boolean): string {
+export interface ColumnWidths {
+  name: number;
+  detail: number;
+  branch: number;
+}
+
+// Per-row visible cells: sel(1) sp icon(1) sp name detail sp branch sp age(4).
+// The name column is sized to its content (never truncated first); the detail
+// column flexes with an 8-cell floor; below that the branch column drops
+// entirely; only then does the name give way.
+export function computeColumnWidths(rows: DashboardRow[], cols: number): ColumnWidths {
+  let name = 0;
+  for (const row of rows) {
+    if (row.kind === 'agent') name = Math.max(name, visibleLength(nameCell(row)));
+  }
+
+  let branch = 12;
+  let detail = cols - 11 - name - branch;
+  if (detail < 8) {
+    branch = 0;
+    detail = cols - 9 - name;
+  }
+  if (detail < 8) {
+    detail = 8;
+    name = Math.max(1, cols - 9 - detail);
+  }
+  return { name, detail, branch };
+}
+
+function nameCell(row: Extract<DashboardRow, { kind: 'agent' }>): string {
+  const label = windowLabel(row.state);
+  if (row.grouped) return `  ${label}`;
+  return label === row.state.session ? row.state.session : `${row.state.session} · ${label}`;
+}
+
+function formatHeaderRow(row: Extract<DashboardRow, { kind: 'header' }>, cols: number): string {
+  const display = STATUS_DISPLAY[row.aggregate];
+  const color = getStateColor(row.aggregate);
+  const line = `  ${color}${display.icon}${C.reset} ${C.bold}${row.session}${C.reset} ${C.dim}· ${row.count} agents${C.reset}`;
+  return truncateAnsi(line, cols);
+}
+
+function formatAgentRow(
+  row: Extract<DashboardRow, { kind: 'agent' }>,
+  widths: ColumnWidths,
+  cols: number,
+  selected: boolean,
+): string {
+  const state = row.state;
   const display = STATUS_DISPLAY[state.status];
   const stColor = getStateColor(state.status);
 
   const sel = selected ? `${stColor}▌${C.reset}` : ' ';
 
   const nameColor = selected ? C.bold : '';
-  const name = truncate(sessionLabel(state), 15).padEnd(15);
+  const name = padAnsi(truncateWidth(nameCell(row), widths.name), widths.name);
 
   let detail = '';
   if (state.claudeName) {
@@ -81,18 +135,27 @@ function formatSessionRow(state: AgentState, cols: number, selected: boolean): s
 
   const branch = state.branch ?? '';
   const branchColor = branch && branch !== 'main' && branch !== 'master' ? C.purple : C.gray;
+  const branchPart =
+    widths.branch > 0 ? ` ${branchColor}${padAnsi(truncateWidth(branch, widths.branch), widths.branch)}${C.reset}` : '';
 
   const age = formatAge(state.ts);
   const ageColor = getAgeColor(state.ts);
 
   const portStr = state.ports.length > 0 ? ` ${C.cyan}⌁${state.ports[0]}${C.reset}` : '';
 
-  const fixedW = 3 + 15 + 1 + 14 + 5;
-  const projectW = Math.max(8, cols - fixedW);
   const detailColor = state.claudeName ? C.dim : C.gray;
-  const row = `${sel} ${stColor}${display.icon}${C.reset} ${nameColor}${name}${C.reset}${detailColor}${truncate(detail, projectW).padEnd(projectW)}${C.reset} ${branchColor}${truncate(branch, 12).padEnd(12)}${C.reset} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
+  const line = `${sel} ${stColor}${display.icon}${C.reset} ${nameColor}${name}${C.reset}${detailColor}${padAnsi(truncateWidth(detail, widths.detail), widths.detail)}${C.reset}${branchPart} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
 
-  return truncateAnsi(row, cols);
+  return truncateAnsi(line, cols);
+}
+
+// Map a clicked session-list line (0 = first rendered line) back to the agent
+// on that line, accounting for scroll and header rows. Header lines map to null.
+export function stateAtLine(app: TuiApp, lineIdx: number, maxRows: number): AgentState | null {
+  const rows = app.dashboardRows();
+  const scrollOffset = calculateScroll(app.selectedRowIndex(), maxRows, rows.length);
+  const row = rows[scrollOffset + lineIdx];
+  return row !== undefined && row.kind === 'agent' ? row.state : null;
 }
 
 function getStateColor(status: AgentStatus): string {
@@ -128,12 +191,6 @@ function formatAge(ts: number): string {
   if (secs < 3600) return `${Math.floor(secs / 60)}m`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
   return `${Math.floor(secs / 86400)}d`;
-}
-
-function truncate(value: string, maxWidth: number): string {
-  if (value.length <= maxWidth) return value;
-  if (maxWidth <= 1) return '';
-  return value.slice(0, maxWidth - 1) + '…';
 }
 
 function calculateScroll(selected: number, viewHeight: number, total: number): number {

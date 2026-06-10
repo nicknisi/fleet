@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { stripAnsi, truncateAnsi, visibleLength } from './ansi.ts';
+import { padAnsi, stripAnsi, truncateAnsi, truncateWidth, visibleLength } from './ansi.ts';
 
 describe('stripAnsi', () => {
   test('removes SGR sequences', () => {
@@ -88,5 +88,52 @@ describe('truncateAnsi', () => {
   test('does not split wide character across boundary', () => {
     expect(truncateAnsi('a🔒b', 2)).toBe('a');
     expect(truncateAnsi('a🔒b', 3)).toBe('a🔒');
+  });
+});
+
+describe('padAnsi', () => {
+  test('pads plain text to visible width', () => {
+    expect(padAnsi('abc', 5)).toBe('abc  ');
+  });
+
+  test('pads by visible width, ignoring ANSI codes', () => {
+    expect(padAnsi('\x1b[31mab\x1b[0m', 4)).toBe('\x1b[31mab\x1b[0m  ');
+  });
+
+  test('emoji counts 2 cells: padded emoji and ASCII strings align', () => {
+    // '🤖 workos' = 2 + 1 + 6 = 9 cells; 'workos' = 6 cells
+    expect(visibleLength(padAnsi('🤖 workos', 12))).toBe(12);
+    expect(visibleLength(padAnsi('workos', 12))).toBe(12);
+  });
+
+  test('never truncates: returns value unchanged when at or over width', () => {
+    expect(padAnsi('abcdef', 4)).toBe('abcdef');
+    expect(padAnsi('abcd', 4)).toBe('abcd');
+  });
+});
+
+describe('truncateWidth', () => {
+  test('returns value unchanged when it fits', () => {
+    expect(truncateWidth('abc', 5)).toBe('abc');
+    expect(truncateWidth('abcde', 5)).toBe('abcde');
+  });
+
+  test('truncates with ellipsis reserving one cell', () => {
+    expect(truncateWidth('abcdef', 5)).toBe('abcd…');
+  });
+
+  test('counts emoji as 2 cells', () => {
+    // '🤖 workspace' = 12 cells; cut to 8 → 7 cells of content + …
+    expect(truncateWidth('🤖 workspace', 8)).toBe('🤖 work…');
+  });
+
+  test('does not split a wide character before the ellipsis', () => {
+    // 'a🔒b' cut to 2: only 1 cell available for content, 🔒 needs 2
+    expect(truncateWidth('a🔒b', 2)).toBe('a…');
+  });
+
+  test('returns empty string for maxWidth <= 1', () => {
+    expect(truncateWidth('abc', 1)).toBe('');
+    expect(truncateWidth('abc', 0)).toBe('');
   });
 });

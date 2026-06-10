@@ -1,7 +1,7 @@
 import packageJson from './package.json' with { type: 'json' };
 import { TuiApp, TuiMode } from './src/tui/app.ts';
 import { render } from './src/tui/render.ts';
-import { renderHeader } from './src/tui/dashboard.ts';
+import { renderFooter, renderHeader, stateAtLine } from './src/tui/dashboard.ts';
 import { canSendTo } from './src/tui/send.ts';
 import { canKillSession } from './src/tui/kill.ts';
 import { parseKeyEvent } from './src/terminal/input.ts';
@@ -634,12 +634,16 @@ async function launchTui(): Promise<number> {
           const inList = app.mode === TuiMode.DASHBOARD || mouse.x <= app.listWidth(sz.cols);
           if (inList) {
             const headerHeight = renderHeader(app, sz.cols).length;
-            const idx = mouse.y - headerHeight - 2;
-            const visible = app.visibleStates();
-            if (idx >= 0 && idx < visible.length) {
-              app.selectedIndex = idx;
-              const sel = visible[idx];
-              if (sel && sel.status === AgentStatus.DONE) {
+            const contentRows = sz.rows - headerHeight - renderFooter(app, sz.cols).length - 1;
+            const lineIdx = mouse.y - headerHeight - 2;
+            // The session list interleaves header lines with agent rows, so map
+            // the clicked line through the row model (scroll-aware) instead of
+            // indexing visibleStates() directly. Header clicks select nothing.
+            const sel = lineIdx >= 0 ? stateAtLine(app, lineIdx, contentRows) : null;
+            if (sel) {
+              const idx = app.visibleStates().findIndex((s) => s.paneId === sel.paneId);
+              if (idx >= 0) app.selectedIndex = idx;
+              if (sel.status === AgentStatus.DONE) {
                 acknowledgePane(sel.paneId, statusDirs);
                 app.updateStates(refreshStates(statusDirs));
               }
