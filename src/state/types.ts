@@ -50,6 +50,7 @@ export interface AgentState {
   paneId: string;
   paneNum: number;
   session: string;
+  window: string;
   claudeName: string | null;
   status: AgentStatus;
   tool: string | null;
@@ -67,8 +68,15 @@ export function extractClaudeName(paneTitle: string): string | null {
   return name.length > 0 ? name : null;
 }
 
+// tmux target-style label (`session:window`). The window is dropped when it adds
+// no information — empty, or auto-named after the session itself.
+export function sessionLabel(state: AgentState): string {
+  if (state.window.length === 0 || state.window === state.session) return state.session;
+  return `${state.session}:${state.window}`;
+}
+
 export function displayName(state: AgentState): string {
-  return state.claudeName ?? state.session;
+  return state.claudeName ?? sessionLabel(state);
 }
 
 export interface HookStatus {

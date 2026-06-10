@@ -1,6 +1,6 @@
 import { C } from '../terminal/colors.ts';
 import { truncateAnsi } from '../terminal/ansi.ts';
-import { AgentStatus, STATUS_DISPLAY, type AgentState } from '../state/types.ts';
+import { AgentStatus, STATUS_DISPLAY, sessionLabel, type AgentState } from '../state/types.ts';
 import { TuiMode, type TuiApp } from './app.ts';
 
 const BOX_H = '─';
@@ -70,7 +70,7 @@ function formatSessionRow(state: AgentState, cols: number, selected: boolean): s
   const sel = selected ? `${stColor}▌${C.reset}` : ' ';
 
   const nameColor = selected ? C.bold : '';
-  const name = state.session.padEnd(15);
+  const name = truncate(sessionLabel(state), 15).padEnd(15);
 
   let detail = '';
   if (state.claudeName) {

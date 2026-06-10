@@ -75,6 +75,7 @@ export class TuiApp {
     return states.filter(
       (s) =>
         s.session.toLowerCase().includes(lower) ||
+        s.window.toLowerCase().includes(lower) ||
         (s.claudeName?.toLowerCase().includes(lower) ?? false) ||
         (s.project?.toLowerCase().includes(lower) ?? false),
     );

@@ -6,6 +6,7 @@ const makeState = (overrides: Partial<AgentState>): AgentState => ({
   paneId: '%42',
   paneNum: 42,
   session: 'test',
+  window: 'main',
   claudeName: null,
   status: AgentStatus.IDLE,
   tool: null,
