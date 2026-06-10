@@ -28,6 +28,7 @@ const makeState = (): AgentState => ({
   paneId: '%1',
   paneNum: 1,
   session: 'agent-one',
+  window: 'main',
   claudeName: null,
   status: AgentStatus.BUSY,
   tool: null,

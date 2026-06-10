@@ -298,6 +298,7 @@ function refreshStates(statusDirs: string[]): AgentState[] {
       paneId: pane.paneId,
       paneNum: pane.paneNum,
       session: pane.sessionName,
+      window: pane.windowName,
       claudeName: extractClaudeName(pane.paneTitle),
       status,
       tool,

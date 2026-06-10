@@ -5,6 +5,7 @@ import {
   compareStatus,
   extractClaudeName,
   displayName,
+  sessionLabel,
   type AgentState,
 } from './types.ts';
 
@@ -63,26 +64,41 @@ describe('extractClaudeName', () => {
   });
 });
 
-describe('displayName', () => {
-  const base: AgentState = {
-    paneId: '%1',
-    paneNum: 1,
-    session: 'dotfiles',
-    claudeName: null,
-    status: AgentStatus.IDLE,
-    tool: null,
-    project: null,
-    branch: null,
-    ports: [],
-    ts: 0,
-    agentType: 'claude',
-  };
+const base: AgentState = {
+  paneId: '%1',
+  paneNum: 1,
+  session: 'dotfiles',
+  window: 'editor',
+  claudeName: null,
+  status: AgentStatus.IDLE,
+  tool: null,
+  project: null,
+  branch: null,
+  ports: [],
+  ts: 0,
+  agentType: 'claude',
+};
 
+describe('sessionLabel', () => {
+  test('joins session and window tmux-style', () => {
+    expect(sessionLabel(base)).toBe('dotfiles:editor');
+  });
+
+  test('omits window when it matches the session name', () => {
+    expect(sessionLabel({ ...base, window: 'dotfiles' })).toBe('dotfiles');
+  });
+
+  test('omits window when empty', () => {
+    expect(sessionLabel({ ...base, window: '' })).toBe('dotfiles');
+  });
+});
+
+describe('displayName', () => {
   test('returns claudeName when set', () => {
     expect(displayName({ ...base, claudeName: 'Fix auth bug' })).toBe('Fix auth bug');
   });
 
-  test('falls back to session when no claudeName', () => {
-    expect(displayName(base)).toBe('dotfiles');
+  test('falls back to session:window when no claudeName', () => {
+    expect(displayName(base)).toBe('dotfiles:editor');
   });
 });

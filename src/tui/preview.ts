@@ -1,6 +1,6 @@
 import { C } from '../terminal/colors.ts';
 import { truncateAnsi } from '../terminal/ansi.ts';
-import { AgentStatus, STATUS_DISPLAY, type AgentState } from '../state/types.ts';
+import { AgentStatus, STATUS_DISPLAY, sessionLabel, type AgentState } from '../state/types.ts';
 import { capturePane } from '../tmux/sessions.ts';
 
 export function previewActions(state: AgentState): string {
@@ -34,7 +34,7 @@ export function renderPreview(
 
   const modeTag = passthrough ? ` ${C.cyan}● LIVE${C.reset}` : '';
   const claudeInfo = state.claudeName ? ` · ${state.claudeName}` : '';
-  const title = `${display.icon} ${state.session} · ${display.label.toUpperCase()}${claudeInfo}${modeTag}`;
+  const title = `${display.icon} ${sessionLabel(state)} · ${display.label.toUpperCase()}${claudeInfo}${modeTag}`;
   const toolInfo = state.tool ? ` · ${state.tool}` : '';
   const portInfo = state.ports.length > 0 ? ` · ⌁${state.ports.join(',')}` : '';
   lines.push(truncateAnsi(`${C.bold}${title}${C.reset}${C.gray}${toolInfo}${portInfo}${C.reset}`, width));
