@@ -6,13 +6,13 @@
 
 ## Gates
 
-| Gate | Status | Evidence |
-| --- | --- | --- |
-| Scope clarity | ready | Every file to change is named in the spec's File Changes table with concrete edits; all pattern/modified files were read and exist (except `src/tui/dashboard.test.ts`, a new file). |
-| Pattern familiarity | ready | Read `sessionLabel` (`types.ts:73-76`), `formatSessionRow`/`truncate`/`calculateScroll` (`dashboard.ts:66-145`), and `visibleLength`/`truncateAnsi` (`ansi.ts:34-90`) — the exact patterns the new helpers mirror. |
-| Dependency awareness | ready | Blast radius mapped: `visibleStates()` consumed by `dashboard.ts`, `app.ts` internals, and `index.ts:638,752`; `renderSessionList` by `render.ts:68,92`; `sessionLabel` stays exported. One off-spec consumer flagged below (see Risks). |
-| Edge case coverage | ready | Concrete edge list assembled from spec + code: empty/equal window, 0 agents, singleton, group-of-N, tied urgency, narrow cols (branch-drop vs window-truncate), header scroll-off, mouse-click row mapping. |
-| Test strategy | ready | Inner loop `bun test src/tui`; validation `bun run typecheck && bun run lint && bun test && bun run build`; per-component check commands in spec; test fixture conventions confirmed in `app.test.ts`, `types.test.ts`, `render.test.ts`. |
+| Gate                 | Status | Evidence                                                                                                                                                                                                                                  |
+| -------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope clarity        | ready  | Every file to change is named in the spec's File Changes table with concrete edits; all pattern/modified files were read and exist (except `src/tui/dashboard.test.ts`, a new file).                                                      |
+| Pattern familiarity  | ready  | Read `sessionLabel` (`types.ts:73-76`), `formatSessionRow`/`truncate`/`calculateScroll` (`dashboard.ts:66-145`), and `visibleLength`/`truncateAnsi` (`ansi.ts:34-90`) — the exact patterns the new helpers mirror.                        |
+| Dependency awareness | ready  | Blast radius mapped: `visibleStates()` consumed by `dashboard.ts`, `app.ts` internals, and `index.ts:638,752`; `renderSessionList` by `render.ts:68,92`; `sessionLabel` stays exported. One off-spec consumer flagged below (see Risks).  |
+| Edge case coverage   | ready  | Concrete edge list assembled from spec + code: empty/equal window, 0 agents, singleton, group-of-N, tied urgency, narrow cols (branch-drop vs window-truncate), header scroll-off, mouse-click row mapping.                               |
+| Test strategy        | ready  | Inner loop `bun test src/tui`; validation `bun run typecheck && bun run lint && bun test && bun run build`; per-component check commands in spec; test fixture conventions confirmed in `app.test.ts`, `types.test.ts`, `render.test.ts`. |
 
 ## Key Patterns
 

@@ -5,7 +5,7 @@
 
 ## Technical Approach
 
-Replace the dashboard's flat `session:window`-labeled rows with a grouped row model: sessions with 2+ agents render a header line followed by indented agent rows showing only the window name; single-agent sessions render one inline `session · window` row. The core refactor is a `DashboardRow` discriminated union (`header` | `agent`) built in `TuiApp`, which decouples *rendered line index* from *selectable state index* — the prerequisite named in the contract, since `selectedIndex` currently indexes 1:1 into `visibleStates()` and header lines would break that mapping.
+Replace the dashboard's flat `session:window`-labeled rows with a grouped row model: sessions with 2+ agents render a header line followed by indented agent rows showing only the window name; single-agent sessions render one inline `session · window` row. The core refactor is a `DashboardRow` discriminated union (`header` | `agent`) built in `TuiApp`, which decouples _rendered line index_ from _selectable state index_ — the prerequisite named in the contract, since `selectedIndex` currently indexes 1:1 into `visibleStates()` and header lines would break that mapping.
 
 Ordering preserves the dashboard's attention-first purpose: `visibleStates()` is redefined to grouped order — groups sort by their most urgent member (then session name), rows within a group sort by urgency then window name. Because `visibleStates()` keeps returning the flat agent list in exactly the rendered order, `selectedIndex`, `moveUp/moveDown`, `selectedState()`, and the paneId re-anchor in `updateStates()` all keep their existing semantics untouched; only scroll math and the selected-row highlight move to row-space.
 
@@ -23,28 +23,28 @@ Labeling consolidates on a new `windowLabel()` helper in `src/state/types.ts` (w
 
 ### New Files
 
-| File Path | Purpose |
-| --- | --- |
+| File Path                   | Purpose                                                                            |
+| --------------------------- | ---------------------------------------------------------------------------------- |
 | `src/tui/dashboard.test.ts` | Tests for row building, grouping, column sizing, shrink order, scroll-in-row-space |
 
 ### Modified Files
 
-| File Path | Changes |
-| --- | --- |
-| `src/state/types.ts` | Add `windowLabel(state)` helper; keep `sessionLabel` (still used by `/` filter context and tests) |
-| `src/state/types.test.ts` | Cases for `windowLabel`: normal, empty window, `window === session` |
-| `src/tui/app.ts` | Grouped ordering in `visibleStates()`; new `dashboardRows()` returning `DashboardRow[]`; selected-row index helper |
-| `src/tui/app.test.ts` | Group ordering (inter- and intra-group), singleton inline, filter hides empty groups, selection skips headers |
-| `src/tui/dashboard.ts` | Render `DashboardRow[]`: header lines, indented agent rows, inline singletons; content-sized columns via `visibleLength`; shrink order; scroll over rows |
-| `src/tui/render.test.ts` | Frame-level assertions updated for grouped layout |
-| `src/terminal/ansi.ts` | Add `padAnsi(value, width)` (pad by visible width) and width-aware `truncateWidth(value, maxWidth)` plain-text truncator with `…` |
-| `src/terminal/ansi.test.ts` | Cases for `padAnsi`/`truncateWidth` with emoji and ANSI codes |
-| `src/cli/status.ts` | `formatStatusLine` chip label: `windowLabel(s)` instead of `s.session` |
-| `src/cli/status.test.ts` | Chip shows window name; falls back when empty or equal to session; paneId ranges unchanged |
-| `src/tui/preview.ts` | Title uses `windowLabel(state)` with session as secondary context |
-| `src/tui/preview.test.ts` | Assert window-first title |
-| `src/tui/kill.ts` | Confirmation label uses `windowLabel(state)` with session context |
-| `src/tui/kill.test.ts` | Assert window-first confirmation |
+| File Path                   | Changes                                                                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/state/types.ts`        | Add `windowLabel(state)` helper; keep `sessionLabel` (still used by `/` filter context and tests)                                                        |
+| `src/state/types.test.ts`   | Cases for `windowLabel`: normal, empty window, `window === session`                                                                                      |
+| `src/tui/app.ts`            | Grouped ordering in `visibleStates()`; new `dashboardRows()` returning `DashboardRow[]`; selected-row index helper                                       |
+| `src/tui/app.test.ts`       | Group ordering (inter- and intra-group), singleton inline, filter hides empty groups, selection skips headers                                            |
+| `src/tui/dashboard.ts`      | Render `DashboardRow[]`: header lines, indented agent rows, inline singletons; content-sized columns via `visibleLength`; shrink order; scroll over rows |
+| `src/tui/render.test.ts`    | Frame-level assertions updated for grouped layout                                                                                                        |
+| `src/terminal/ansi.ts`      | Add `padAnsi(value, width)` (pad by visible width) and width-aware `truncateWidth(value, maxWidth)` plain-text truncator with `…`                        |
+| `src/terminal/ansi.test.ts` | Cases for `padAnsi`/`truncateWidth` with emoji and ANSI codes                                                                                            |
+| `src/cli/status.ts`         | `formatStatusLine` chip label: `windowLabel(s)` instead of `s.session`                                                                                   |
+| `src/cli/status.test.ts`    | Chip shows window name; falls back when empty or equal to session; paneId ranges unchanged                                                               |
+| `src/tui/preview.ts`        | Title uses `windowLabel(state)` with session as secondary context                                                                                        |
+| `src/tui/preview.test.ts`   | Assert window-first title                                                                                                                                |
+| `src/tui/kill.ts`           | Confirmation label uses `windowLabel(state)` with session context                                                                                        |
+| `src/tui/kill.test.ts`      | Assert window-first confirmation                                                                                                                         |
 
 ### Deleted Files
 
@@ -98,7 +98,7 @@ selectedRowIndex(): number      // row index of visibleStates()[selectedIndex]
 **Key decisions**:
 
 - `visibleStates()` returns the flat list in rendered order, so `selectedIndex`, `moveUp/moveDown`, `selectedState()`, `updateStates()` paneId re-anchor, and `clampSelection()` need **zero changes**. Headers are render-only artifacts, inherently unselectable.
-- Group ordering falls out of a two-pass sort: sort states by `compareStatus` then session (existing `sortedStates()`); a session's first appearance in that list *is* its most-urgent rank, so group order = order of first appearance. Within each group, re-sort members by `compareStatus`, then `windowLabel` comparison.
+- Group ordering falls out of a two-pass sort: sort states by `compareStatus` then session (existing `sortedStates()`); a session's first appearance in that list _is_ its most-urgent rank, so group order = order of first appearance. Within each group, re-sort members by `compareStatus`, then `windowLabel` comparison.
 - `aggregate` on the header = the group's most urgent member's status (drives the stretch-scope icon and header color).
 - Filter needs no group logic: `applyFilter` keeps filtering states; a fully-filtered-out session simply produces no rows.
 
@@ -118,7 +118,7 @@ selectedRowIndex(): number      // row index of visibleStates()[selectedIndex]
 
 **Pattern to follow**: `visibleLength` / `truncateAnsi` at `src/terminal/ansi.ts:34-90`.
 
-**Overview**: `padAnsi(value, width)` pads with trailing spaces up to a *visible* width; `truncateWidth(value, maxWidth)` truncates plain text by visible width appending `…` (replacing `dashboard.ts`'s private `.length`-based `truncate`).
+**Overview**: `padAnsi(value, width)` pads with trailing spaces up to a _visible_ width; `truncateWidth(value, maxWidth)` truncates plain text by visible width appending `…` (replacing `dashboard.ts`'s private `.length`-based `truncate`).
 
 **Key decisions**:
 
@@ -144,9 +144,9 @@ selectedRowIndex(): number      // row index of visibleStates()[selectedIndex]
 
 ```typescript
 interface ColumnWidths {
-  name: number;    // max visible width of any row's name cell
-  detail: number;  // flexes, floor 8
-  branch: number;  // 12, or 0 when dropped
+  name: number; // max visible width of any row's name cell
+  detail: number; // flexes, floor 8
+  branch: number; // 12, or 0 when dropped
 }
 
 // name cell per row kind:
@@ -202,9 +202,7 @@ interface ColumnWidths {
 
 ```typescript
 // preview.ts:37 — was: `${display.icon} ${sessionLabel(state)} · ...`
-const where = windowLabel(state) === state.session
-  ? state.session
-  : `${windowLabel(state)} [${state.session}]`;
+const where = windowLabel(state) === state.session ? state.session : `${windowLabel(state)} [${state.session}]`;
 const title = `${display.icon} ${where} · ${display.label.toUpperCase()}${claudeInfo}${modeTag}`;
 
 // kill.ts:26 — same `where` rule, keeping the existing claudeName suffix
@@ -230,15 +228,15 @@ export type DashboardRow =
 
 ### Unit Tests
 
-| Test File | Coverage |
-| --- | --- |
-| `src/state/types.test.ts` | `windowLabel` fallback matrix |
-| `src/tui/app.test.ts` | Group/intra-group ordering, singleton rows, header derivation, filter, selection-skips-headers |
-| `src/tui/dashboard.test.ts` | Column sizing, shrink order, emoji alignment, scroll in row-space |
-| `src/tui/render.test.ts` | Full-frame snapshots with grouped layout |
-| `src/terminal/ansi.test.ts` | `padAnsi`, `truncateWidth` |
-| `src/cli/status.test.ts` | Chip label + fallback, ranges intact |
-| `src/tui/preview.test.ts`, `src/tui/kill.test.ts` | Window-first labels |
+| Test File                                         | Coverage                                                                                       |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `src/state/types.test.ts`                         | `windowLabel` fallback matrix                                                                  |
+| `src/tui/app.test.ts`                             | Group/intra-group ordering, singleton rows, header derivation, filter, selection-skips-headers |
+| `src/tui/dashboard.test.ts`                       | Column sizing, shrink order, emoji alignment, scroll in row-space                              |
+| `src/tui/render.test.ts`                          | Full-frame snapshots with grouped layout                                                       |
+| `src/terminal/ansi.test.ts`                       | `padAnsi`, `truncateWidth`                                                                     |
+| `src/cli/status.test.ts`                          | Chip label + fallback, ranges intact                                                           |
+| `src/tui/preview.test.ts`, `src/tui/kill.test.ts` | Window-first labels                                                                            |
 
 **Key test cases** (from contract success criteria):
 
@@ -258,22 +256,22 @@ export type DashboardRow =
 
 ## Error Handling
 
-| Error Scenario | Handling Strategy |
-| --- | --- |
-| Window name empty (pane outside a named window) | `windowLabel` falls back to session; inline row renders bare session |
-| All sessions are singletons | Degenerates to a flat list — visually close to today's layout, by design |
-| Terminal narrower than minimum (`cols < 20`) | Existing `render.ts` "Terminal too small" path, unchanged |
+| Error Scenario                                    | Handling Strategy                                                                                                         |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Window name empty (pane outside a named window)   | `windowLabel` falls back to session; inline row renders bare session                                                      |
+| All sessions are singletons                       | Degenerates to a flat list — visually close to today's layout, by design                                                  |
+| Terminal narrower than minimum (`cols < 20`)      | Existing `render.ts` "Terminal too small" path, unchanged                                                                 |
 | Selected agent's session regrouped between frames | `updateStates` re-anchors by paneId against the new `visibleStates()` order — existing behavior, now covering group moves |
 
 ## Failure Modes
 
-| Component | Failure Mode | Trigger | Impact | Mitigation |
-| --- | --- | --- | --- | --- |
-| Row model | Rendered order diverges from `visibleStates()` order | `dashboardRows()` and `visibleStates()` computing order independently | Selection highlights the wrong row | `dashboardRows()` is *derived from* `visibleStates()` output, never re-sorts; test asserts flattened agent rows === `visibleStates()` |
-| Column sizing | One extreme window name starves the detail column for every row | 60-char window name | Detail column pinned at floor everywhere | Accepted for MVP (contract: window never truncates before detail/branch give way); last-resort `truncateWidth` still bounds it |
-| Scroll | Selected row hidden behind header lines | Selected agent in a large group near viewport edge | Selected row scrolls out of view | Scroll math uses `selectedRowIndex()` (row-space), tested at viewport boundaries |
-| Statusline | Chip label changes break click ranges | Editing line 26 beyond the bold span | Click-to-switch breaks silently | Test asserts `#[range=user|paneId]` markers byte-identical to before |
-| Emoji width | Terminal renders an emoji at 1 cell where `charWidth` says 2 | Terminal/font disagreement (rare) | One-cell misalignment on that row | Accept — `charWidth` matches tmux's wcwidth behavior; no per-terminal detection |
+| Component     | Failure Mode                                                    | Trigger                                                               | Impact                                   | Mitigation                                                                                                                            |
+| ------------- | --------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Row model     | Rendered order diverges from `visibleStates()` order            | `dashboardRows()` and `visibleStates()` computing order independently | Selection highlights the wrong row       | `dashboardRows()` is _derived from_ `visibleStates()` output, never re-sorts; test asserts flattened agent rows === `visibleStates()` |
+| Column sizing | One extreme window name starves the detail column for every row | 60-char window name                                                   | Detail column pinned at floor everywhere | Accepted for MVP (contract: window never truncates before detail/branch give way); last-resort `truncateWidth` still bounds it        |
+| Scroll        | Selected row hidden behind header lines                         | Selected agent in a large group near viewport edge                    | Selected row scrolls out of view         | Scroll math uses `selectedRowIndex()` (row-space), tested at viewport boundaries                                                      |
+| Statusline    | Chip label changes break click ranges                           | Editing line 26 beyond the bold span                                  | Click-to-switch breaks silently          | Test asserts `#[range=user                                                                                                            | paneId]` markers byte-identical to before |
+| Emoji width   | Terminal renders an emoji at 1 cell where `charWidth` says 2    | Terminal/font disagreement (rare)                                     | One-cell misalignment on that row        | Accept — `charWidth` matches tmux's wcwidth behavior; no per-terminal detection                                                       |
 
 ## Validation Commands
 

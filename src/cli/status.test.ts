@@ -122,7 +122,9 @@ describe('formatStatusLine', () => {
 
   test('formats each entry with icon, bold window name, and age', () => {
     const now = Math.floor(Date.now() / 1000);
-    const states = [makeState({ status: AgentStatus.PERMIT, session: 'mysession', window: 'task-window', ts: now - 10 })];
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, session: 'mysession', window: 'task-window', ts: now - 10 }),
+    ];
     const result = formatStatusLine(states);
     // Icon for PERMIT is ⚠ with color #f9e2af
     expect(result).toContain('#[fg=#f9e2af]');
