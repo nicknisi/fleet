@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { tmux } from '../tmux/ipc.ts';
@@ -8,6 +8,32 @@ interface Check {
   name: string;
   ok: boolean;
   detail: string;
+}
+
+interface InstalledPluginEntry {
+  installPath?: string;
+}
+
+export function installedPluginHasHooks(pluginsRoot: string, prefix = 'fleet@'): boolean {
+  const manifest = join(pluginsRoot, 'installed_plugins.json');
+  if (!existsSync(manifest)) return false;
+
+  let plugins: Record<string, InstalledPluginEntry[]>;
+  try {
+    plugins = JSON.parse(readFileSync(manifest, 'utf8')).plugins ?? {};
+  } catch {
+    return false;
+  }
+
+  for (const [key, entries] of Object.entries(plugins)) {
+    if (!key.startsWith(prefix)) continue;
+    for (const entry of entries) {
+      if (entry.installPath && existsSync(join(entry.installPath, 'hooks', 'hooks.json'))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 export function runDoctor(): number {
@@ -52,6 +78,15 @@ export function runDoctor(): number {
     name: 'fleet plugin',
     ok: fleetInstalled,
     detail: fleetInstalled ? 'installed' : 'not installed (run: fleet install)',
+  });
+
+  const hasHooks = installedPluginHasHooks(pluginDir);
+  checks.push({
+    name: 'fleet hooks',
+    ok: hasHooks,
+    detail: hasHooks
+      ? 'registered'
+      : 'installed plugin has no hooks/hooks.json — dashboard will stay empty (reinstall: fleet install)',
   });
 
   let allOk = true;

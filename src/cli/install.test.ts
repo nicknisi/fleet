@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addTmuxConfLine, removeTmuxConfLine, tmuxConfPath } from './install.ts';
+import { addTmuxConfLine, removeTmuxConfLine, resolvePluginDir, tmuxConfPath } from './install.ts';
 
 let workDir: string;
 let confFile: string;
@@ -104,6 +104,34 @@ describe('removeTmuxConfLine', () => {
     expect(result).not.toContain('# fleet-managed');
     expect(result).toContain('set -g mouse on');
     expect(result).toContain('set -g foo bar');
+  });
+});
+
+describe('resolvePluginDir', () => {
+  test('returns null when no candidate has hooks/hooks.json', () => {
+    const bare = join(workDir, 'bare');
+    mkdirSync(bare, { recursive: true });
+    expect(resolvePluginDir([bare])).toBe(null);
+  });
+
+  test('returns null for an empty candidate list', () => {
+    expect(resolvePluginDir([])).toBe(null);
+  });
+
+  test('returns the candidate containing hooks/hooks.json', () => {
+    const plugin = join(workDir, 'plugin');
+    mkdirSync(join(plugin, 'hooks'), { recursive: true });
+    writeFileSync(join(plugin, 'hooks', 'hooks.json'), '{}');
+    expect(resolvePluginDir([plugin])).toBe(plugin);
+  });
+
+  test('skips candidates without hooks and returns the first that has them', () => {
+    const bare = join(workDir, 'bare-keg');
+    const plugin = join(workDir, 'dev-checkout');
+    mkdirSync(bare, { recursive: true });
+    mkdirSync(join(plugin, 'hooks'), { recursive: true });
+    writeFileSync(join(plugin, 'hooks', 'hooks.json'), '{}');
+    expect(resolvePluginDir([bare, plugin])).toBe(plugin);
   });
 });
 

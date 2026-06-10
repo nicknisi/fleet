@@ -6,13 +6,17 @@ import { runStatusLineInject, runStatusLineRemove } from './statusline.ts';
 const FLEET_MANAGED_MARKER = '# fleet-managed';
 const FLEET_TMUX_LINE = `run-shell "fleet statusline --inject" ${FLEET_MANAGED_MARKER}`;
 
-function fleetPluginDir(): string {
-  const binDir = dirname(process.execPath);
-  const fromBin = resolve(binDir, '..');
-  if (existsSync(join(fromBin, 'hooks', 'hooks.json'))) return fromBin;
+export function resolvePluginDir(candidates: string[]): string | null {
+  for (const dir of candidates) {
+    if (existsSync(join(dir, 'hooks', 'hooks.json'))) return dir;
+  }
+  return null;
+}
+
+function fleetPluginDir(): string | null {
+  const fromBin = resolve(dirname(process.execPath), '..');
   const fromDev = resolve(import.meta.dir, '../..');
-  if (existsSync(join(fromDev, 'hooks', 'hooks.json'))) return fromDev;
-  return fromBin;
+  return resolvePluginDir([fromBin, fromDev]);
 }
 
 function marketplaceDir(): string {
@@ -87,6 +91,14 @@ function ensureMarketplace(fleetDir: string): string {
 
 export function runInstall(): number {
   const fleetDir = fleetPluginDir();
+  if (fleetDir === null) {
+    process.stderr.write(
+      'fleet install failed: could not find a plugin directory containing hooks/hooks.json.\n' +
+        'Without hooks, Claude Code writes no status files and the dashboard stays empty.\n' +
+        'If fleet was installed via Homebrew, the package may be missing the hooks/ directory — try upgrading.\n',
+    );
+    return 1;
+  }
   const mpDir = ensureMarketplace(fleetDir);
 
   const addMp = Bun.spawnSync({
