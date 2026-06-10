@@ -41,6 +41,25 @@ export function visibleLength(value: string): number {
 }
 
 /**
+ * Pad a string with trailing spaces up to `width` visible terminal columns.
+ * Never truncates — callers truncate first.
+ */
+export function padAnsi(value: string, width: number): string {
+  const pad = width - visibleLength(value);
+  return pad > 0 ? value + ' '.repeat(pad) : value;
+}
+
+/**
+ * Truncate plain text to `maxWidth` visible terminal columns, appending `…`
+ * (1 cell) when cut. Accounts for wide characters (emoji, CJK).
+ */
+export function truncateWidth(value: string, maxWidth: number): string {
+  if (visibleLength(value) <= maxWidth) return value;
+  if (maxWidth <= 1) return '';
+  return truncateAnsi(value, maxWidth - 1) + '…';
+}
+
+/**
  * Truncate a string to `maxWidth` visible terminal columns, preserving ANSI
  * escape sequences. Accounts for wide characters (emoji, CJK).
  */

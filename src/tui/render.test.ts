@@ -39,6 +39,21 @@ const makeState = (): AgentState => ({
   agentType: 'claude',
 });
 
+describe('render grouped dashboard frame', () => {
+  test('grouped session renders a header line and indented window rows in the frame', () => {
+    const app = new TuiApp();
+    app.updateStates([makeState(), { ...makeState(), paneId: '%2', window: 'other' }]);
+
+    const out = render(app, { cols: 100, rows: 40 });
+    // oxlint-disable-next-line no-control-regex
+    const stripped = out.replace(/\x1b\[[0-9;:]*[@-~]/g, '');
+
+    expect(stripped).toContain('agent-one · 2 agents');
+    expect(stripped).toContain('  main');
+    expect(stripped).toContain('  other');
+  });
+});
+
 describe('render preview pane isolation', () => {
   test('open background in captured preview content is sealed before the row ends', () => {
     const app = new TuiApp();

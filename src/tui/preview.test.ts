@@ -1,9 +1,20 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, beforeAll, mock } from 'bun:test';
 import { previewActions } from './preview.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 import { disableColors } from '../terminal/colors.ts';
 
 disableColors();
+
+// capturePane reads real tmux; mock it so renderPreview is deterministic.
+mock.module('../tmux/sessions.ts', () => ({
+  capturePane: () => ['pane content'],
+}));
+
+let renderPreview: typeof import('./preview.ts').renderPreview;
+
+beforeAll(async () => {
+  ({ renderPreview } = await import('./preview.ts'));
+});
 
 const makeState = (status: AgentStatus): AgentState => ({
   paneId: '%1',
@@ -46,5 +57,18 @@ describe('previewActions', () => {
   test('SHELL returns empty', () => {
     const actions = previewActions(makeState(AgentStatus.SHELL));
     expect(actions).toBe('');
+  });
+});
+
+describe('renderPreview title', () => {
+  test('labels window-first with the session as context', () => {
+    const lines = renderPreview({ ...makeState(AgentStatus.DONE), window: 'editor' }, 80, 20);
+    expect(lines[0]).toContain('editor [test] · READY');
+  });
+
+  test('collapses to the bare session when the window adds nothing', () => {
+    const lines = renderPreview({ ...makeState(AgentStatus.DONE), window: 'test' }, 80, 20);
+    expect(lines[0]).toContain('test · READY');
+    expect(lines[0]).not.toContain('[');
   });
 });

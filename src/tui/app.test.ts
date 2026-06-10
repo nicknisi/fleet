@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { TuiApp, TuiMode } from './app.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 
-const makeState = (session: string, status: AgentStatus, paneId?: string): AgentState => ({
+const makeState = (session: string, status: AgentStatus, paneId?: string, window?: string): AgentState => ({
   paneId: paneId ?? `%${Math.floor(Math.random() * 1000)}`,
   paneNum: Math.floor(Math.random() * 1000),
   session,
-  window: 'main',
+  window: window ?? 'main',
   claudeName: null,
   status,
   tool: null,
@@ -132,6 +132,110 @@ describe('TuiApp', () => {
     expect(app.mode as string).toBe('CONFIRM_KILL');
     app.exitKillConfirm();
     expect(app.mode as string).toBe('PREVIEW');
+  });
+});
+
+describe('grouped rows', () => {
+  test('group with a PERMIT agent sorts above a DONE-only group regardless of name', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      makeState('alpha', AgentStatus.DONE, '%1', 'one'),
+      makeState('alpha', AgentStatus.DONE, '%2', 'two'),
+      makeState('zeta', AgentStatus.PERMIT, '%3', 'urgent'),
+      makeState('zeta', AgentStatus.IDLE, '%4', 'calm'),
+    ]);
+    const order = app.visibleStates().map((s) => s.session);
+    expect(order).toEqual(['zeta', 'zeta', 'alpha', 'alpha']);
+  });
+
+  test('within a group, PERMIT renders above DONE; equal statuses order by window name', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      makeState('cli', AgentStatus.DONE, '%1', 'bravo'),
+      makeState('cli', AgentStatus.PERMIT, '%2', 'zulu'),
+      makeState('cli', AgentStatus.DONE, '%3', 'alpha'),
+    ]);
+    const order = app.visibleStates().map((s) => s.window);
+    expect(order).toEqual(['zulu', 'alpha', 'bravo']);
+  });
+
+  test('singleton session renders one non-grouped agent row, no header', () => {
+    const app = new TuiApp();
+    app.updateStates([makeState('solo', AgentStatus.IDLE, '%1', 'editor')]);
+    const rows = app.dashboardRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ kind: 'agent', state: app.visibleStates()[0]!, grouped: false });
+  });
+
+  test('session with 2+ agents renders a header plus grouped rows', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      makeState('cli', AgentStatus.PERMIT, '%1', 'one'),
+      makeState('cli', AgentStatus.IDLE, '%2', 'two'),
+    ]);
+    const rows = app.dashboardRows();
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toEqual({ kind: 'header', session: 'cli', count: 2, aggregate: AgentStatus.PERMIT });
+    expect(rows[1]!.kind).toBe('agent');
+    expect(rows[2]!.kind).toBe('agent');
+    expect(rows.slice(1).every((r) => r.kind === 'agent' && r.grouped)).toBe(true);
+  });
+
+  test('flattened agent rows match visibleStates order exactly', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      makeState('cli', AgentStatus.DONE, '%1', 'one'),
+      makeState('cli', AgentStatus.BUSY, '%2', 'two'),
+      makeState('solo', AgentStatus.PERMIT, '%3', 'main'),
+      makeState('projects', AgentStatus.IDLE, '%4', 'a'),
+      makeState('projects', AgentStatus.IDLE, '%5', 'b'),
+    ]);
+    const flattened = app
+      .dashboardRows()
+      .filter((r) => r.kind === 'agent')
+      .map((r) => (r.kind === 'agent' ? r.state.paneId : ''));
+    expect(flattened).toEqual(app.visibleStates().map((s) => s.paneId));
+  });
+
+  test('filter that excludes all of a session removes its header', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      makeState('dotfiles', AgentStatus.IDLE, '%1', 'editor'),
+      makeState('dotfiles', AgentStatus.IDLE, '%2', 'shell'),
+      makeState('workos-app', AgentStatus.BUSY, '%3', 'api'),
+    ]);
+    app.setFilter('workos');
+    const rows = app.dashboardRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe('agent');
+  });
+
+  test('selectedRowIndex accounts for header lines', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      makeState('cli', AgentStatus.PERMIT, '%1', 'one'),
+      makeState('cli', AgentStatus.BUSY, '%2', 'two'),
+      makeState('solo', AgentStatus.IDLE, '%3', 'main'),
+    ]);
+    // rows: header(cli), agent(%1), agent(%2), agent(%3 inline)
+    expect(app.selectedRowIndex()).toBe(1);
+    app.moveDown();
+    expect(app.selectedRowIndex()).toBe(2);
+    app.moveDown();
+    expect(app.selectedRowIndex()).toBe(3);
+    expect(app.selectedState()!.paneId).toBe('%3');
+  });
+
+  test('selection always lands on an agent, never a header', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      makeState('cli', AgentStatus.PERMIT, '%1', 'one'),
+      makeState('cli', AgentStatus.BUSY, '%2', 'two'),
+    ]);
+    for (let i = 0; i < 5; i++) {
+      expect(app.selectedState()).not.toBeNull();
+      app.moveDown();
+    }
   });
 });
 

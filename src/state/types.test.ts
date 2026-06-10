@@ -6,6 +6,7 @@ import {
   extractClaudeName,
   displayName,
   sessionLabel,
+  windowLabel,
   type AgentState,
 } from './types.ts';
 
@@ -90,6 +91,20 @@ describe('sessionLabel', () => {
 
   test('omits window when empty', () => {
     expect(sessionLabel({ ...base, window: '' })).toBe('dotfiles');
+  });
+});
+
+describe('windowLabel', () => {
+  test('returns the window name', () => {
+    expect(windowLabel(base)).toBe('editor');
+  });
+
+  test('falls back to session when window is empty', () => {
+    expect(windowLabel({ ...base, window: '' })).toBe('dotfiles');
+  });
+
+  test('falls back to session when window matches the session name', () => {
+    expect(windowLabel({ ...base, window: 'dotfiles' })).toBe('dotfiles');
   });
 });
 

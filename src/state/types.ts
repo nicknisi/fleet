@@ -75,6 +75,13 @@ export function sessionLabel(state: AgentState): string {
   return `${state.session}:${state.window}`;
 }
 
+// Window-first label: the window name is what distinguishes agents; the
+// session is the fallback when the window adds no information.
+export function windowLabel(state: AgentState): string {
+  if (state.window.length === 0 || state.window === state.session) return state.session;
+  return state.window;
+}
+
 export function displayName(state: AgentState): string {
   return state.claudeName ?? sessionLabel(state);
 }
