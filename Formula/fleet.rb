@@ -21,6 +21,8 @@ class Fleet < Formula
 
   def install
     bin.install "fleet"
+    prefix.install "hooks"
+    prefix.install ".claude-plugin"
   end
 
   test do

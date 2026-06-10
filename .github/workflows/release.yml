@@ -52,7 +52,7 @@ jobs:
         run: bun build --compile --minify --target=${{ matrix.target }} index.ts --outfile fleet
 
       - name: Package tarball
-        run: tar czf ${{ matrix.artifact }}.tar.gz fleet
+        run: tar czf ${{ matrix.artifact }}.tar.gz fleet hooks .claude-plugin
 
       - uses: actions/upload-artifact@v4
         with:
@@ -76,6 +76,12 @@ jobs:
     needs: [release-please, build]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout fleet repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          path: fleet
+
       - name: Checkout tap repo
         uses: actions/checkout@v4
         with:
@@ -92,6 +98,10 @@ jobs:
           VERSION: ${{ needs.release-please.outputs.tag_name }}
         run: |
           VER="${VERSION#v}"
+          # The in-repo formula is canonical; copy it so the tap can never
+          # diverge from it (e.g. missing prefix.install lines), then patch
+          # version + shas below.
+          cp fleet/Formula/fleet.rb tap/Formula/fleet.rb
           SHA_ARM64=$(shasum -a 256 fleet-darwin-arm64.tar.gz | cut -d' ' -f1)
           SHA_X86_64=$(shasum -a 256 fleet-darwin-x86_64.tar.gz | cut -d' ' -f1)
           SHA_LINUX=$(shasum -a 256 fleet-linux-x86_64.tar.gz | cut -d' ' -f1)
