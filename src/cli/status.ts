@@ -36,10 +36,10 @@ export function formatStatusLine(states: AgentState[]): string {
   // A "clear all" chip dismisses every ready agent at once. Only ready (DONE)
   // agents are dismissible, so the chip only appears when one is present.
   if (filtered.some((s) => s.status === AgentStatus.DONE)) {
-    entries.push(`#[range=user|${ACK_ALL_RANGE}]#[fg=#6c7086]✕ clear#[norange]`);
+    entries.push(`#[range=user|${ACK_ALL_RANGE}]#[fg=brightblack]✕ clear#[norange]`);
   }
 
-  return entries.join(' #[fg=#45475a]│ ');
+  return entries.join(' #[fg=brightblack]│ ');
 }
 
 export function formatPlainStatus(states: AgentState[], session: string): string {

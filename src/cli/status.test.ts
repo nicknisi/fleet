@@ -126,8 +126,8 @@ describe('formatStatusLine', () => {
       makeState({ status: AgentStatus.PERMIT, session: 'mysession', window: 'task-window', ts: now - 10 }),
     ];
     const result = formatStatusLine(states);
-    // Icon for PERMIT is ⚠ with color #f9e2af
-    expect(result).toContain('#[fg=#f9e2af]');
+    // Icon for PERMIT is ⚠ in the terminal's yellow (theme-aware named color)
+    expect(result).toContain('#[fg=yellow]');
     expect(result).toContain('⚠');
     expect(result).toContain('#[bold]task-window#[nobold]');
     expect(result).toContain('10s');
@@ -173,7 +173,7 @@ describe('formatStatusLine', () => {
       makeState({ status: AgentStatus.QUESTION, session: 'b', paneId: '%2' }),
     ];
     const result = formatStatusLine(states);
-    expect(result).toContain(' #[fg=#45475a]│ ');
+    expect(result).toContain(' #[fg=brightblack]│ ');
   });
 
   test('uses the window name even when claudeName is set', () => {
