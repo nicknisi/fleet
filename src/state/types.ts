@@ -36,14 +36,19 @@ export function compareStatus(a: AgentStatus, b: AgentStatus): number {
   return PRIORITY[a] - PRIORITY[b];
 }
 
+// `color` is a tmux color name (not a hex value): it is consumed only by the
+// tmux status line via `#[fg=...]`, where named colors resolve against the
+// terminal's own palette so they stay readable on light and dark themes alike.
+// The in-app TUI ignores this field and colors state via getStateColor()/the C
+// palette instead.
 export const STATUS_DISPLAY: Record<AgentStatus, { icon: string; label: string; color: string }> = {
-  [AgentStatus.PERMIT]: { icon: '⚠', label: 'waiting', color: '#f9e2af' },
-  [AgentStatus.QUESTION]: { icon: '?', label: 'asking', color: '#cba6f7' },
-  [AgentStatus.DONE]: { icon: '●', label: 'ready', color: '#a6e3a1' },
-  [AgentStatus.BUSY]: { icon: '◉', label: 'working', color: '#fab387' },
-  [AgentStatus.IDLE]: { icon: '●', label: 'idle', color: '#89b4fa' },
-  [AgentStatus.SHELL]: { icon: '■', label: 'shell', color: '#6c7086' },
-  [AgentStatus.DOWN]: { icon: '○', label: 'down', color: '#45475a' },
+  [AgentStatus.PERMIT]: { icon: '⚠', label: 'waiting', color: 'yellow' },
+  [AgentStatus.QUESTION]: { icon: '?', label: 'asking', color: 'magenta' },
+  [AgentStatus.DONE]: { icon: '●', label: 'ready', color: 'green' },
+  [AgentStatus.BUSY]: { icon: '◉', label: 'working', color: 'brightred' },
+  [AgentStatus.IDLE]: { icon: '●', label: 'idle', color: 'blue' },
+  [AgentStatus.SHELL]: { icon: '■', label: 'shell', color: 'brightblack' },
+  [AgentStatus.DOWN]: { icon: '○', label: 'down', color: 'brightblack' },
 };
 
 export interface AgentState {
