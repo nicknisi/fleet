@@ -11,6 +11,16 @@
 // through fleet, which decides what to do based on the range value.
 const ROW1_RANGE_GUARD = '#{&&:#{==:#{mouse_status_line},1},#{!=:#{mouse_status_range},}}';
 
+// Clearing a notification by *reaching* the pane, not just by clicking its Fleet
+// chip. A pane-focus-in hook acks whatever pane just gained focus, so switching
+// to a ready agent by any route (prefix keys, clicking the pane, choose-tree)
+// retires its chip. `fleet ack` self-gates to DONE — focusing a working/permit/
+// question pane is a no-op (those clear themselves once the on-screen prompt is
+// answered). `[99]` namespaces our hook so it coexists with any user pane-focus-in
+// hook at `[0]`; `-b` backgrounds it so a pane switch never waits on fleet.
+const FOCUS_HOOK_INDEX = 'pane-focus-in[99]';
+const FOCUS_HOOK_ACTION = 'run-shell -b "fleet ack \\"#{pane_id}\\""';
+
 export function buildInjectCommands(): string[][] {
   return [
     ['tmux', 'set', '-g', 'status', '2'],
@@ -41,6 +51,9 @@ export function buildInjectCommands(): string[][] {
       ROW1_RANGE_GUARD,
       'run-shell "fleet ack \\"#{mouse_status_range}\\""',
     ],
+    // pane-focus-in requires focus-events; switching to a pane then acks it.
+    ['tmux', 'set', '-g', 'focus-events', 'on'],
+    ['tmux', 'set-hook', '-g', FOCUS_HOOK_INDEX, FOCUS_HOOK_ACTION],
   ];
 }
 
@@ -50,6 +63,9 @@ export function buildRemoveCommands(): string[][] {
     ['tmux', 'set', '-g', 'status', 'on'],
     ['tmux', 'unbind', '-T', 'root', 'MouseDown1Status'],
     ['tmux', 'unbind', '-T', 'root', 'MouseDown3Status'],
+    // Remove only our indexed hook; leave focus-events as we found it (we can't
+    // know the user's prior value, and leaving it on is harmless).
+    ['tmux', 'set-hook', '-gu', FOCUS_HOOK_INDEX],
   ];
 }
 

@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { buildInjectCommands, buildRemoveCommands } from './statusline.ts';
 
 describe('buildInjectCommands', () => {
-  test('returns enable status-2, status-format[1], and both mouse bind commands', () => {
+  test('returns status-2, status-format[1], both mouse binds, and the focus hook', () => {
     const cmds = buildInjectCommands();
-    expect(cmds).toHaveLength(4);
+    expect(cmds).toHaveLength(6);
     expect(cmds[0]).toEqual(['tmux', 'set', '-g', 'status', '2']);
     expect(cmds[1]).toEqual(['tmux', 'set', '-g', 'status-format[1]', '#[align=left]#(fleet status --statusline)']);
     expect(cmds[2]![0]).toBe('tmux');
@@ -12,6 +12,22 @@ describe('buildInjectCommands', () => {
     expect(cmds[2]).toContain('MouseDown1Status');
     expect(cmds[3]![1]).toBe('bind');
     expect(cmds[3]).toContain('MouseDown3Status');
+  });
+
+  test('registers a pane-focus-in hook that acks the focused pane', () => {
+    const cmds = buildInjectCommands();
+    // focus-events must be on for pane-focus-in to fire at all.
+    expect(cmds).toContainEqual(['tmux', 'set', '-g', 'focus-events', 'on']);
+    // The hook itself: reaching a pane by any route clears its ready chip.
+    const hook = cmds.find((c) => c[1] === 'set-hook');
+    expect(hook).toBeDefined();
+    // Indexed so it coexists with a user's own pane-focus-in hook at [0].
+    expect(hook).toContain('pane-focus-in[99]');
+    const action = hook!.find((a) => a.includes('fleet ack'));
+    expect(action).toBeDefined();
+    expect(action).toContain('#{pane_id}');
+    // Backgrounded so a pane switch never waits on fleet starting up.
+    expect(action).toContain('-b');
   });
 
   test('all commands invoke tmux', () => {
@@ -57,14 +73,24 @@ describe('buildInjectCommands', () => {
 });
 
 describe('buildRemoveCommands', () => {
-  test('unsets status-format[1], resets status, and unbinds both mouse buttons', () => {
+  test('unsets status-format[1], resets status, unbinds both mouse buttons, and removes the focus hook', () => {
     const cmds = buildRemoveCommands();
     expect(cmds).toEqual([
       ['tmux', 'set', '-g', '-u', 'status-format[1]'],
       ['tmux', 'set', '-g', 'status', 'on'],
       ['tmux', 'unbind', '-T', 'root', 'MouseDown1Status'],
       ['tmux', 'unbind', '-T', 'root', 'MouseDown3Status'],
+      ['tmux', 'set-hook', '-gu', 'pane-focus-in[99]'],
     ]);
+  });
+
+  test('removes only our indexed focus hook, leaving focus-events untouched', () => {
+    const cmds = buildRemoveCommands();
+    const unsetHook = cmds.find((c) => c[1] === 'set-hook');
+    expect(unsetHook).toEqual(['tmux', 'set-hook', '-gu', 'pane-focus-in[99]']);
+    // We never set focus-events back off — can't know the user's prior value,
+    // and leaving it on is harmless.
+    expect(cmds.some((c) => c.includes('focus-events'))).toBe(false);
   });
 
   test('all commands invoke tmux', () => {
