@@ -165,7 +165,7 @@ fleet statusline --inject
 
 Each entry is clickable (tmux 3.2+). **Left-click** an agent name to switch to that session; **right-click** to mark it read in place without switching. When any agent is ready, a `✕ clear` chip appears at the end of the row — click it to dismiss every ready agent at once. Only agents whose turn it is for you appear: PERMIT (tool approval), QUESTION (a question to answer), and DONE/ready (finished, waiting on your next move). Working and idle sessions stay out of the bar — they don't need you to act, so they'd just be noise. Watch those in the dashboard instead.
 
-(After upgrading Fleet, re-run `fleet statusline --inject` to pick up the right-click binding and clear chip.)
+(After upgrading Fleet, re-run `fleet statusline --inject` to pick up the right-click binding, clear chip, and focus-to-clear hook.)
 
 **Status-right icon (lightweight):** A single icon in your existing status bar:
 
@@ -219,6 +219,7 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 
 - **Click it in the dashboard** — acknowledges in place, so you can clear several finished agents without leaving Fleet.
 - **Switch to it** (Enter, or left-click its statusline entry) — acknowledges, then takes you there.
+- **Focus its pane any other way** — reaching the pane through tmux itself (prefix keys, clicking the pane, `choose-tree`) clears it too, via a `pane-focus-in` hook, so you don't have to go through Fleet. Only a lingering `ready` chip clears this way; a pending `PERMIT`/`QUESTION` stays until you answer it on screen.
 - **Right-click its statusline entry** — acknowledges in place, without switching.
 - **Click the `✕ clear` chip** at the end of the statusline — acknowledges every ready agent at once.
 - **`fleet ack <pane>`** — from the CLI, for scripting or bulk-clearing.
