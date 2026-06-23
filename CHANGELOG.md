@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/nicknisi/fleet/compare/v0.8.0...v0.9.0) (2026-06-23)
+
+
+### Features
+
+* clear an agent's notification when you focus its pane ([#17](https://github.com/nicknisi/fleet/issues/17)) ([e0974e0](https://github.com/nicknisi/fleet/commit/e0974e08f50926e01dc63652dfa7e24285d559e1))
+
+
+### Bug Fixes
+
+* make tmux status line legible on light terminal themes ([#15](https://github.com/nicknisi/fleet/issues/15)) ([4273536](https://github.com/nicknisi/fleet/commit/42735361c8cb694c0c7cd77b905087eeaa51c836))
+
 ## [0.8.0](https://github.com/nicknisi/fleet/compare/v0.7.0...v0.8.0) (2026-06-10)
 
 
