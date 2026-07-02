@@ -14,6 +14,8 @@ import {
   restore,
   getTerminalSize,
 } from './src/terminal/terminal.ts';
+import { setThemeMode, C } from './src/terminal/colors.ts';
+import { detectThemeMode } from './src/terminal/theme.ts';
 import { fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
@@ -44,48 +46,36 @@ function printVersion(): number {
 }
 
 function printHelp(): number {
-  const isTTY = process.stdout.isTTY;
-  const c = (s: string) => (isTTY ? s : '');
-  const r = c('\x1b[0m');
-  const dim = c('\x1b[2m');
-  const bold = c('\x1b[1m');
-  const gray = c('\x1b[90m');
-  const permit = c('\x1b[38;2;249;226;175m');
-  const question = c('\x1b[38;2;203;166;247m');
-  const done = c('\x1b[38;2;166;227;161m');
-  const busy = c('\x1b[38;2;250;179;135m');
-  const idle = c('\x1b[38;2;137;180;250m');
-
-  const logo = `${permit}f${question}l${done}e${busy}e${idle}t${r}`;
+  const logo = `${C.permit}f${C.question}l${C.done}e${C.busy}e${C.idle}t${C.reset}`;
   const quips = ['herding agents', 'cat wrangling', 'mission control', 'pane management', 'vibes: immaculate'];
   const quip = quips[Math.floor(Math.random() * quips.length)];
 
   process.stdout.write(
     [
       '',
-      `  ${bold}${logo}${r}  ${dim}— ${quip}${r}`,
+      `  ${C.bold}${logo}${C.reset}  ${C.dim}— ${quip}${C.reset}`,
       '',
-      `  ${bold}Dashboard${r}`,
-      `    ${idle}fleet${r}                           ${gray}Launch TUI ${dim}(preview auto-opens on wide terms)${r}`,
-      `    ${idle}fleet${r} --preview | --no-preview   ${gray}Force preview on/off${r}`,
+      `  ${C.bold}Dashboard${C.reset}`,
+      `    ${C.idle}fleet${C.reset}                           ${C.gray}Launch TUI ${C.dim}(preview auto-opens on wide terms)${C.reset}`,
+      `    ${C.idle}fleet${C.reset} --preview | --no-preview   ${C.gray}Force preview on/off${C.reset}`,
       '',
-      `  ${bold}Commands${r}`,
-      `    ${idle}fleet status${r} [--tmux] <session>  ${gray}Query agent state${r}`,
-      `    ${idle}fleet status${r} --statusline        ${gray}Render multi-agent tmux status line${r}`,
-      `    ${idle}fleet next${r}                       ${gray}Jump to next waiting agent${r}`,
-      `    ${idle}fleet send${r} <session> <prompt>    ${gray}Send prompt to session${r}`,
-      `    ${idle}fleet reconcile${r} [--dry-run]      ${gray}Sweep orphan status files${r}`,
+      `  ${C.bold}Commands${C.reset}`,
+      `    ${C.idle}fleet status${C.reset} [--tmux] <session>  ${C.gray}Query agent state${C.reset}`,
+      `    ${C.idle}fleet status${C.reset} --statusline        ${C.gray}Render multi-agent tmux status line${C.reset}`,
+      `    ${C.idle}fleet next${C.reset}                       ${C.gray}Jump to next waiting agent${C.reset}`,
+      `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
+      `    ${C.idle}fleet reconcile${C.reset} [--dry-run]      ${C.gray}Sweep orphan status files${C.reset}`,
       '',
-      `  ${bold}Plugin${r}`,
-      `    ${idle}fleet install${r}                    ${gray}Register as Claude Code plugin${r}`,
-      `    ${idle}fleet uninstall${r}                  ${gray}Remove plugin registration${r}`,
-      `    ${idle}fleet doctor${r}                     ${gray}Health check${r}`,
+      `  ${C.bold}Plugin${C.reset}`,
+      `    ${C.idle}fleet install${C.reset}                    ${C.gray}Register as Claude Code plugin${C.reset}`,
+      `    ${C.idle}fleet uninstall${C.reset}                  ${C.gray}Remove plugin registration${C.reset}`,
+      `    ${C.idle}fleet doctor${C.reset}                     ${C.gray}Health check${C.reset}`,
       '',
-      `  ${bold}Tmux${r}`,
-      `    ${idle}fleet statusline${r} --inject        ${gray}Add fleet status to tmux row 2${r}`,
-      `    ${idle}fleet statusline${r} --remove        ${gray}Remove fleet status from tmux${r}`,
+      `  ${C.bold}Tmux${C.reset}`,
+      `    ${C.idle}fleet statusline${C.reset} --inject        ${C.gray}Add fleet status to tmux row 2${C.reset}`,
+      `    ${C.idle}fleet statusline${C.reset} --remove        ${C.gray}Remove fleet status from tmux${C.reset}`,
       '',
-      `  ${permit}⚠ waiting${r}  ${question}? asking${r}  ${done}✓ done${r}  ${busy}◉ working${r}  ${idle}● idle${r}`,
+      `  ${C.permit}⚠ waiting${C.reset}  ${C.question}? asking${C.reset}  ${C.done}✓ done${C.reset}  ${C.busy}◉ working${C.reset}  ${C.idle}● idle${C.reset}`,
       '',
     ].join('\n'),
   );
@@ -539,9 +529,14 @@ async function launchTui(): Promise<number> {
     app.mode = TuiMode.PREVIEW;
   }
 
+  // Raw mode first so the OSC 11 theme reply is readable from stdin, then the
+  // rest of the terminal setup. Detection resolves in ≤150ms (0ms when an
+  // explicit FLEET_THEME/@fleet-theme override is set).
+  enterRawMode();
+  const detectedTheme = await detectThemeMode();
+  setThemeMode(detectedTheme.mode);
   enterAlternateScreen();
   hideCursor();
-  enterRawMode();
   enableMouse();
 
   let needsRender = true;
@@ -798,6 +793,13 @@ async function launchTui(): Promise<number> {
       handleInput(buf);
       tick();
     });
+
+    // Replay any real keystrokes swallowed during the detection window (the OSC
+    // reply itself is already stripped out; only genuine input remains).
+    if (detectedTheme.leftover.length > 0) {
+      handleInput(detectedTheme.leftover);
+      tick();
+    }
 
     process.stdout.on('resize', () => {
       needsRender = true;

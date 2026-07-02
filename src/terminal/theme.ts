@@ -63,3 +63,90 @@ export function resolveThemeMode(s: ThemeSignals): ThemeMode {
   if (s.macAppearance) return s.macAppearance === 'Dark' ? 'dark' : 'light';
   return 'dark';
 }
+
+// ---- I/O section: reads env/tmux/OS and performs the OSC 11 round-trip ----
+
+export function readTmuxThemeOption(): string | null {
+  try {
+    const p = Bun.spawnSync({ cmd: ['tmux', 'show', '-gqv', '@fleet-theme'], stdout: 'pipe', stderr: 'pipe' });
+    if (p.exitCode !== 0) return null;
+    const v = p.stdout.toString().trim();
+    return v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function readMacAppearance(): 'Dark' | 'Light' | null {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const p = Bun.spawnSync({ cmd: ['defaults', 'read', '-g', 'AppleInterfaceStyle'], stdout: 'pipe', stderr: 'pipe' });
+    // Key absent (non-zero exit) means the system is in light mode.
+    if (p.exitCode !== 0) return 'Light';
+    return p.stdout.toString().trim() === 'Dark' ? 'Dark' : 'Light';
+  } catch {
+    return null;
+  }
+}
+
+const OSC11_QUERY = '\x1b]11;?\x07';
+const OSC11_TIMEOUT_MS = 150;
+
+// Query the terminal background. Requires raw mode and must run BEFORE the
+// main input listener attaches. Collects stdin during the window; returns the
+// parsed reply (if any) plus all non-reply bytes for the caller to replay.
+// Spike-verified: tmux 3.7a never answers — the timeout path is the normal
+// path inside tmux today; the reply path serves outside-tmux runs.
+export function queryOscBackground(
+  timeoutMs = OSC11_TIMEOUT_MS,
+): Promise<{ background: Rgb | null; leftover: Buffer }> {
+  return new Promise((resolve) => {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      resolve({ background: null, leftover: Buffer.alloc(0) });
+      return;
+    }
+    const chunks: Buffer[] = [];
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      process.stdin.off('data', onData);
+      const all = Buffer.concat(chunks);
+      resolve({ background: parseOsc11Reply(all), leftover: stripOsc11Reply(all) });
+    };
+    const onData = (c: Buffer) => {
+      chunks.push(c);
+      // Complete reply seen — no need to wait out the timer.
+      if (parseOsc11Reply(Buffer.concat(chunks))) done();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    process.stdin.on('data', onData);
+    process.stdout.write(OSC11_QUERY);
+  });
+}
+
+export async function detectThemeMode(): Promise<{ mode: ThemeMode; leftover: Buffer }> {
+  const envTheme = Bun.env.FLEET_THEME;
+  const tmuxOption = readTmuxThemeOption();
+  // An explicit override decides immediately — skip the 150ms OSC wait.
+  if (envTheme === 'light' || envTheme === 'dark' || tmuxOption === 'light' || tmuxOption === 'dark') {
+    const mode = resolveThemeMode({
+      envTheme,
+      tmuxOption,
+      oscBackground: null,
+      colorFgBg: undefined,
+      macAppearance: null,
+    });
+    return { mode, leftover: Buffer.alloc(0) };
+  }
+  const { background, leftover } = await queryOscBackground();
+  const mode = resolveThemeMode({
+    envTheme,
+    tmuxOption,
+    oscBackground: background,
+    colorFgBg: Bun.env.COLORFGBG,
+    macAppearance: readMacAppearance(),
+  });
+  return { mode, leftover };
+}
