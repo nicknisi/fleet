@@ -34,11 +34,17 @@ problem already fixed for the tmux statusline in PR #15, but never fixed in-app.
 - At startup (TTY + colors enabled only), emit an OSC 11 query (`ESC ] 11 ; ? ST`) and
   parse the reply from stdin. Compute Rec.709 luminance from the reported background.
 - Dark background → Mocha (current palette). Light → Catppuccin Latte equivalents.
-  Chrome colors (dim text, borders, header, hover accent) are derived from the measured
-  background rather than fixed.
-- **Fallback chain:** OSC 11 reply → `COLORFGBG` env heuristic (background field ≤ 6
-  or 8 → dark; 7 and 9–15 → light) → Mocha. Every fallback terminates at today's exact
-  behavior.
+  Chrome (dim text, borders, header, `gray`) stays on **named ANSI codes**, which the
+  terminal's own palette already adapts — only the truecolor state palette swaps.
+- **Detection chain** (first hit wins; each rung is a small pure-testable function):
+  1. `FLEET_THEME` env var (`light` | `dark`) — explicit, instant
+  2. `tmux show -gqv @fleet-theme` — durable user override, tmux-native
+  3. OSC 11 query, 150ms timeout — live when fleet runs outside tmux or a future
+     tmux forwards it (see resolved risk below)
+  4. `COLORFGBG` env heuristic (background field ≤ 6 or 8 → dark; 7 and 9–15 → light)
+  5. macOS only: `defaults read -g AppleInterfaceStyle` (`Dark` → dark; anything
+     else/error → light)
+  6. Default: dark (Mocha) — today's exact behavior
 - Reply timeout: 150ms. The query races the timeout before the first render; startup is
   already a synchronous full refresh, so worst case adds 150ms once.
 - **Input-layer integration (the one sharp edge):** the OSC reply arrives on stdin,
@@ -50,11 +56,12 @@ problem already fixed for the tmux statusline in PR #15, but never fixed in-app.
 - API: `initTheme(): Promise<Theme>`; `Theme` carries state colors + derived chrome +
   `isDark`. `colors.ts` consumers switch from module constants to the active `Theme`.
 
-**Known risk (spike first):** fleet always runs inside tmux, so the query reaches tmux,
-not the outer terminal. Whether tmux answers OSC 11 (with the client terminal's
-background) depends on tmux version and configuration. Implementation step 1 is a spike
-proving the reply round-trips on a real setup before any renderer work. If it doesn't,
-the fallback chain still ships and the OSC path stays dormant.
+**Risk — RESOLVED by live spike (2026-07-02):** on the reference setup (tmux 3.7a,
+Ghostty 1.3.1, macOS) an OSC 11 query from inside a pane gets **no reply** (0 bytes in
+600ms), `#{client_bg}` is not a supported format, and `COLORFGBG` is unset — while
+`AppleInterfaceStyle` reads `Dark` correctly. Hence the chain above: the OS-appearance
+rung is what auto-adapts on macOS today; the OSC rung stays for outside-tmux runs and
+future tmux versions; `@fleet-theme`/`FLEET_THEME` cover everything else.
 
 ## 2. Responsive layout — `src/tui/layouts/` (new)
 
@@ -89,9 +96,10 @@ the fallback chain still ships and the OSC path stays dormant.
   replacing the current plain header text.
 - **Busy pulse:** BUSY icon `◉` alternates normal/dim each fast tick. The tick must set
   `needsRender` when any BUSY row is visible and the pulse phase flips; no new timers.
-- **Hover highlight:** mouse motion events are already parsed (`src/terminal/mouse.ts`);
-  add a hover row index to app state and render the hovered row's name with the theme's
-  hover accent (foreground-only; exact treatment tuned during implementation). Extract
+- **Hover highlight:** mouse motion events are already parsed (`src/terminal/mouse.ts`),
+  but the current mouse mode (`?1002`) only reports motion while a button is held —
+  hover requires enabling any-event tracking (`?1003`) alongside it. Render the hovered
+  row's name underlined (foreground-only). Extract
   the row hit-testing math from `index.ts:629-653` into a pure, tested module as part of
   this change.
 - **Scroll indicators:** `↑ N more` / `↓ N more` lines when the agent list overflows the
