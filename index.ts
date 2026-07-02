@@ -23,7 +23,7 @@ import { acknowledgePlan } from './src/state/acknowledge.ts';
 import { scrapePane } from './src/state/scraper.ts';
 import { AgentStatus, ACK_ALL_RANGE, extractClaudeName, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
-import { listPanes, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
+import { listPanesResult, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
 import { detectPorts } from './src/tmux/ports.ts';
 import { sendKeys, sendRawKey } from './src/tmux/send.ts';
 import { runStatus } from './src/cli/status.ts';
@@ -209,6 +209,7 @@ function shortenPath(path: string): string {
 const branchCache = new Map<string, string | null>();
 let portCache = new Map<string, number[]>();
 const scrapeCache = new Map<string, AgentStatus | null>();
+let lastTmuxOk = true;
 
 function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): void {
   const paths = new Set<string>();
@@ -242,7 +243,8 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): vo
 // Fast refresh: ONE tmux call + status file reads + last-line JSONL reads. No git, no lsof.
 function refreshStates(statusDirs: string[]): AgentState[] {
   const hookStatuses = readAllStatusDirs(statusDirs);
-  const panes = listPanes();
+  const { ok: tmuxOk, panes } = listPanesResult();
+  lastTmuxOk = tmuxOk;
 
   const hookByPane = new Map<string, (typeof hookStatuses)[number]>();
   for (const h of hookStatuses) {
@@ -305,7 +307,7 @@ function refreshStates(statusDirs: string[]): AgentState[] {
 
 // Full refresh: runs slow caches then fast refresh
 function fullRefreshStates(statusDirs: string[]): AgentState[] {
-  const panes = listPanes();
+  const panes = listPanesResult().panes;
   refreshSlowCaches(panes);
   return refreshStates(statusDirs);
 }
@@ -549,12 +551,16 @@ async function launchTui(): Promise<number> {
   const doRefresh = () => {
     const states = refreshStates(statusDirs);
     app.updateStates(states);
+    app.tmuxDown = !lastTmuxOk;
+    app.hooksMissing = !statusDirs.some((d) => existsSync(d));
     needsRender = true;
   };
 
   const doFullRefresh = () => {
     const states = fullRefreshStates(statusDirs);
     app.updateStates(states);
+    app.tmuxDown = !lastTmuxOk;
+    app.hooksMissing = !statusDirs.some((d) => existsSync(d));
     needsRender = true;
   };
 

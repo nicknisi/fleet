@@ -49,7 +49,20 @@ export function renderSessionList(app: TuiApp, maxRows: number, cols: number): s
 
   if (rows.length === 0) {
     lines.push('');
-    lines.push(`${C.gray}  No agents found${C.reset}`);
+    if (app.tmuxDown) {
+      lines.push(`${C.permit}  ⚠ tmux isn't running${C.reset}`);
+      lines.push(`${C.gray}  fleet reads agents from tmux panes — start tmux, then re-run fleet${C.reset}`);
+    } else if (app.hooksMissing) {
+      lines.push(`${C.question}  ? no agent hooks found${C.reset}`);
+      lines.push(
+        `${C.gray}  run ${C.reset}fleet install${C.gray} to wire Claude Code hooks, then ${C.reset}fleet doctor${C.gray} to verify${C.reset}`,
+      );
+    } else if (app.isFiltering()) {
+      lines.push(`${C.gray}  no agents match "${app.getFilter()}"${C.reset}`);
+    } else {
+      lines.push(`${C.idle}  ● all quiet${C.reset}`);
+      lines.push(`${C.gray}  start claude in any tmux pane and it appears here${C.reset}`);
+    }
     return lines;
   }
 

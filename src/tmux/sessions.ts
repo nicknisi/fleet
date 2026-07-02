@@ -12,9 +12,14 @@ export interface PaneInfo {
 
 const PANE_FORMAT = '#{pane_id}\t#{session_name}\t#{window_name}\t#{pane_current_path}\t#{pane_pid}\t#{pane_title}';
 
-export function listPanes(): PaneInfo[] {
+export interface ListPanesResult {
+  ok: boolean;
+  panes: PaneInfo[];
+}
+
+export function listPanesResult(): ListPanesResult {
   const result = tmux(['list-panes', '-a', '-F', PANE_FORMAT]);
-  if (result.exitCode !== 0) return [];
+  if (result.exitCode !== 0) return { ok: false, panes: [] };
 
   const panes: PaneInfo[] = [];
   for (const line of result.stdout.split('\n')) {
@@ -32,7 +37,11 @@ export function listPanes(): PaneInfo[] {
       paneTitle: parts[5]!,
     });
   }
-  return panes;
+  return { ok: true, panes };
+}
+
+export function listPanes(): PaneInfo[] {
+  return listPanesResult().panes;
 }
 
 export function capturePane(paneId: string, maxLines: number): string[] {

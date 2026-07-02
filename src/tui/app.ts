@@ -39,6 +39,8 @@ export class TuiApp {
   private modeBeforeKill: TuiMode = TuiMode.DASHBOARD;
   sendBuffer: string = '';
   shouldQuit: boolean = false;
+  tmuxDown: boolean = false;
+  hooksMissing: boolean = false;
   splitRatio: number = DEFAULT_SPLIT;
   dragging: boolean = false;
 

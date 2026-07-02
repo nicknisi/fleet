@@ -65,10 +65,11 @@ describe('renderSessionList grouping', () => {
     expect(lines[0]).not.toContain('·');
   });
 
-  test('empty state renders No agents found', () => {
+  test('empty state renders the all-quiet default, not the old No agents found', () => {
     const app = makeApp([]);
-    const lines = renderSessionList(app, 20, 120).map(stripAnsi);
-    expect(lines.join('\n')).toContain('No agents found');
+    const lines = renderSessionList(app, 20, 120).map(stripAnsi).join('\n');
+    expect(lines).toContain('all quiet');
+    expect(lines).not.toContain('No agents found');
   });
 });
 
@@ -188,5 +189,36 @@ describe('stateAtLine click mapping', () => {
     } else {
       expect(firstLine).toContain('agents'); // header line
     }
+  });
+});
+
+describe('empty states', () => {
+  test('tmux down explains itself instead of "No agents found"', () => {
+    const app = new TuiApp();
+    app.tmuxDown = true;
+    const lines = renderSessionList(app, 10, 80).join('\n');
+    expect(lines).toContain("tmux isn't running");
+    expect(lines).not.toContain('No agents found');
+  });
+
+  test('missing hooks points at fleet install', () => {
+    const app = new TuiApp();
+    app.hooksMissing = true;
+    const lines = renderSessionList(app, 10, 80).join('\n');
+    expect(lines).toContain('no agent hooks found');
+    expect(lines).toContain('fleet install');
+  });
+
+  test('empty filter result names the filter', () => {
+    const app = new TuiApp();
+    app.setFilter('zzz');
+    const lines = renderSessionList(app, 10, 80).join('\n');
+    expect(lines).toContain('no agents match');
+  });
+
+  test('genuinely idle fleet is all quiet', () => {
+    const app = new TuiApp();
+    const lines = renderSessionList(app, 10, 80).join('\n');
+    expect(lines).toContain('all quiet');
   });
 });
