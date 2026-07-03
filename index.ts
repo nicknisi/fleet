@@ -32,6 +32,7 @@ import { runSend } from './src/cli/send.ts';
 import { runInstall, runUninstall } from './src/cli/install.ts';
 import { runDoctor } from './src/cli/doctor.ts';
 import { runReconcile } from './src/cli/reconcile.ts';
+import { runExplain } from './src/cli/explain.ts';
 import { runStatusLineInject, runStatusLineRemove } from './src/cli/statusline.ts';
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -64,6 +65,7 @@ function printHelp(): number {
       `    ${C.idle}fleet status${C.reset} --statusline        ${C.gray}Render multi-agent tmux status line${C.reset}`,
       `    ${C.idle}fleet next${C.reset}                       ${C.gray}Jump to next waiting agent${C.reset}`,
       `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
+      `    ${C.idle}fleet explain${C.reset} <session>          ${C.gray}Trace how a session's state was decided${C.reset}`,
       `    ${C.idle}fleet reconcile${C.reset} [--dry-run]      ${C.gray}Sweep orphan status files${C.reset}`,
       '',
       `  ${C.bold}Plugin${C.reset}`,
@@ -281,7 +283,7 @@ function refreshStates(statusDirs: string[]): AgentState[] {
         scrapeStatus: scrapeCache.get(pane.paneId) ?? null,
         currentStatus: AgentStatus.IDLE,
         currentTs: 0,
-      });
+      }).status;
     } else {
       status = AgentStatus.SHELL;
     }
@@ -386,6 +388,16 @@ function handleCli(args: string[]): number | null {
       const states = fullRefreshStates(statusDirs);
       const force = args.includes('--force');
       return runSend(session, prompt, states, force);
+    }
+    case 'explain': {
+      const session = args[1];
+      if (!session) {
+        process.stderr.write('Usage: fleet explain <session> [--show-snapshot]\n');
+        return 1;
+      }
+      const showSnapshot = args.includes('--show-snapshot');
+      const states = fullRefreshStates(statusDirs);
+      return runExplain(session, states, statusDirs, showSnapshot);
     }
     case 'install':
       return runInstall();

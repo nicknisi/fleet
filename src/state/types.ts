@@ -108,3 +108,26 @@ export interface EventEntry {
   background_tasks?: boolean;
   notification_type?: string;
 }
+
+// Scraper return — was: AgentStatus | null. `ruleId` names the match branch that
+// fired (namespaced state.marker, e.g. 'permit.yn', 'idle.prompt') so the fusion
+// trace can show *why* the scraper read what it did. null/null == no match.
+export interface DetectResult {
+  status: AgentStatus | null;
+  ruleId: string | null;
+}
+
+// Fusion trace — one per pane per refresh, discarded by the hot loop. Records
+// which layer authored the final state and why, for `fleet explain`.
+export interface StateDecision {
+  final: AgentStatus;
+  candidates: { hook: AgentStatus | null; event: AgentStatus | null; scrape: AgentStatus | null };
+  hookTs: number;
+  eventTs: number | null;
+  now: number;
+  winner: 'hook' | 'event' | 'scrape' | 'default';
+  reason: string; // human-readable why
+  workingTimeoutFired: boolean;
+  freshnessEvaluated: boolean; // MUST be false under live wiring — see engine notes
+  scrapeRuleId: string | null;
+}
