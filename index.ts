@@ -604,6 +604,21 @@ async function launchTui(): Promise<number> {
         if (!mouse) return;
         const sz = getTerminalSize();
 
+        // Map a pixel (mx,my) to the agent under it, or null for chrome/off-list.
+        // The session list interleaves header lines with agent rows, so route the
+        // line through the scroll-aware row model instead of indexing directly.
+        // Shared by the hover and click branches so their geometry can't drift.
+        const listHit = (mx: number, my: number): AgentState | null => {
+          const inList = app.mode === TuiMode.DASHBOARD || mx <= app.listWidth(sz.cols);
+          if (!inList) return null;
+          const headerHeight = renderHeader(app, sz.cols).length;
+          const contentRows = sz.rows - headerHeight - renderFooter(app, sz.cols).length - 1;
+          const lineIdx = my - headerHeight - 2;
+          if (lineIdx < 0) return null;
+          const listCols = app.mode === TuiMode.DASHBOARD ? sz.cols : app.listWidth(sz.cols);
+          return stateAtLine(app, lineIdx, contentRows, listCols);
+        };
+
         // Divider drag (preview / passthrough)
         if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
           const dividerCol = app.listWidth(sz.cols) + 1;
@@ -624,6 +639,18 @@ async function launchTui(): Promise<number> {
           }
         }
 
+        // Hover highlight — underline the row under the cursor. Any-event mouse
+        // tracking (?1003) streams motion constantly, so only re-render when the
+        // hovered pane actually changes; parking the cursor costs nothing.
+        if (mouse.type === 'move' && !app.dragging) {
+          const id = listHit(mouse.x, mouse.y)?.paneId ?? null;
+          if (id !== app.hoverPaneId) {
+            app.hoverPaneId = id;
+            needsRender = true;
+          }
+          return;
+        }
+
         // Click a session row → select it, and acknowledge it in place if it's
         // ready. Lets you clear finished agents by clicking, without leaving the
         // dashboard (statusline clicks switch instead — see `fleet switch`).
@@ -632,25 +659,15 @@ async function launchTui(): Promise<number> {
           mouse.type === 'press' &&
           (app.mode === TuiMode.DASHBOARD || app.mode === TuiMode.PREVIEW)
         ) {
-          const inList = app.mode === TuiMode.DASHBOARD || mouse.x <= app.listWidth(sz.cols);
-          if (inList) {
-            const headerHeight = renderHeader(app, sz.cols).length;
-            const contentRows = sz.rows - headerHeight - renderFooter(app, sz.cols).length - 1;
-            const lineIdx = mouse.y - headerHeight - 2;
-            // The session list interleaves header lines with agent rows, so map
-            // the clicked line through the row model (scroll-aware) instead of
-            // indexing visibleStates() directly. Header clicks select nothing.
-            const listCols = app.mode === TuiMode.DASHBOARD ? sz.cols : app.listWidth(sz.cols);
-            const sel = lineIdx >= 0 ? stateAtLine(app, lineIdx, contentRows, listCols) : null;
-            if (sel) {
-              const idx = app.visibleStates().findIndex((s) => s.paneId === sel.paneId);
-              if (idx >= 0) app.selectedIndex = idx;
-              if (sel.status === AgentStatus.DONE) {
-                acknowledgePane(sel.paneId, statusDirs);
-                app.updateStates(refreshStates(statusDirs));
-              }
-              needsRender = true;
+          const sel = listHit(mouse.x, mouse.y);
+          if (sel) {
+            const idx = app.visibleStates().findIndex((s) => s.paneId === sel.paneId);
+            if (idx >= 0) app.selectedIndex = idx;
+            if (sel.status === AgentStatus.DONE) {
+              acknowledgePane(sel.paneId, statusDirs);
+              app.updateStates(refreshStates(statusDirs));
             }
+            needsRender = true;
           }
         }
         return;

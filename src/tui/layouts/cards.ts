@@ -26,6 +26,7 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
     }
     const st = row.state;
     const selected = st.paneId === selectedPane;
+    const hovered = st.paneId === app.hoverPaneId;
     const color = getStateColor(st.status);
     const display = STATUS_DISPLAY[st.status];
     const bar = selected ? `${color}▌${C.reset}` : ' ';
@@ -40,7 +41,7 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
     const gap = ' '.repeat(Math.max(1, nameW - visibleLength(name) + 1));
     lines.push(
       truncateAnsi(
-        `${bar} ${color}${display.icon}${C.reset} ${selected ? C.bold : ''}${name}${C.reset}${gap}${getAgeColor(st.ts)}${age}${C.reset}`,
+        `${bar} ${color}${display.icon}${C.reset} ${selected ? C.bold : hovered ? C.underline : ''}${name}${C.reset}${gap}${getAgeColor(st.ts)}${age}${C.reset}`,
         cols,
       ),
     );

@@ -43,10 +43,15 @@ export class TuiApp {
   hooksMissing: boolean = false;
   splitRatio: number = DEFAULT_SPLIT;
   dragging: boolean = false;
+  hoverPaneId: string | null = null;
 
   updateStates(newStates: AgentState[]): void {
     const selectedPaneId = this.selectedState()?.paneId ?? null;
     this.states = newStates;
+
+    if (this.hoverPaneId && !newStates.some((s) => s.paneId === this.hoverPaneId)) {
+      this.hoverPaneId = null;
+    }
 
     if (selectedPaneId) {
       const visible = this.visibleStates();

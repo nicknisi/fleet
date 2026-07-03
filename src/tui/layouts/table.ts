@@ -51,6 +51,7 @@ function formatAgentRow(
   widths: ColumnWidths,
   cols: number,
   selected: boolean,
+  hovered: boolean,
 ): string {
   const state = row.state;
   const display = STATUS_DISPLAY[state.status];
@@ -58,7 +59,7 @@ function formatAgentRow(
 
   const sel = selected ? `${stColor}▌${C.reset}` : ' ';
 
-  const nameColor = selected ? C.bold : '';
+  const nameColor = selected ? C.bold : hovered ? C.underline : '';
   const name = padAnsi(truncateWidth(nameCell(row), widths.name), widths.name);
 
   let detail = '';
@@ -95,7 +96,9 @@ export function buildTableLines(app: TuiApp, cols: number): LayoutLines {
       lines.push(formatHeaderRow(row, cols));
       states.push(null);
     } else {
-      lines.push(formatAgentRow(row, widths, cols, row.state.paneId === selectedPane));
+      lines.push(
+        formatAgentRow(row, widths, cols, row.state.paneId === selectedPane, row.state.paneId === app.hoverPaneId),
+      );
       states.push(row.state);
     }
   }
