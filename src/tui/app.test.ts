@@ -239,6 +239,24 @@ describe('grouped rows', () => {
   });
 });
 
+describe('hover', () => {
+  test('updateStates clears hover for vanished panes', () => {
+    const app = new TuiApp();
+    app.updateStates([makeState('sess', AgentStatus.IDLE, '%1')]);
+    app.hoverPaneId = '%1';
+    app.updateStates([]);
+    expect(app.hoverPaneId).toBeNull();
+  });
+
+  test('updateStates keeps hover for surviving panes', () => {
+    const app = new TuiApp();
+    app.updateStates([makeState('sess', AgentStatus.IDLE, '%1')]);
+    app.hoverPaneId = '%1';
+    app.updateStates([makeState('sess', AgentStatus.IDLE, '%1')]);
+    expect(app.hoverPaneId).toBe('%1');
+  });
+});
+
 describe('split drag', () => {
   test('listWidth uses splitRatio', () => {
     const app = new TuiApp();

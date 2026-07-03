@@ -39,12 +39,20 @@ export class TuiApp {
   private modeBeforeKill: TuiMode = TuiMode.DASHBOARD;
   sendBuffer: string = '';
   shouldQuit: boolean = false;
+  tmuxDown: boolean = false;
+  hooksMissing: boolean = false;
   splitRatio: number = DEFAULT_SPLIT;
   dragging: boolean = false;
+  hoverPaneId: string | null = null;
+  pulsePhase: boolean = false;
 
   updateStates(newStates: AgentState[]): void {
     const selectedPaneId = this.selectedState()?.paneId ?? null;
     this.states = newStates;
+
+    if (this.hoverPaneId && !newStates.some((s) => s.paneId === this.hoverPaneId)) {
+      this.hoverPaneId = null;
+    }
 
     if (selectedPaneId) {
       const visible = this.visibleStates();

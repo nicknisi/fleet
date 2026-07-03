@@ -14,6 +14,8 @@ import {
   restore,
   getTerminalSize,
 } from './src/terminal/terminal.ts';
+import { setThemeMode, C } from './src/terminal/colors.ts';
+import { detectThemeMode } from './src/terminal/theme.ts';
 import { fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
@@ -21,7 +23,7 @@ import { acknowledgePlan } from './src/state/acknowledge.ts';
 import { scrapePane } from './src/state/scraper.ts';
 import { AgentStatus, ACK_ALL_RANGE, extractClaudeName, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
-import { listPanes, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
+import { listPanesResult, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
 import { detectPorts } from './src/tmux/ports.ts';
 import { sendKeys, sendRawKey } from './src/tmux/send.ts';
 import { runStatus } from './src/cli/status.ts';
@@ -44,48 +46,36 @@ function printVersion(): number {
 }
 
 function printHelp(): number {
-  const isTTY = process.stdout.isTTY;
-  const c = (s: string) => (isTTY ? s : '');
-  const r = c('\x1b[0m');
-  const dim = c('\x1b[2m');
-  const bold = c('\x1b[1m');
-  const gray = c('\x1b[90m');
-  const permit = c('\x1b[38;2;249;226;175m');
-  const question = c('\x1b[38;2;203;166;247m');
-  const done = c('\x1b[38;2;166;227;161m');
-  const busy = c('\x1b[38;2;250;179;135m');
-  const idle = c('\x1b[38;2;137;180;250m');
-
-  const logo = `${permit}f${question}l${done}e${busy}e${idle}t${r}`;
+  const logo = `${C.permit}f${C.question}l${C.done}e${C.busy}e${C.idle}t${C.reset}`;
   const quips = ['herding agents', 'cat wrangling', 'mission control', 'pane management', 'vibes: immaculate'];
   const quip = quips[Math.floor(Math.random() * quips.length)];
 
   process.stdout.write(
     [
       '',
-      `  ${bold}${logo}${r}  ${dim}— ${quip}${r}`,
+      `  ${C.bold}${logo}${C.reset}  ${C.dim}— ${quip}${C.reset}`,
       '',
-      `  ${bold}Dashboard${r}`,
-      `    ${idle}fleet${r}                           ${gray}Launch TUI ${dim}(preview auto-opens on wide terms)${r}`,
-      `    ${idle}fleet${r} --preview | --no-preview   ${gray}Force preview on/off${r}`,
+      `  ${C.bold}Dashboard${C.reset}`,
+      `    ${C.idle}fleet${C.reset}                           ${C.gray}Launch TUI ${C.dim}(preview auto-opens on wide terms)${C.reset}`,
+      `    ${C.idle}fleet${C.reset} --preview | --no-preview   ${C.gray}Force preview on/off${C.reset}`,
       '',
-      `  ${bold}Commands${r}`,
-      `    ${idle}fleet status${r} [--tmux] <session>  ${gray}Query agent state${r}`,
-      `    ${idle}fleet status${r} --statusline        ${gray}Render multi-agent tmux status line${r}`,
-      `    ${idle}fleet next${r}                       ${gray}Jump to next waiting agent${r}`,
-      `    ${idle}fleet send${r} <session> <prompt>    ${gray}Send prompt to session${r}`,
-      `    ${idle}fleet reconcile${r} [--dry-run]      ${gray}Sweep orphan status files${r}`,
+      `  ${C.bold}Commands${C.reset}`,
+      `    ${C.idle}fleet status${C.reset} [--tmux] <session>  ${C.gray}Query agent state${C.reset}`,
+      `    ${C.idle}fleet status${C.reset} --statusline        ${C.gray}Render multi-agent tmux status line${C.reset}`,
+      `    ${C.idle}fleet next${C.reset}                       ${C.gray}Jump to next waiting agent${C.reset}`,
+      `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
+      `    ${C.idle}fleet reconcile${C.reset} [--dry-run]      ${C.gray}Sweep orphan status files${C.reset}`,
       '',
-      `  ${bold}Plugin${r}`,
-      `    ${idle}fleet install${r}                    ${gray}Register as Claude Code plugin${r}`,
-      `    ${idle}fleet uninstall${r}                  ${gray}Remove plugin registration${r}`,
-      `    ${idle}fleet doctor${r}                     ${gray}Health check${r}`,
+      `  ${C.bold}Plugin${C.reset}`,
+      `    ${C.idle}fleet install${C.reset}                    ${C.gray}Register as Claude Code plugin${C.reset}`,
+      `    ${C.idle}fleet uninstall${C.reset}                  ${C.gray}Remove plugin registration${C.reset}`,
+      `    ${C.idle}fleet doctor${C.reset}                     ${C.gray}Health check${C.reset}`,
       '',
-      `  ${bold}Tmux${r}`,
-      `    ${idle}fleet statusline${r} --inject        ${gray}Add fleet status to tmux row 2${r}`,
-      `    ${idle}fleet statusline${r} --remove        ${gray}Remove fleet status from tmux${r}`,
+      `  ${C.bold}Tmux${C.reset}`,
+      `    ${C.idle}fleet statusline${C.reset} --inject        ${C.gray}Add fleet status to tmux row 2${C.reset}`,
+      `    ${C.idle}fleet statusline${C.reset} --remove        ${C.gray}Remove fleet status from tmux${C.reset}`,
       '',
-      `  ${permit}⚠ waiting${r}  ${question}? asking${r}  ${done}✓ done${r}  ${busy}◉ working${r}  ${idle}● idle${r}`,
+      `  ${C.permit}⚠ waiting${C.reset}  ${C.question}? asking${C.reset}  ${C.done}✓ done${C.reset}  ${C.busy}◉ working${C.reset}  ${C.idle}● idle${C.reset}`,
       '',
     ].join('\n'),
   );
@@ -219,6 +209,7 @@ function shortenPath(path: string): string {
 const branchCache = new Map<string, string | null>();
 let portCache = new Map<string, number[]>();
 const scrapeCache = new Map<string, AgentStatus | null>();
+let lastTmuxOk = true;
 
 function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): void {
   const paths = new Set<string>();
@@ -252,7 +243,8 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): vo
 // Fast refresh: ONE tmux call + status file reads + last-line JSONL reads. No git, no lsof.
 function refreshStates(statusDirs: string[]): AgentState[] {
   const hookStatuses = readAllStatusDirs(statusDirs);
-  const panes = listPanes();
+  const { ok: tmuxOk, panes } = listPanesResult();
+  lastTmuxOk = tmuxOk;
 
   const hookByPane = new Map<string, (typeof hookStatuses)[number]>();
   for (const h of hookStatuses) {
@@ -315,7 +307,7 @@ function refreshStates(statusDirs: string[]): AgentState[] {
 
 // Full refresh: runs slow caches then fast refresh
 function fullRefreshStates(statusDirs: string[]): AgentState[] {
-  const panes = listPanes();
+  const panes = listPanesResult().panes;
   refreshSlowCaches(panes);
   return refreshStates(statusDirs);
 }
@@ -539,9 +531,15 @@ async function launchTui(): Promise<number> {
     app.mode = TuiMode.PREVIEW;
   }
 
+  // Raw mode first so the OSC 11 theme reply is readable from stdin, then the
+  // rest of the terminal setup. Detection is instant inside tmux or with an
+  // explicit FLEET_THEME/@fleet-theme override; only a direct terminal query
+  // (outside tmux, no override) costs up to 150ms.
+  enterRawMode();
+  const detectedTheme = await detectThemeMode();
+  setThemeMode(detectedTheme.mode);
   enterAlternateScreen();
   hideCursor();
-  enterRawMode();
   enableMouse();
 
   let needsRender = true;
@@ -554,12 +552,16 @@ async function launchTui(): Promise<number> {
   const doRefresh = () => {
     const states = refreshStates(statusDirs);
     app.updateStates(states);
+    app.tmuxDown = !lastTmuxOk;
+    app.hooksMissing = !statusDirs.some((d) => existsSync(d));
     needsRender = true;
   };
 
   const doFullRefresh = () => {
     const states = fullRefreshStates(statusDirs);
     app.updateStates(states);
+    app.tmuxDown = !lastTmuxOk;
+    app.hooksMissing = !statusDirs.some((d) => existsSync(d));
     needsRender = true;
   };
 
@@ -603,6 +605,21 @@ async function launchTui(): Promise<number> {
         if (!mouse) return;
         const sz = getTerminalSize();
 
+        // Map a pixel (mx,my) to the agent under it, or null for chrome/off-list.
+        // The session list interleaves header lines with agent rows, so route the
+        // line through the scroll-aware row model instead of indexing directly.
+        // Shared by the hover and click branches so their geometry can't drift.
+        const listHit = (mx: number, my: number): AgentState | null => {
+          const inList = app.mode === TuiMode.DASHBOARD || mx <= app.listWidth(sz.cols);
+          if (!inList) return null;
+          const headerHeight = renderHeader(app, sz.cols).length;
+          const contentRows = sz.rows - headerHeight - renderFooter(app, sz.cols).length - 1;
+          const lineIdx = my - headerHeight - 2;
+          if (lineIdx < 0) return null;
+          const listCols = app.mode === TuiMode.DASHBOARD ? sz.cols : app.listWidth(sz.cols);
+          return stateAtLine(app, lineIdx, contentRows, listCols);
+        };
+
         // Divider drag (preview / passthrough)
         if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
           const dividerCol = app.listWidth(sz.cols) + 1;
@@ -623,6 +640,18 @@ async function launchTui(): Promise<number> {
           }
         }
 
+        // Hover highlight — underline the row under the cursor. Any-event mouse
+        // tracking (?1003) streams motion constantly, so only re-render when the
+        // hovered pane actually changes; parking the cursor costs nothing.
+        if (mouse.type === 'move' && !app.dragging) {
+          const id = listHit(mouse.x, mouse.y)?.paneId ?? null;
+          if (id !== app.hoverPaneId) {
+            app.hoverPaneId = id;
+            needsRender = true;
+          }
+          return;
+        }
+
         // Click a session row → select it, and acknowledge it in place if it's
         // ready. Lets you clear finished agents by clicking, without leaving the
         // dashboard (statusline clicks switch instead — see `fleet switch`).
@@ -631,24 +660,15 @@ async function launchTui(): Promise<number> {
           mouse.type === 'press' &&
           (app.mode === TuiMode.DASHBOARD || app.mode === TuiMode.PREVIEW)
         ) {
-          const inList = app.mode === TuiMode.DASHBOARD || mouse.x <= app.listWidth(sz.cols);
-          if (inList) {
-            const headerHeight = renderHeader(app, sz.cols).length;
-            const contentRows = sz.rows - headerHeight - renderFooter(app, sz.cols).length - 1;
-            const lineIdx = mouse.y - headerHeight - 2;
-            // The session list interleaves header lines with agent rows, so map
-            // the clicked line through the row model (scroll-aware) instead of
-            // indexing visibleStates() directly. Header clicks select nothing.
-            const sel = lineIdx >= 0 ? stateAtLine(app, lineIdx, contentRows) : null;
-            if (sel) {
-              const idx = app.visibleStates().findIndex((s) => s.paneId === sel.paneId);
-              if (idx >= 0) app.selectedIndex = idx;
-              if (sel.status === AgentStatus.DONE) {
-                acknowledgePane(sel.paneId, statusDirs);
-                app.updateStates(refreshStates(statusDirs));
-              }
-              needsRender = true;
+          const sel = listHit(mouse.x, mouse.y);
+          if (sel) {
+            const idx = app.visibleStates().findIndex((s) => s.paneId === sel.paneId);
+            if (idx >= 0) app.selectedIndex = idx;
+            if (sel.status === AgentStatus.DONE) {
+              acknowledgePane(sel.paneId, statusDirs);
+              app.updateStates(refreshStates(statusDirs));
             }
+            needsRender = true;
           }
         }
         return;
@@ -799,6 +819,13 @@ async function launchTui(): Promise<number> {
       tick();
     });
 
+    // Replay any real keystrokes swallowed during the detection window (the OSC
+    // reply itself is already stripped out; only genuine input remains).
+    if (detectedTheme.leftover.length > 0) {
+      handleInput(detectedTheme.leftover);
+      tick();
+    }
+
     process.stdout.on('resize', () => {
       needsRender = true;
       tick();
@@ -815,6 +842,10 @@ async function launchTui(): Promise<number> {
     refreshTimer = setInterval(() => {
       if (isTyping()) return;
       doRefresh();
+      if (app.visibleStates().some((s) => s.status === AgentStatus.BUSY)) {
+        app.pulsePhase = !app.pulsePhase;
+        needsRender = true;
+      }
       tick();
     }, FAST_REFRESH_MS);
 

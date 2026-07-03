@@ -3,7 +3,7 @@ import { disableColors } from '../terminal/colors.ts';
 
 disableColors();
 
-import { computeColumnWidths, renderSessionList, stateAtLine } from './dashboard.ts';
+import { computeColumnWidths, renderHeader, renderSessionList, stateAtLine } from './dashboard.ts';
 import { TuiApp } from './app.ts';
 import { stripAnsi, visibleLength } from '../terminal/ansi.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
@@ -65,10 +65,11 @@ describe('renderSessionList grouping', () => {
     expect(lines[0]).not.toContain('·');
   });
 
-  test('empty state renders No agents found', () => {
+  test('empty state renders the all-quiet default, not the old No agents found', () => {
     const app = makeApp([]);
-    const lines = renderSessionList(app, 20, 120).map(stripAnsi);
-    expect(lines.join('\n')).toContain('No agents found');
+    const lines = renderSessionList(app, 20, 120).map(stripAnsi).join('\n');
+    expect(lines).toContain('all quiet');
+    expect(lines).not.toContain('No agents found');
   });
 });
 
@@ -163,11 +164,11 @@ describe('stateAtLine click mapping', () => {
       makeState('solo', AgentStatus.IDLE, '%3', 'main'),
     ]);
     // rows: header(cli), agent(%1), agent(%2), agent(%3)
-    expect(stateAtLine(app, 0, 20)).toBeNull();
-    expect(stateAtLine(app, 1, 20)?.paneId).toBe('%1');
-    expect(stateAtLine(app, 2, 20)?.paneId).toBe('%2');
-    expect(stateAtLine(app, 3, 20)?.paneId).toBe('%3');
-    expect(stateAtLine(app, 4, 20)).toBeNull();
+    expect(stateAtLine(app, 0, 20, 120)).toBeNull();
+    expect(stateAtLine(app, 1, 20, 120)?.paneId).toBe('%1');
+    expect(stateAtLine(app, 2, 20, 120)?.paneId).toBe('%2');
+    expect(stateAtLine(app, 3, 20, 120)?.paneId).toBe('%3');
+    expect(stateAtLine(app, 4, 20, 120)).toBeNull();
   });
 
   test('accounts for scroll offset', () => {
@@ -181,12 +182,87 @@ describe('stateAtLine click mapping', () => {
     const maxRows = 10;
     const lines = renderSessionList(app, maxRows, 120);
     // The first rendered line and stateAtLine(0) must describe the same row.
-    const first = stateAtLine(app, 0, maxRows);
+    const first = stateAtLine(app, 0, maxRows, 120);
     const firstLine = stripAnsi(lines[0]!);
     if (first) {
       expect(firstLine).toContain(first.window);
     } else {
-      expect(firstLine).toContain('agents'); // header line
+      // Chrome line (null state): a group header or a scroll indicator. When the
+      // list is scrolled, the top line is the "↑ N more" indicator.
+      expect(/agents|more/.test(firstLine)).toBe(true);
     }
+  });
+});
+
+describe('empty states', () => {
+  test('tmux down explains itself instead of "No agents found"', () => {
+    const app = new TuiApp();
+    app.tmuxDown = true;
+    const lines = renderSessionList(app, 10, 80).join('\n');
+    expect(lines).toContain("tmux isn't running");
+    expect(lines).not.toContain('No agents found');
+  });
+
+  test('missing hooks points at fleet install', () => {
+    const app = new TuiApp();
+    app.hooksMissing = true;
+    const lines = renderSessionList(app, 10, 80).join('\n');
+    expect(lines).toContain('no agent hooks found');
+    expect(lines).toContain('fleet install');
+  });
+
+  test('empty filter result names the filter', () => {
+    const app = new TuiApp();
+    app.setFilter('zzz');
+    const lines = renderSessionList(app, 10, 80).join('\n');
+    expect(lines).toContain('no agents match');
+  });
+
+  test('genuinely idle fleet is all quiet', () => {
+    const app = new TuiApp();
+    const lines = renderSessionList(app, 10, 80).join('\n');
+    expect(lines).toContain('all quiet');
+  });
+
+  test('empty-state lines never exceed narrow sidebar width', () => {
+    for (const setup of [
+      (a: TuiApp) => (a.tmuxDown = true),
+      (a: TuiApp) => (a.hooksMissing = true),
+      (a: TuiApp) => a.setFilter('zzz'),
+      () => {},
+    ]) {
+      const app = new TuiApp();
+      setup(app);
+      for (const line of renderSessionList(app, 10, 34)) {
+        expect(visibleLength(line)).toBeLessThanOrEqual(34);
+      }
+    }
+  });
+});
+
+describe('header summary strip', () => {
+  const state = (over: Partial<AgentState> & { paneId: string; status: AgentStatus }): AgentState =>
+    makeState('sess', over.status, over.paneId, 'win', over);
+
+  test('aggregates permit+question into "need you"', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      state({ paneId: '%1', status: AgentStatus.PERMIT }),
+      state({ paneId: '%2', status: AgentStatus.QUESTION }),
+      state({ paneId: '%3', status: AgentStatus.BUSY }),
+      state({ paneId: '%4', status: AgentStatus.IDLE }),
+    ]);
+    const header = renderHeader(app, 120).join('');
+    expect(header).toContain('2 need you');
+    expect(header).toContain('1 working');
+    expect(header).toContain('1 idle');
+  });
+
+  test('quiet fleet shows only idle count', () => {
+    const app = new TuiApp();
+    app.updateStates([state({ paneId: '%1', status: AgentStatus.IDLE })]);
+    const header = renderHeader(app, 120).join('');
+    expect(header).not.toContain('need you');
+    expect(header).toContain('1 idle');
   });
 });

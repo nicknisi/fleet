@@ -38,7 +38,7 @@ This does three things:
 2. Adds a second tmux status row showing all active agents
 3. Adds a `run-shell` line to your tmux.conf (marked `# fleet-managed`)
 
-No `settings.json` editing required.
+No `settings.json` editing required. Install also offers two optional tmux keybindings — a sidebar split and a popup (see [Sidebar & popup](#sidebar--popup)).
 
 To remove everything cleanly:
 
@@ -59,6 +59,23 @@ fleet --no-preview      # Force preview pane off
 The dashboard shows every Claude Code pane grouped by urgency. Agents that need you sort to the top. Plain shell panes are hidden — you're here for the agents.
 
 Each row leads with the tmux session name. When Claude Code has auto-named a session (the descriptive title it generates per task), Fleet shows that name in the detail column so you can tell sessions apart at a glance. Filtering with `/` matches on session name, Claude name, and project path.
+
+The header carries a live summary strip — `N need you · N working · N ready · N idle` — so you can read the fleet's overall state without scanning rows. When there's nothing to list, Fleet tells you _why_ with a distinct empty state: tmux isn't running, the hooks aren't installed yet, your filter matched nothing, or everything's genuinely quiet.
+
+A few more cues while you work:
+
+- **Hover** — the row under your mouse underlines, so you can see what a click will select.
+- **Scroll indicators** — `↑ N more` / `↓ N more` appear when the list outruns the viewport.
+- **Busy pulse** — a working agent's `◉` icon pulses on each tick, so active turns read as alive at a glance.
+
+### Sidebar & popup
+
+`fleet install` offers two optional tmux keybindings (each confirm-gated, marked `# fleet-managed` so `fleet uninstall` strips them again):
+
+- **`prefix` + `f`** — open Fleet in a 34-column sidebar split on the left, alongside your work.
+- **`prefix` + `F`** — open Fleet in a popup that floats over your current pane (`display-popup -E`).
+
+Below 48 columns — like that narrow sidebar — Fleet automatically reflows the table into stacked cards with a compact footer. Same binary, no flag: wide panes get the table, narrow ones get cards.
 
 ### Keybindings
 
@@ -133,6 +150,18 @@ When the preview pane is open, Fleet shows context-aware actions at the bottom o
 Press `i` from the preview to enter passthrough mode. Every keystroke is forwarded directly to the agent's tmux pane — the preview updates live so you can see the result without leaving Fleet. Press `Esc` to exit back to the dashboard.
 
 This is the power feature: approve prompts, answer questions, type commands, and watch the output — all without switching panes. The footer shows `● LIVE` when passthrough is active.
+
+## Theming
+
+Fleet ships two palettes — Catppuccin Mocha for dark terminals, Catppuccin Latte for light ones — and picks between them automatically. Detection walks a chain and stops at the first hit:
+
+1. **`FLEET_THEME`** — `FLEET_THEME=light` or `FLEET_THEME=dark` forces the theme outright.
+2. **tmux option** — `tmux set -g @fleet-theme light` (or `dark`) pins it for every Fleet launched in that tmux server.
+3. **Terminal background** — outside tmux, Fleet asks the terminal for its background color (OSC 11), falling back to `COLORFGBG` if the terminal exports it. Current tmux doesn't forward the OSC 11 query, so this rung only fires when you run Fleet directly, not through tmux.
+4. **macOS appearance** — inside tmux on a Mac, Fleet follows the system Light/Dark setting. This is the rung that makes auto-switching work in a normal tmux session.
+5. Otherwise it defaults to dark (Mocha).
+
+`NO_COLOR` is always honored: set it and Fleet renders monochrome, whatever the theme would have been.
 
 ## CLI Commands
 
@@ -286,7 +315,7 @@ Fleet is a zero-dependency Bun project.
 bun install              # Install dev dependencies
 bun run dev              # Run without compiling
 bun run build            # Compile to standalone binary (dist/fleet)
-bun test                 # Run tests (166 tests, ~50ms)
+bun test                 # Run tests (273 tests, ~70ms)
 bun run typecheck        # tsc --noEmit
 bun run lint             # oxlint
 bun run format           # oxfmt
@@ -298,7 +327,7 @@ bun run format:check     # oxfmt --check
 Tests are collocated (`*.test.ts` next to source). The state engine, ANSI utilities, TUI model, and CLI commands are unit-tested. Tmux-dependent code has integration-style tests that gracefully degrade outside tmux.
 
 ```bash
-bun test                 # 166 tests, ~50ms
+bun test                 # 273 tests, ~70ms
 bun test src/state/      # State engine only
 bun test src/terminal/   # Terminal primitives only
 bun test src/tui/        # TUI model only
