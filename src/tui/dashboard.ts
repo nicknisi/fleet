@@ -30,16 +30,18 @@ function logo(): string {
 
 export function renderHeader(app: TuiApp, cols: number): string[] {
   const s = app.summary();
+  const agentCount = s.total - app.shellCount();
+  const idle = agentCount - s.permit - s.question - s.done - s.busy;
 
   const badges: string[] = [];
-  if (s.permit > 0) badges.push(`${C.permit}${s.permit} waiting${C.reset}`);
-  if (s.question > 0) badges.push(`${C.question}${s.question} asking${C.reset}`);
-  if (s.done > 0) badges.push(`${C.done}${s.done} ready${C.reset}`);
+  const needsYou = s.permit + s.question;
+  if (needsYou > 0) badges.push(`${C.permit}${C.bold}${needsYou} need you${C.reset}`);
   if (s.busy > 0) badges.push(`${C.busy}${s.busy} working${C.reset}`);
+  if (s.done > 0) badges.push(`${C.done}${s.done} ready${C.reset}`);
+  if (idle > 0) badges.push(`${C.gray}${idle} idle${C.reset}`);
 
-  const agentCount = s.total - app.shellCount();
   const title = ` ${C.bold}${logo()}${C.reset} ${C.gray}${BOX_H} ${agentCount} agents · ${getQuip()}${C.reset}`;
-  const badgeStr = badges.length > 0 ? `  ${badges.join('  ')}` : '';
+  const badgeStr = badges.length > 0 ? `  ${badges.join(` ${C.dim}·${C.reset} `)}` : '';
   return [truncateAnsi(`${C.gray}┌${BOX_H}${C.reset}${title}${badgeStr}`, cols)];
 }
 

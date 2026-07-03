@@ -3,7 +3,7 @@ import { disableColors } from '../terminal/colors.ts';
 
 disableColors();
 
-import { computeColumnWidths, renderSessionList, stateAtLine } from './dashboard.ts';
+import { computeColumnWidths, renderHeader, renderSessionList, stateAtLine } from './dashboard.ts';
 import { TuiApp } from './app.ts';
 import { stripAnsi, visibleLength } from '../terminal/ansi.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
@@ -220,5 +220,32 @@ describe('empty states', () => {
     const app = new TuiApp();
     const lines = renderSessionList(app, 10, 80).join('\n');
     expect(lines).toContain('all quiet');
+  });
+});
+
+describe('header summary strip', () => {
+  const state = (over: Partial<AgentState> & { paneId: string; status: AgentStatus }): AgentState =>
+    makeState('sess', over.status, over.paneId, 'win', over);
+
+  test('aggregates permit+question into "need you"', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      state({ paneId: '%1', status: AgentStatus.PERMIT }),
+      state({ paneId: '%2', status: AgentStatus.QUESTION }),
+      state({ paneId: '%3', status: AgentStatus.BUSY }),
+      state({ paneId: '%4', status: AgentStatus.IDLE }),
+    ]);
+    const header = renderHeader(app, 120).join('');
+    expect(header).toContain('2 need you');
+    expect(header).toContain('1 working');
+    expect(header).toContain('1 idle');
+  });
+
+  test('quiet fleet shows only idle count', () => {
+    const app = new TuiApp();
+    app.updateStates([state({ paneId: '%1', status: AgentStatus.IDLE })]);
+    const header = renderHeader(app, 120).join('');
+    expect(header).not.toContain('need you');
+    expect(header).toContain('1 idle');
   });
 });
