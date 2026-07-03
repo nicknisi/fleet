@@ -9,6 +9,11 @@ export interface AgentDir {
 
 const HOME = homedir();
 
+// Claude's canonical status dir. Named once here (the read side) so it is
+// testable and can be asserted equal to what hooks/lib.sh writes (the write
+// side). These two must never drift: a mismatch silently breaks detection.
+export const CLAUDE_STATUS_DIR = join(HOME, '.cache', 'claude-status');
+
 export function loadAgentDirs(): AgentDir[] {
   const configDir = process.env.XDG_CONFIG_HOME ?? join(HOME, '.config');
 
@@ -47,8 +52,7 @@ export function loadAgentDirs(): AgentDir[] {
   }
 
   const fallback: AgentDir[] = [];
-  const claudeDir = join(HOME, '.cache', 'claude-status');
-  if (existsSync(claudeDir)) fallback.push({ name: 'claude', statusDir: claudeDir });
+  if (existsSync(CLAUDE_STATUS_DIR)) fallback.push({ name: 'claude', statusDir: CLAUDE_STATUS_DIR });
   const piDir = join(HOME, '.cache', 'pi-status');
   if (existsSync(piDir)) fallback.push({ name: 'pi', statusDir: piDir });
 

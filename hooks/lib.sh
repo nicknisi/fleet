@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Fleet hook shared library
 
-FLEET_STATUS_DIR="${HOME}/.cache/claude-status"
+# Parameterized so a per-agent hook (e.g. Phase 3 Codex) can point at its own
+# dir; unset resolves to the canonical claude default that config.ts reads.
+FLEET_STATUS_DIR="${FLEET_STATUS_DIR:-${HOME}/.cache/claude-status}"
 mkdir -p "$FLEET_STATUS_DIR"
 
 [ -z "$TMUX" ] && exit 0

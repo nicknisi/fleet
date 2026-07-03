@@ -294,8 +294,8 @@ Fleet reads agent directories from (in priority order):
 ```json
 {
   "agents": [
-    { "name": "claude", "statusDir": "~/.cache/fleet/claude" },
-    { "name": "codex", "statusDir": "~/.cache/fleet/codex" }
+    { "name": "claude", "statusDir": "~/.cache/claude-status" },
+    { "name": "codex", "statusDir": "~/.cache/codex-status" }
   ]
 }
 ```
