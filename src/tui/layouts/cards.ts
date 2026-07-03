@@ -1,6 +1,6 @@
 import { C } from '../../terminal/colors.ts';
 import { truncateAnsi, truncateWidth, visibleLength } from '../../terminal/ansi.ts';
-import { STATUS_DISPLAY, windowLabel, type AgentState } from '../../state/types.ts';
+import { STATUS_DISPLAY, sessionDisplay, windowLabel, type AgentState } from '../../state/types.ts';
 import type { TuiApp } from '../app.ts';
 import { formatAge, getAgeColor, getStateColor, stateIcon, type LayoutLines } from './shared.ts';
 
@@ -18,7 +18,7 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
 
   for (const row of rows) {
     if (row.kind === 'header') {
-      const label = ` ${row.session} · ${row.count} `;
+      const label = ` ${row.label} · ${row.count} `;
       const fill = Math.max(0, cols - visibleLength(label) - 4);
       lines.push(truncateAnsi(`${C.gray}──${C.bold}${label}${C.reset}${C.gray}${'─'.repeat(fill)}${C.reset}`, cols));
       states.push(null);
@@ -35,7 +35,7 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
     // line 1 visible budget: bar(1) sp(1) icon(1) sp(1) name … sp(1) age
     const nameW = Math.max(1, cols - 5 - age.length);
     const name = truncateWidth(
-      windowLabel(st) === st.session ? st.session : `${st.session} · ${windowLabel(st)}`,
+      windowLabel(st) === st.session ? sessionDisplay(st) : `${sessionDisplay(st)} · ${windowLabel(st)}`,
       nameW,
     );
     const gap = ' '.repeat(Math.max(1, nameW - visibleLength(name) + 1));

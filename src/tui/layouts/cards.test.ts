@@ -11,6 +11,7 @@ const state = (over: Partial<AgentState>): AgentState => ({
   window: 'api',
   windowId: '@1',
   claudeName: null,
+  customName: null,
   status: AgentStatus.IDLE,
   tool: null,
   project: '~/Developer/api',

@@ -21,6 +21,7 @@ import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
 import { acknowledgePlan } from './src/state/acknowledge.ts';
 import { scrapePane } from './src/state/scraper.ts';
+import { loadRenames, saveRename } from './src/state/rename.ts';
 import { AgentStatus, ACK_ALL_RANGE, extractClaudeName, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import { listPanesResult, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
@@ -125,10 +126,10 @@ function verifyPaneState(state: AgentState, statusDirs: string[]): void {
           return;
         }
         const updated = JSON.stringify({
+          ...existing, // preserve tool (enriched label) + any custom field
           state: newHookState,
           pane: state.paneId,
           session: state.session,
-          tool: '',
           ts: now,
           tmux_pid: tmuxPid,
         });
@@ -215,6 +216,14 @@ let portCache = new Map<string, number[]>();
 const scrapeCache = new Map<string, AgentStatus | null>();
 let lastTmuxOk = true;
 
+// User renames (session name → custom label), loaded once per entry point and
+// re-read after each rename. A display overlay only — grouping/selection still
+// key off the real session name.
+let renameCache = new Map<string, string>();
+function reloadRenameCache(): void {
+  renameCache = loadRenames();
+}
+
 function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): void {
   const paths = new Set<string>();
   for (const p of panes) paths.add(p.currentPath);
@@ -297,6 +306,7 @@ function refreshStates(statusDirs: string[]): AgentState[] {
       window: pane.windowName,
       windowId: pane.windowId,
       claudeName: extractClaudeName(pane.paneTitle),
+      customName: renameCache.get(pane.sessionName) ?? null,
       status,
       tool,
       project: shortenPath(pane.currentPath),
@@ -326,6 +336,7 @@ async function handleCli(args: string[]): Promise<number | null> {
 
   const registry = new AgentRegistry();
   const statusDirs = registry.statusDirs();
+  reloadRenameCache();
 
   switch (command) {
     case 'status': {
@@ -513,6 +524,30 @@ function handleSendInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, _fi
   }
 }
 
+function handleRenameInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, statusDirs: string[]): void {
+  switch (key.type) {
+    case 'escape':
+      app.exitRename();
+      break;
+    case 'backspace':
+      app.renameBuffer = app.renameBuffer.slice(0, -1);
+      break;
+    case 'char':
+      app.renameBuffer += key.char;
+      break;
+    case 'enter': {
+      const selected = app.selectedState();
+      if (selected) {
+        saveRename(selected.session, app.renameBuffer); // empty buffer clears
+        reloadRenameCache();
+        app.updateStates(refreshStates(statusDirs)); // re-resolve customName
+      }
+      app.exitRename();
+      break;
+    }
+  }
+}
+
 function handleKillConfirmInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, statusDirs: string[]): void {
   if (key.type === 'char' && (key.char === 'y' || key.char === 'x')) {
     const selected = app.selectedState();
@@ -596,6 +631,7 @@ async function launchTui(): Promise<number> {
     needsRender = true;
   };
 
+  reloadRenameCache();
   doFullRefresh();
 
   // Debounce watcher-triggered refreshes — hooks fire rapidly
@@ -743,6 +779,12 @@ async function launchTui(): Promise<number> {
         return;
       }
 
+      if (app.mode === TuiMode.RENAME) {
+        handleRenameInput(app, key, statusDirs);
+        needsRender = true;
+        return;
+      }
+
       // Filter mode
       if (app.isFiltering()) {
         handleFilterInput(app, key, finish, statusDirs);
@@ -817,6 +859,11 @@ async function launchTui(): Promise<number> {
               if (app.selectedState()) app.enterKillConfirm();
               break;
             }
+            case 'R': {
+              const sel = app.selectedState();
+              if (sel) app.enterRename(sel.customName ?? '');
+              break;
+            }
             case '?':
               app.mode = TuiMode.HELP;
               break;
@@ -867,7 +914,7 @@ async function launchTui(): Promise<number> {
       tick();
     });
 
-    const isTyping = () => app.mode === TuiMode.SEND || app.isFiltering();
+    const isTyping = () => app.mode === TuiMode.SEND || app.mode === TuiMode.RENAME || app.isFiltering();
 
     // Fast timer: keep running in passthrough (preview needs live updates), skip during typing
     refreshTimer = setInterval(() => {

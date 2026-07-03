@@ -31,6 +31,7 @@ const makeState = (): AgentState => ({
   window: 'main',
   windowId: '@1',
   claudeName: null,
+  customName: null,
   status: AgentStatus.BUSY,
   tool: null,
   project: '~/Developer/test',

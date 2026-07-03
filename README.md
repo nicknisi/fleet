@@ -90,6 +90,7 @@ Below 48 columns — like that narrow sidebar — Fleet automatically reflows th
 | `y`                        | Approve permission prompt (preview)    |
 | `/`                        | Filter sessions by name or project     |
 | `x`                        | Kill selected session (confirms first) |
+| `R`                        | Rename selected session                |
 | `?`                        | Help overlay                           |
 | `q` or `Esc`               | Quit (or clear filter)                 |
 

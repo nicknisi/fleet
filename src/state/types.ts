@@ -58,6 +58,7 @@ export interface AgentState {
   window: string;
   windowId: string;
   claudeName: string | null;
+  customName: string | null; // user rename for this pane's session, or null
   status: AgentStatus;
   tool: string | null;
   project: string | null;
@@ -88,8 +89,15 @@ export function windowLabel(state: AgentState): string {
   return state.window;
 }
 
+// Precedence for a row's primary label: user rename > Claude auto-name > session.
 export function displayName(state: AgentState): string {
-  return state.claudeName ?? sessionLabel(state);
+  return state.customName ?? state.claudeName ?? sessionLabel(state);
+}
+
+// Session-level display string (rename wins over the raw session name). Used by
+// the dashboard's session column/header; window sub-labels are unaffected.
+export function sessionDisplay(state: AgentState): string {
+  return state.customName ?? state.session;
 }
 
 export interface HookStatus {

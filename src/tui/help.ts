@@ -12,6 +12,7 @@ export function renderHelp(): string[] {
   lines.push(`  ${C.yellowBold}s${C.reset}${C.gray}           Send prompt to session${C.reset}`);
   lines.push(`  ${C.yellowBold}/${C.reset}${C.gray}           Filter sessions by name${C.reset}`);
   lines.push(`  ${C.yellowBold}x${C.reset}${C.gray}           Kill selected session (asks to confirm)${C.reset}`);
+  lines.push(`  ${C.yellowBold}R${C.reset}${C.gray}           Rename selected session${C.reset}`);
   lines.push(`  ${C.yellowBold}?${C.reset}${C.gray}           This help${C.reset}`);
   lines.push(`  ${C.yellowBold}q or Esc${C.reset}${C.gray}    Quit${C.reset}`);
   lines.push('');

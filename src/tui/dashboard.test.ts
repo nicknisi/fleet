@@ -21,6 +21,7 @@ const makeState = (
   window,
   windowId: '@1',
   claudeName: null,
+  customName: null,
   status,
   tool: null,
   project: `~/Developer/${session}`,

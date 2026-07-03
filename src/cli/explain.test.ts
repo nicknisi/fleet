@@ -37,6 +37,7 @@ const makeState = (o: Partial<AgentState> = {}): AgentState => ({
   window: 'main',
   windowId: '@1',
   claudeName: null,
+  customName: null,
   status: AgentStatus.IDLE,
   tool: null,
   project: '~/dev',
