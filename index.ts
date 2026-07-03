@@ -34,6 +34,7 @@ import { runDoctor } from './src/cli/doctor.ts';
 import { runReconcile } from './src/cli/reconcile.ts';
 import { runExplain } from './src/cli/explain.ts';
 import { runStatusLineInject, runStatusLineRemove } from './src/cli/statusline.ts';
+import { runWait } from './src/cli/wait.ts';
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -65,6 +66,7 @@ function printHelp(): number {
       `    ${C.idle}fleet status${C.reset} --statusline        ${C.gray}Render multi-agent tmux status line${C.reset}`,
       `    ${C.idle}fleet next${C.reset}                       ${C.gray}Jump to next waiting agent${C.reset}`,
       `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
+      `    ${C.idle}fleet wait${C.reset} <session> --state <s> ${C.gray}Block until agent reaches state${C.reset}`,
       `    ${C.idle}fleet explain${C.reset} <session>          ${C.gray}Trace how a session's state was decided${C.reset}`,
       `    ${C.idle}fleet reconcile${C.reset} [--dry-run]      ${C.gray}Sweep orphan status files${C.reset}`,
       '',
@@ -314,7 +316,7 @@ function fullRefreshStates(statusDirs: string[]): AgentState[] {
   return refreshStates(statusDirs);
 }
 
-function handleCli(args: string[]): number | null {
+async function handleCli(args: string[]): Promise<number | null> {
   if (args.includes('--version') || args.includes('-v')) return printVersion();
   if (args.includes('--help') || args.includes('-h')) return printHelp();
 
@@ -419,6 +421,18 @@ function handleCli(args: string[]): number | null {
       }
       process.stderr.write('Usage: fleet statusline --inject | --remove\n');
       return 1;
+    }
+    case 'wait': {
+      const stateIdx = args.indexOf('--state');
+      const timeoutIdx = args.indexOf('--timeout');
+      return await runWait({
+        session: args[1],
+        stateArg: stateIdx >= 0 ? args[stateIdx + 1] : undefined,
+        timeoutArg: timeoutIdx >= 0 ? args[timeoutIdx + 1] : undefined,
+        getStates: () => fullRefreshStates(statusDirs),
+        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        now: () => Date.now(),
+      });
     }
     default:
       process.stderr.write(`Unknown command: ${command}\n`);
@@ -874,7 +888,7 @@ async function launchTui(): Promise<number> {
 
 async function main(): Promise<number> {
   const args = process.argv.slice(2);
-  const cliResult = handleCli(args);
+  const cliResult = await handleCli(args);
   if (cliResult !== null) return cliResult;
   return launchTui();
 }
