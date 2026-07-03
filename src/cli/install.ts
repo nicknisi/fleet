@@ -5,7 +5,7 @@ import { runStatusLineInject, runStatusLineRemove } from './statusline.ts';
 
 const FLEET_MANAGED_MARKER = '# fleet-managed';
 const FLEET_TMUX_LINE = `run-shell "fleet statusline --inject" ${FLEET_MANAGED_MARKER}`;
-const FLEET_KEYBIND_SIDEBAR = `bind-key f split-window -hb -l 34 fleet ${FLEET_MANAGED_MARKER}`;
+const FLEET_KEYBIND_SIDEBAR = `bind-key f split-window -hbf -l 34 fleet ${FLEET_MANAGED_MARKER}`;
 const FLEET_KEYBIND_POPUP = `bind-key F display-popup -E -w 80% -h 60% fleet ${FLEET_MANAGED_MARKER}`;
 
 export function resolvePluginDir(candidates: string[]): string | null {

@@ -226,7 +226,7 @@ describe('addTmuxKeybindLines', () => {
     const added = addTmuxKeybindLines(path, () => true);
     expect(added).toHaveLength(2);
     const conf = readFileSync(path, 'utf8');
-    expect(conf).toContain('bind-key f split-window');
+    expect(conf).toContain('bind-key f split-window -hbf');
     expect(conf).toContain('bind-key F display-popup');
     expect(conf.match(/# fleet-managed/g)?.length).toBe(2);
   });
