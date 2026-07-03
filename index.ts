@@ -532,8 +532,9 @@ async function launchTui(): Promise<number> {
   }
 
   // Raw mode first so the OSC 11 theme reply is readable from stdin, then the
-  // rest of the terminal setup. Detection resolves in ≤150ms (0ms when an
-  // explicit FLEET_THEME/@fleet-theme override is set).
+  // rest of the terminal setup. Detection is instant inside tmux or with an
+  // explicit FLEET_THEME/@fleet-theme override; only a direct terminal query
+  // (outside tmux, no override) costs up to 150ms.
   enterRawMode();
   const detectedTheme = await detectThemeMode();
   setThemeMode(detectedTheme.mode);

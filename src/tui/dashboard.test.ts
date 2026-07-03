@@ -223,6 +223,21 @@ describe('empty states', () => {
     const lines = renderSessionList(app, 10, 80).join('\n');
     expect(lines).toContain('all quiet');
   });
+
+  test('empty-state lines never exceed narrow sidebar width', () => {
+    for (const setup of [
+      (a: TuiApp) => (a.tmuxDown = true),
+      (a: TuiApp) => (a.hooksMissing = true),
+      (a: TuiApp) => a.setFilter('zzz'),
+      () => {},
+    ]) {
+      const app = new TuiApp();
+      setup(app);
+      for (const line of renderSessionList(app, 10, 34)) {
+        expect(visibleLength(line)).toBeLessThanOrEqual(34);
+      }
+    }
+  });
 });
 
 describe('header summary strip', () => {

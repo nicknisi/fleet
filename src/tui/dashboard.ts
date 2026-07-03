@@ -71,18 +71,23 @@ export function renderSessionList(app: TuiApp, maxRows: number, cols: number): s
     const lines: string[] = [];
     lines.push('');
     if (app.tmuxDown) {
-      lines.push(`${C.permit}  ⚠ tmux isn't running${C.reset}`);
-      lines.push(`${C.gray}  fleet reads agents from tmux panes — start tmux, then re-run fleet${C.reset}`);
-    } else if (app.hooksMissing) {
-      lines.push(`${C.question}  ? no agent hooks found${C.reset}`);
+      lines.push(truncateAnsi(`${C.permit}  ⚠ tmux isn't running${C.reset}`, cols));
       lines.push(
-        `${C.gray}  run ${C.reset}fleet install${C.gray} to wire Claude Code hooks, then ${C.reset}fleet doctor${C.gray} to verify${C.reset}`,
+        truncateAnsi(`${C.gray}  fleet reads agents from tmux panes — start tmux, then re-run fleet${C.reset}`, cols),
+      );
+    } else if (app.hooksMissing) {
+      lines.push(truncateAnsi(`${C.question}  ? no agent hooks found${C.reset}`, cols));
+      lines.push(
+        truncateAnsi(
+          `${C.gray}  run ${C.reset}fleet install${C.gray} to wire Claude Code hooks, then ${C.reset}fleet doctor${C.gray} to verify${C.reset}`,
+          cols,
+        ),
       );
     } else if (app.isFiltering()) {
-      lines.push(`${C.gray}  no agents match "${app.getFilter()}"${C.reset}`);
+      lines.push(truncateAnsi(`${C.gray}  no agents match "${app.getFilter()}"${C.reset}`, cols));
     } else {
-      lines.push(`${C.idle}  ● all quiet${C.reset}`);
-      lines.push(`${C.gray}  start claude in any tmux pane and it appears here${C.reset}`);
+      lines.push(truncateAnsi(`${C.idle}  ● all quiet${C.reset}`, cols));
+      lines.push(truncateAnsi(`${C.gray}  start claude in any tmux pane and it appears here${C.reset}`, cols));
     }
     return lines;
   }

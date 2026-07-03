@@ -64,6 +64,16 @@ export function resolveThemeMode(s: ThemeSignals): ThemeMode {
   return 'dark';
 }
 
+// Whether the OSC 11 round-trip is worth attempting. Inside tmux the query is
+// not forwarded to the outer terminal (verified on tmux 3.7a), so waiting out
+// the timeout only delays startup — skip straight to the env/OS rungs.
+export function shouldQueryOsc(env: { TMUX?: string; FLEET_THEME?: string }, tmuxOption: string | null): boolean {
+  if (env.FLEET_THEME === 'light' || env.FLEET_THEME === 'dark') return false;
+  if (tmuxOption === 'light' || tmuxOption === 'dark') return false;
+  if (env.TMUX) return false;
+  return true;
+}
+
 // ---- I/O section: reads env/tmux/OS and performs the OSC 11 round-trip ----
 
 export function readTmuxThemeOption(): string | null {
@@ -129,14 +139,13 @@ export function queryOscBackground(
 export async function detectThemeMode(): Promise<{ mode: ThemeMode; leftover: Buffer }> {
   const envTheme = Bun.env.FLEET_THEME;
   const tmuxOption = readTmuxThemeOption();
-  // An explicit override decides immediately — skip the 150ms OSC wait.
-  if (envTheme === 'light' || envTheme === 'dark' || tmuxOption === 'light' || tmuxOption === 'dark') {
+  if (!shouldQueryOsc({ TMUX: Bun.env.TMUX, FLEET_THEME: envTheme }, tmuxOption)) {
     const mode = resolveThemeMode({
       envTheme,
       tmuxOption,
       oscBackground: null,
-      colorFgBg: undefined,
-      macAppearance: null,
+      colorFgBg: Bun.env.COLORFGBG,
+      macAppearance: readMacAppearance(),
     });
     return { mode, leftover: Buffer.alloc(0) };
   }

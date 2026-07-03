@@ -6,6 +6,7 @@ import {
   modeFromColorFgBg,
   parseOsc11Reply,
   resolveThemeMode,
+  shouldQueryOsc,
   stripOsc11Reply,
   type ThemeSignals,
 } from './theme.ts';
@@ -98,5 +99,21 @@ describe('resolveThemeMode precedence', () => {
   test('macOS appearance is the last auto rung', () => {
     expect(resolveThemeMode(signals({ macAppearance: 'Light' }))).toBe('light');
     expect(resolveThemeMode(signals({ macAppearance: 'Dark' }))).toBe('dark');
+  });
+});
+
+describe('shouldQueryOsc', () => {
+  test('queries when outside tmux with no overrides', () => {
+    expect(shouldQueryOsc({}, null)).toBe(true);
+  });
+  test('skips inside tmux', () => {
+    expect(shouldQueryOsc({ TMUX: '/tmp/tmux-501/default,123,0' }, null)).toBe(false);
+  });
+  test('skips on explicit env or tmux option', () => {
+    expect(shouldQueryOsc({ FLEET_THEME: 'light' }, null)).toBe(false);
+    expect(shouldQueryOsc({}, 'dark')).toBe(false);
+  });
+  test('invalid override values do not skip by themselves', () => {
+    expect(shouldQueryOsc({ FLEET_THEME: 'solarized' }, 'auto')).toBe(true);
   });
 });
