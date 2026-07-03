@@ -3,6 +3,8 @@ import { truncateAnsi } from '../terminal/ansi.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 import { TuiMode, type TuiApp } from './app.ts';
 import { buildTableLines } from './layouts/table.ts';
+import { buildCardLines } from './layouts/cards.ts';
+import { pickLayout } from './layouts/index.ts';
 import { windowLines, type LayoutLines } from './layouts/shared.ts';
 
 const BOX_H = '─';
@@ -48,7 +50,7 @@ export function renderHeader(app: TuiApp, cols: number): string[] {
 }
 
 function buildLines(app: TuiApp, cols: number): LayoutLines {
-  return buildTableLines(app, cols); // Task 7 adds the cards dispatch here
+  return pickLayout(cols) === 'cards' ? buildCardLines(app, cols) : buildTableLines(app, cols);
 }
 
 // Line index (chrome lines included) of the selected agent within built lines.
@@ -97,6 +99,15 @@ export function stateAtLine(app: TuiApp, lineIdx: number, maxRows: number, cols:
 }
 
 export function renderFooter(app: TuiApp, cols: number): string[] {
+  if (pickLayout(cols) === 'cards') {
+    const hints = [
+      `${chip('⏎')} ${C.gray}switch${C.reset}`,
+      `${chip('?')} ${C.gray}help${C.reset}`,
+      `${chip('q')} ${C.gray}quit${C.reset}`,
+    ];
+    return [truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${hints.join('  ')}`, cols)];
+  }
+
   const lines: string[] = [];
 
   const legend = [
