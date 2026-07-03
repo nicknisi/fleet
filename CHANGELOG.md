@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/nicknisi/fleet/compare/v0.10.1...v0.11.0) (2026-07-03)
+
+
+### Features
+
+* make fleet sidebar span the full window height ([#23](https://github.com/nicknisi/fleet/issues/23)) ([c1e7988](https://github.com/nicknisi/fleet/commit/c1e79887d0ae9c69f022751a6e289a693a311865))
+
 ## [0.10.1](https://github.com/nicknisi/fleet/compare/v0.10.0...v0.10.1) (2026-07-03)
 
 
