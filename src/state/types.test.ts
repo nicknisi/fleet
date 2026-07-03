@@ -70,6 +70,7 @@ const base: AgentState = {
   paneNum: 1,
   session: 'dotfiles',
   window: 'editor',
+  windowId: '@1',
   claudeName: null,
   status: AgentStatus.IDLE,
   tool: null,

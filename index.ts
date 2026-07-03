@@ -33,7 +33,7 @@ import { runInstall, runUninstall } from './src/cli/install.ts';
 import { runDoctor } from './src/cli/doctor.ts';
 import { runReconcile } from './src/cli/reconcile.ts';
 import { runExplain } from './src/cli/explain.ts';
-import { runStatusLineInject, runStatusLineRemove } from './src/cli/statusline.ts';
+import { runStatusLineInject, runStatusLineRemove, emitWindowColors, rollupEnabled } from './src/cli/statusline.ts';
 import { runWait } from './src/cli/wait.ts';
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -295,6 +295,7 @@ function refreshStates(statusDirs: string[]): AgentState[] {
       paneNum: pane.paneNum,
       session: pane.sessionName,
       window: pane.windowName,
+      windowId: pane.windowId,
       claudeName: extractClaudeName(pane.paneTitle),
       status,
       tool,
@@ -331,6 +332,10 @@ async function handleCli(args: string[]): Promise<number | null> {
       const states = fullRefreshStates(statusDirs);
       const output = runStatus(args.slice(1), states);
       if (output.length > 0) process.stdout.write(output + '\n');
+      // Emit runs even when output is empty: an all-calm bar still needs every
+      // window UNSET to clear stale tints. Gated on --statusline (the single
+      // per-redraw fleet call) and the opt-in @fleet_rollup option.
+      if (args.includes('--statusline') && rollupEnabled()) emitWindowColors(states);
       return 0;
     }
     case 'next': {

@@ -1,12 +1,26 @@
 import { existsSync, mkdirSync, readFileSync, readSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { runStatusLineInject, runStatusLineRemove } from './statusline.ts';
+import {
+  runStatusLineInject,
+  runStatusLineRemove,
+  buildRollupEnableCommands,
+  WINDOW_STATUS_FORMAT,
+  WINDOW_STATUS_CURRENT_FORMAT,
+} from './statusline.ts';
 
 const FLEET_MANAGED_MARKER = '# fleet-managed';
 const FLEET_TMUX_LINE = `run-shell "fleet statusline --inject" ${FLEET_MANAGED_MARKER}`;
 const FLEET_KEYBIND_SIDEBAR = `bind-key f split-window -hbf -l 34 fleet ${FLEET_MANAGED_MARKER}`;
 const FLEET_KEYBIND_POPUP = `bind-key F display-popup -E -w 80% -h 60% fleet ${FLEET_MANAGED_MARKER}`;
+
+// Window state rollup opt-in: gate option + both window-status format overrides,
+// built from the same shared format constants as the live enable commands so the
+// persisted conf and the live server never drift.
+const FLEET_ROLLUP_GATE_LINE = `set -g @fleet_rollup 1 ${FLEET_MANAGED_MARKER}`;
+const FLEET_ROLLUP_FORMAT_LINE = `set -g window-status-format "${WINDOW_STATUS_FORMAT}" ${FLEET_MANAGED_MARKER}`;
+const FLEET_ROLLUP_CURRENT_FORMAT_LINE = `set -g window-status-current-format "${WINDOW_STATUS_CURRENT_FORMAT}" ${FLEET_MANAGED_MARKER}`;
+const FLEET_ROLLUP_LINES = [FLEET_ROLLUP_GATE_LINE, FLEET_ROLLUP_FORMAT_LINE, FLEET_ROLLUP_CURRENT_FORMAT_LINE];
 
 export function resolvePluginDir(candidates: string[]): string | null {
   for (const dir of candidates) {
@@ -90,6 +104,32 @@ export function addTmuxKeybindLines(path: string, ask: (question: string) => boo
     } else {
       process.stdout.write(`  skipped — add it yourself anytime:\n    ${cand.line}\n`);
     }
+  }
+  if (added.length > 0) writeFileSync(path, contents);
+  return added;
+}
+
+// Offer the window state rollup as a single y/N (three conf lines move together:
+// the gate option + both window-status format overrides). `ask` is injected so
+// tests don't touch a TTY. On yes the lines are appended and returned so the
+// caller can apply them live; on no they're printed for manual adoption.
+// Idempotent: an already-configured conf (gate line present) is neither re-asked
+// nor duplicated. Uninstall needs no changes: removeTmuxConfLine strips every
+// marker line.
+export function addTmuxRollupLines(path: string, ask: (question: string) => boolean): string[] {
+  if (!existsSync(path)) return [];
+  let contents = readFileSync(path, 'utf8');
+  if (contents.includes(FLEET_ROLLUP_GATE_LINE)) return [];
+  if (!ask('Recolor tmux window list by worst agent state (window rollup)? [y/N] ')) {
+    process.stdout.write('  skipped — add it yourself anytime:\n');
+    for (const line of FLEET_ROLLUP_LINES) process.stdout.write(`    ${line}\n`);
+    return [];
+  }
+  const added: string[] = [];
+  for (const line of FLEET_ROLLUP_LINES) {
+    if (contents.includes(line)) continue;
+    contents += (contents.endsWith('\n') || contents.length === 0 ? '' : '\n') + line + '\n';
+    added.push(line);
   }
   if (added.length > 0) writeFileSync(path, contents);
   return added;
@@ -182,6 +222,15 @@ export function runInstall(): number {
     process.stdout.write(
       `Added ${addedBindings.length} fleet keybinding(s) — reload with: tmux source-file ${confPath}\n`,
     );
+  }
+
+  const addedRollup = addTmuxRollupLines(confPath, askYesNo);
+  if (addedRollup.length > 0) {
+    // Apply immediately so the recolor takes effect without a config reload.
+    for (const cmd of buildRollupEnableCommands()) {
+      Bun.spawnSync({ cmd, stdout: 'ignore', stderr: 'ignore' });
+    }
+    process.stdout.write('Enabled window state rollup — tmux windows recolor by agent state.\n');
   }
 
   runStatusLineInject();

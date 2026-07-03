@@ -35,6 +35,7 @@ const makeState = (o: Partial<AgentState> = {}): AgentState => ({
   paneNum: 99,
   session: 'other',
   window: 'main',
+  windowId: '@1',
   claudeName: null,
   status: AgentStatus.IDLE,
   tool: null,

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { buildInjectCommands, buildRemoveCommands } from './statusline.ts';
+import {
+  buildInjectCommands,
+  buildRemoveCommands,
+  buildRollupEnableCommands,
+  WINDOW_STATUS_FORMAT,
+  WINDOW_STATUS_CURRENT_FORMAT,
+} from './statusline.ts';
 
 describe('buildInjectCommands', () => {
   test('returns status-2, status-format[1], both mouse binds, and the focus hook', () => {
@@ -35,6 +41,14 @@ describe('buildInjectCommands', () => {
     for (const cmd of cmds) {
       expect(cmd[0]).toBe('tmux');
     }
+  });
+
+  test('does not touch window-status-format — the rollup format lives in the conf, not the inject', () => {
+    const cmds = buildInjectCommands();
+    expect(cmds).toHaveLength(6);
+    expect(cmds.some((c) => c.some((a) => a.includes('window-status-format')))).toBe(false);
+    expect(cmds.some((c) => c.some((a) => a.includes('window-status-current-format')))).toBe(false);
+    expect(cmds.some((c) => c.some((a) => a.includes('@fleet_rollup')))).toBe(false);
   });
 
   test('bind uses MouseDown1Status with if-shell guard for row 1 only', () => {
@@ -73,7 +87,7 @@ describe('buildInjectCommands', () => {
 });
 
 describe('buildRemoveCommands', () => {
-  test('unsets status-format[1], resets status, unbinds both mouse buttons, and removes the focus hook', () => {
+  test('unsets status-format[1], resets status, unbinds both mouse buttons, removes the focus hook, and reverts the rollup', () => {
     const cmds = buildRemoveCommands();
     expect(cmds).toEqual([
       ['tmux', 'set', '-g', '-u', 'status-format[1]'],
@@ -81,6 +95,9 @@ describe('buildRemoveCommands', () => {
       ['tmux', 'unbind', '-T', 'root', 'MouseDown1Status'],
       ['tmux', 'unbind', '-T', 'root', 'MouseDown3Status'],
       ['tmux', 'set-hook', '-gu', 'pane-focus-in[99]'],
+      ['tmux', 'set', '-g', '-u', 'window-status-format'],
+      ['tmux', 'set', '-g', '-u', 'window-status-current-format'],
+      ['tmux', 'set', '-g', '-u', '@fleet_rollup'],
     ]);
   });
 
@@ -105,5 +122,31 @@ describe('buildRemoveCommands', () => {
     const unbinds = cmds.filter((c) => c[1] === 'unbind');
     expect(unbinds.some((c) => c.includes('MouseDown1Status'))).toBe(true);
     expect(unbinds.some((c) => c.includes('MouseDown3Status'))).toBe(true);
+  });
+});
+
+describe('buildRollupEnableCommands', () => {
+  test('sets the gate option and both window-status formats from the shared constants', () => {
+    const cmds = buildRollupEnableCommands();
+    expect(cmds).toEqual([
+      ['tmux', 'set', '-g', '@fleet_rollup', '1'],
+      ['tmux', 'set', '-g', 'window-status-format', WINDOW_STATUS_FORMAT],
+      ['tmux', 'set', '-g', 'window-status-current-format', WINDOW_STATUS_CURRENT_FORMAT],
+    ]);
+  });
+
+  test('the format constants tint only when @fleet_state is present', () => {
+    // Conditional expansion: colored branch reads #{@fleet_state}, empty branch
+    // leaves the entry untinted.
+    expect(WINDOW_STATUS_FORMAT).toContain('#{?#{@fleet_state},#[fg=#{@fleet_state}],}');
+    expect(WINDOW_STATUS_CURRENT_FORMAT).toContain('#{?#{@fleet_state},#[fg=#{@fleet_state}],}');
+    // Current-window format keeps the bold emphasis.
+    expect(WINDOW_STATUS_CURRENT_FORMAT).toContain('#[bold]');
+  });
+
+  test('all commands invoke tmux', () => {
+    for (const cmd of buildRollupEnableCommands()) {
+      expect(cmd[0]).toBe('tmux');
+    }
   });
 });

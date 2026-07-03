@@ -19,6 +19,7 @@ const makeState = (
   paneNum: 1,
   session,
   window,
+  windowId: '@1',
   claudeName: null,
   status,
   tool: null,

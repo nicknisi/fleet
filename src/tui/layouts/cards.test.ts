@@ -9,6 +9,7 @@ const state = (over: Partial<AgentState>): AgentState => ({
   paneNum: 1,
   session: 'api',
   window: 'api',
+  windowId: '@1',
   claudeName: null,
   status: AgentStatus.IDLE,
   tool: null,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { formatTmuxStatus, formatPlainStatus, formatStatusLine, formatAge } from './status.ts';
+import { formatTmuxStatus, formatPlainStatus, formatStatusLine, formatAge, windowColorArgs } from './status.ts';
 import { AgentStatus, ACK_ALL_RANGE, type AgentState } from '../state/types.ts';
 
 const makeState = (overrides: Partial<AgentState>): AgentState => ({
@@ -7,6 +7,7 @@ const makeState = (overrides: Partial<AgentState>): AgentState => ({
   paneNum: 42,
   session: 'test',
   window: 'main',
+  windowId: '@1',
   claudeName: null,
   status: AgentStatus.IDLE,
   tool: null,
@@ -205,5 +206,85 @@ describe('formatStatusLine', () => {
 
   test('omits the clear-all chip for an empty bar', () => {
     expect(formatStatusLine([])).not.toContain(ACK_ALL_RANGE);
+  });
+});
+
+describe('windowColorArgs', () => {
+  // Find the single arg list that targets a given window id (its position
+  // differs between the set and unset forms, so match by membership).
+  const argsFor = (all: string[][], windowId: string): string[] | undefined =>
+    all.find((a) => a.includes(windowId));
+
+  test('groups by window and reduces to the worst state: PERMIT window set, IDLE window unset', () => {
+    const args = windowColorArgs([
+      makeState({ windowId: '@1', status: AgentStatus.PERMIT, paneId: '%1' }),
+      makeState({ windowId: '@2', status: AgentStatus.IDLE, paneId: '%2' }),
+    ]);
+    expect(argsFor(args, '@1')).toEqual(['set', '-w', '-t', '@1', '@fleet_state', 'yellow']);
+    expect(argsFor(args, '@2')).toEqual(['set', '-w', '-u', '-t', '@2', '@fleet_state']);
+  });
+
+  test('maps PERMIT→yellow, QUESTION→magenta, DONE→green', () => {
+    const args = windowColorArgs([
+      makeState({ windowId: '@1', status: AgentStatus.PERMIT, paneId: '%1' }),
+      makeState({ windowId: '@2', status: AgentStatus.QUESTION, paneId: '%2' }),
+      makeState({ windowId: '@3', status: AgentStatus.DONE, paneId: '%3' }),
+    ]);
+    expect(argsFor(args, '@1')).toEqual(['set', '-w', '-t', '@1', '@fleet_state', 'yellow']);
+    expect(argsFor(args, '@2')).toEqual(['set', '-w', '-t', '@2', '@fleet_state', 'magenta']);
+    expect(argsFor(args, '@3')).toEqual(['set', '-w', '-t', '@3', '@fleet_state', 'green']);
+  });
+
+  test('an idle-only window emits the unset form, never a colored set (data shadow)', () => {
+    const args = windowColorArgs([makeState({ windowId: '@7', status: AgentStatus.IDLE })]);
+    expect(args).toHaveLength(1);
+    expect(args[0]).toEqual(['set', '-w', '-u', '-t', '@7', '@fleet_state']);
+  });
+
+  test('reduce-then-classify: BUSY+DONE in one window reduces to BUSY → unset (BUSY masks DONE)', () => {
+    // PRIORITY ranks BUSY above DONE, so the window reduces to BUSY, which is not
+    // in the attention set → unset. Documents the intentional mask; guards
+    // against a regression that would start tinting working windows.
+    const args = windowColorArgs([
+      makeState({ windowId: '@1', status: AgentStatus.BUSY, paneId: '%1' }),
+      makeState({ windowId: '@1', status: AgentStatus.DONE, paneId: '%2' }),
+    ]);
+    expect(args).toHaveLength(1);
+    expect(args[0]).toEqual(['set', '-w', '-u', '-t', '@1', '@fleet_state']);
+  });
+
+  test('a window with multiple attention agents tints by the most urgent (PERMIT over DONE)', () => {
+    const args = windowColorArgs([
+      makeState({ windowId: '@1', status: AgentStatus.DONE, paneId: '%1' }),
+      makeState({ windowId: '@1', status: AgentStatus.PERMIT, paneId: '%2' }),
+    ]);
+    expect(args).toHaveLength(1);
+    expect(args[0]).toEqual(['set', '-w', '-t', '@1', '@fleet_state', 'yellow']);
+  });
+
+  test('every distinct window id produces exactly one arg list', () => {
+    const args = windowColorArgs([
+      makeState({ windowId: '@1', status: AgentStatus.PERMIT, paneId: '%1' }),
+      makeState({ windowId: '@1', status: AgentStatus.IDLE, paneId: '%2' }),
+      makeState({ windowId: '@2', status: AgentStatus.DONE, paneId: '%3' }),
+    ]);
+    expect(args).toHaveLength(2);
+    expect(argsFor(args, '@1')).toBeDefined();
+    expect(argsFor(args, '@2')).toBeDefined();
+  });
+
+  test('a state with an empty window id is skipped (graceful degrade, no malformed set)', () => {
+    const args = windowColorArgs([
+      makeState({ windowId: '', status: AgentStatus.PERMIT, paneId: '%1' }),
+      makeState({ windowId: '@2', status: AgentStatus.QUESTION, paneId: '%2' }),
+    ]);
+    expect(args).toHaveLength(1);
+    expect(argsFor(args, '@2')).toEqual(['set', '-w', '-t', '@2', '@fleet_state', 'magenta']);
+    // No arg list contains an empty target.
+    expect(args.some((a) => a.includes(''))).toBe(false);
+  });
+
+  test('returns no args for an empty state list', () => {
+    expect(windowColorArgs([])).toHaveLength(0);
   });
 });

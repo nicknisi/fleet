@@ -7,6 +7,7 @@ const makeState = (session: string, status: AgentStatus, paneId?: string, window
   paneNum: Math.floor(Math.random() * 1000),
   session,
   window: window ?? 'main',
+  windowId: '@1',
   claudeName: null,
   status,
   tool: null,

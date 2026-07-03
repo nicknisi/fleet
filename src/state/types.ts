@@ -56,6 +56,7 @@ export interface AgentState {
   paneNum: number;
   session: string;
   window: string;
+  windowId: string;
   claudeName: string | null;
   status: AgentStatus;
   tool: string | null;

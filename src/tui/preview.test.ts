@@ -21,6 +21,7 @@ const makeState = (status: AgentStatus): AgentState => ({
   paneNum: 1,
   session: 'test',
   window: 'main',
+  windowId: '@1',
   claudeName: null,
   status,
   tool: null,

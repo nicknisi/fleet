@@ -5,39 +5,51 @@ export interface PaneInfo {
   paneNum: number;
   sessionName: string;
   windowName: string;
+  windowId: string; // e.g. "@5" — stable, server-unique; the grouping key + `set -t` target
+  windowIndex: number; // e.g. 2 — per-session position; captured for debugging, NOT a key
   currentPath: string;
   panePid: number;
   paneTitle: string;
 }
 
-const PANE_FORMAT = '#{pane_id}\t#{session_name}\t#{window_name}\t#{pane_current_path}\t#{pane_pid}\t#{pane_title}';
+// window_id / window_index inserted after window_name so pane_title stays LAST:
+// a stray tab in a pane title then lands in trailing (ignored) parts instead of
+// shifting a window field.
+const PANE_FORMAT =
+  '#{pane_id}\t#{session_name}\t#{window_name}\t#{window_id}\t#{window_index}\t#{pane_current_path}\t#{pane_pid}\t#{pane_title}';
 
 export interface ListPanesResult {
   ok: boolean;
   panes: PaneInfo[];
 }
 
-export function listPanesResult(): ListPanesResult {
-  const result = tmux(['list-panes', '-a', '-F', PANE_FORMAT]);
-  if (result.exitCode !== 0) return { ok: false, panes: [] };
-
+// Extracted so windowId/windowIndex parsing is unit-testable without live tmux.
+export function parsePanesOutput(stdout: string): PaneInfo[] {
   const panes: PaneInfo[] = [];
-  for (const line of result.stdout.split('\n')) {
+  for (const line of stdout.split('\n')) {
     if (line.length === 0) continue;
     const parts = line.split('\t');
-    if (parts.length < 6) continue;
+    if (parts.length < 8) continue;
     const paneId = parts[0]!;
     panes.push({
       paneId,
       paneNum: parseInt(paneId.replace('%', ''), 10),
       sessionName: parts[1]!,
       windowName: parts[2]!,
-      currentPath: parts[3]!,
-      panePid: parseInt(parts[4]!, 10),
-      paneTitle: parts[5]!,
+      windowId: parts[3]!,
+      windowIndex: parseInt(parts[4]!, 10),
+      currentPath: parts[5]!,
+      panePid: parseInt(parts[6]!, 10),
+      paneTitle: parts[7]!,
     });
   }
-  return { ok: true, panes };
+  return panes;
+}
+
+export function listPanesResult(): ListPanesResult {
+  const result = tmux(['list-panes', '-a', '-F', PANE_FORMAT]);
+  if (result.exitCode !== 0) return { ok: false, panes: [] };
+  return { ok: true, panes: parsePanesOutput(result.stdout) };
 }
 
 export function listPanes(): PaneInfo[] {
