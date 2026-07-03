@@ -7,7 +7,7 @@
 ## Goal
 
 Bring next-level visual polish to fleet without changing what fleet is: a zero-dependency
-dashboard that runs *inside* a tmux pane and reads state written by hooks. Fleet does not
+dashboard that runs _inside_ a tmux pane and reads state written by hooks. Fleet does not
 wrap tmux. The "sidebar" experience (inspired by jmux) comes from tmux hosting a narrow
 fleet pane, with fleet reflowing its layout to fit the width it's given. One binary, one
 responsive renderer — no `--sidebar` flag.
@@ -106,16 +106,16 @@ future tmux versions; `@fleet-theme`/`FLEET_THEME` cover everything else.
   viewport.
 - **Distinct empty states** replacing the single ambiguous "No agents found"
   (`src/tui/dashboard.ts:50-53`):
-  1. *tmux unreachable* — requires `listPanes()` (`src/tmux/sessions.ts:16-17`) to stop
+  1. _tmux unreachable_ — requires `listPanes()` (`src/tmux/sessions.ts:16-17`) to stop
      collapsing errors into `[]`; it must distinguish failure from genuinely-empty, and
      the app model gains a `tmuxDown` flag. Message says tmux isn't running.
-  2. *No hooks installed* (status dir absent — reuse the `fleet doctor` check) — message
+  2. _No hooks installed_ (status dir absent — reuse the `fleet doctor` check) — message
      points at `fleet doctor` / `fleet install`.
-  3. *All quiet* — a deliberate, styled idle state, not an error-shaped one.
+  3. _All quiet_ — a deliberate, styled idle state, not an error-shaped one.
 
 ## 4. Sidebar ergonomics
 
-- `fleet install` gains two optional tmux keybindings — open fleet in a 32-col split,
+- `fleet install` gains two optional tmux keybindings — open fleet in a 34-col split,
   and `tmux display-popup -E fleet` (the popup/overlay form factor falls out for free).
   Applied through the same mechanism install already uses for the status row, gated by
   a per-binding confirm; declining prints the snippet for manual use.
@@ -137,7 +137,7 @@ fixed-line templates truncated by the existing ANSI-aware width helpers in
 - Row hit-testing extraction brings the first tests to what is currently untested
   `index.ts` mouse math.
 - Manual verification matrix: dark terminal, light terminal, `NO_COLOR`, non-TTY,
-  narrow pane (32 cols), wide pane, tmux popup.
+  narrow pane (34 cols), wide pane, tmux popup.
 
 ## Out of scope (deliberate)
 
