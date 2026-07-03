@@ -1,7 +1,9 @@
 import { C } from '../terminal/colors.ts';
-import { padAnsi, truncateAnsi, truncateWidth, visibleLength } from '../terminal/ansi.ts';
-import { AgentStatus, STATUS_DISPLAY, windowLabel, type AgentState } from '../state/types.ts';
-import { TuiMode, type DashboardRow, type TuiApp } from './app.ts';
+import { truncateAnsi } from '../terminal/ansi.ts';
+import { AgentStatus, type AgentState } from '../state/types.ts';
+import { TuiMode, type TuiApp } from './app.ts';
+import { buildTableLines } from './layouts/table.ts';
+import { windowLines, type LayoutLines } from './layouts/shared.ts';
 
 const BOX_H = '─';
 
@@ -45,11 +47,26 @@ export function renderHeader(app: TuiApp, cols: number): string[] {
   return [truncateAnsi(`${C.gray}┌${BOX_H}${C.reset}${title}${badgeStr}`, cols)];
 }
 
+function buildLines(app: TuiApp, cols: number): LayoutLines {
+  return buildTableLines(app, cols); // Task 7 adds the cards dispatch here
+}
+
+// Line index (chrome lines included) of the selected agent within built lines.
+function selectedLineIndex(app: TuiApp, cols: number): number {
+  const selected = app.selectedState();
+  if (!selected) return 0;
+  const built = buildLines(app, cols);
+  return Math.max(
+    0,
+    built.states.findIndex((s) => s?.paneId === selected.paneId),
+  );
+}
+
 export function renderSessionList(app: TuiApp, maxRows: number, cols: number): string[] {
   const rows = app.dashboardRows();
-  const lines: string[] = [];
 
   if (rows.length === 0) {
+    const lines: string[] = [];
     lines.push('');
     if (app.tmuxDown) {
       lines.push(`${C.permit}  ⚠ tmux isn't running${C.reset}`);
@@ -68,152 +85,15 @@ export function renderSessionList(app: TuiApp, maxRows: number, cols: number): s
     return lines;
   }
 
-  const widths = computeColumnWidths(rows, cols);
-  const scrollOffset = calculateScroll(app.selectedRowIndex(), maxRows, rows.length);
-  const selectedPane = app.selectedState()?.paneId ?? null;
-
-  for (let i = scrollOffset; i < rows.length && lines.length < maxRows; i++) {
-    const row = rows[i]!;
-    if (row.kind === 'header') {
-      lines.push(formatHeaderRow(row, cols));
-    } else {
-      lines.push(formatAgentRow(row, widths, cols, row.state.paneId === selectedPane));
-    }
-  }
-
-  return lines;
-}
-
-export interface ColumnWidths {
-  name: number;
-  detail: number;
-  branch: number;
-}
-
-// Per-row visible cells: sel(1) sp icon(1) sp name detail sp branch sp age(4).
-// The name column is sized to its content (never truncated first); the detail
-// column flexes with an 8-cell floor; below that the branch column drops
-// entirely; only then does the name give way.
-export function computeColumnWidths(rows: DashboardRow[], cols: number): ColumnWidths {
-  let name = 0;
-  for (const row of rows) {
-    if (row.kind === 'agent') name = Math.max(name, visibleLength(nameCell(row)));
-  }
-
-  let branch = 12;
-  let detail = cols - 11 - name - branch;
-  if (detail < 8) {
-    branch = 0;
-    detail = cols - 9 - name;
-  }
-  if (detail < 8) {
-    detail = 8;
-    name = Math.max(1, cols - 9 - detail);
-  }
-  return { name, detail, branch };
-}
-
-function nameCell(row: Extract<DashboardRow, { kind: 'agent' }>): string {
-  const label = windowLabel(row.state);
-  if (row.grouped) return `  ${label}`;
-  return label === row.state.session ? row.state.session : `${row.state.session} · ${label}`;
-}
-
-function formatHeaderRow(row: Extract<DashboardRow, { kind: 'header' }>, cols: number): string {
-  const display = STATUS_DISPLAY[row.aggregate];
-  const color = getStateColor(row.aggregate);
-  const line = `  ${color}${display.icon}${C.reset} ${C.bold}${row.session}${C.reset} ${C.dim}· ${row.count} agents${C.reset}`;
-  return truncateAnsi(line, cols);
-}
-
-function formatAgentRow(
-  row: Extract<DashboardRow, { kind: 'agent' }>,
-  widths: ColumnWidths,
-  cols: number,
-  selected: boolean,
-): string {
-  const state = row.state;
-  const display = STATUS_DISPLAY[state.status];
-  const stColor = getStateColor(state.status);
-
-  const sel = selected ? `${stColor}▌${C.reset}` : ' ';
-
-  const nameColor = selected ? C.bold : '';
-  const name = padAnsi(truncateWidth(nameCell(row), widths.name), widths.name);
-
-  let detail = '';
-  if (state.claudeName) {
-    detail = state.claudeName;
-  } else {
-    detail = (state.project ?? '').replace(/^~\/Developer\//, '');
-  }
-
-  const branch = state.branch ?? '';
-  const branchColor = branch && branch !== 'main' && branch !== 'master' ? C.purple : C.gray;
-  const branchPart =
-    widths.branch > 0 ? ` ${branchColor}${padAnsi(truncateWidth(branch, widths.branch), widths.branch)}${C.reset}` : '';
-
-  const age = formatAge(state.ts);
-  const ageColor = getAgeColor(state.ts);
-
-  const portStr = state.ports.length > 0 ? ` ${C.cyan}⌁${state.ports[0]}${C.reset}` : '';
-
-  const detailColor = state.claudeName ? C.dim : C.gray;
-  const line = `${sel} ${stColor}${display.icon}${C.reset} ${nameColor}${name}${C.reset}${detailColor}${padAnsi(truncateWidth(detail, widths.detail), widths.detail)}${C.reset}${branchPart} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
-
-  return truncateAnsi(line, cols);
+  return windowLines(buildLines(app, cols), selectedLineIndex(app, cols), maxRows).lines;
 }
 
 // Map a clicked session-list line (0 = first rendered line) back to the agent
-// on that line, accounting for scroll and header rows. Header lines map to null.
-export function stateAtLine(app: TuiApp, lineIdx: number, maxRows: number): AgentState | null {
-  const rows = app.dashboardRows();
-  const scrollOffset = calculateScroll(app.selectedRowIndex(), maxRows, rows.length);
-  const row = rows[scrollOffset + lineIdx];
-  return row !== undefined && row.kind === 'agent' ? row.state : null;
-}
-
-function getStateColor(status: AgentStatus): string {
-  switch (status) {
-    case AgentStatus.PERMIT:
-      return C.permit;
-    case AgentStatus.QUESTION:
-      return C.question;
-    case AgentStatus.DONE:
-      return C.done;
-    case AgentStatus.BUSY:
-      return C.busy;
-    case AgentStatus.IDLE:
-      return C.idle;
-    case AgentStatus.SHELL:
-      return C.shell;
-    case AgentStatus.DOWN:
-      return C.down;
-  }
-}
-
-function getAgeColor(ts: number): string {
-  const secs = Math.max(0, Math.floor(Date.now() / 1000) - ts);
-  if (secs < 30) return C.green;
-  if (secs < 300) return C.gray;
-  return C.down;
-}
-
-function formatAge(ts: number): string {
-  const secs = Math.max(0, Math.floor(Date.now() / 1000) - ts);
-  if (secs < 5) return 'now';
-  if (secs < 60) return `${secs}s`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
-  return `${Math.floor(secs / 86400)}d`;
-}
-
-function calculateScroll(selected: number, viewHeight: number, total: number): number {
-  if (total <= viewHeight) return 0;
-  const half = Math.floor(viewHeight / 2);
-  if (selected <= half) return 0;
-  if (selected >= total - half) return Math.max(0, total - viewHeight);
-  return selected - half;
+// on that line, accounting for scroll, header rows, and scroll indicators.
+// Chrome lines (headers, indicators) map to null.
+export function stateAtLine(app: TuiApp, lineIdx: number, maxRows: number, cols: number): AgentState | null {
+  const windowed = windowLines(buildLines(app, cols), selectedLineIndex(app, cols), maxRows);
+  return windowed.states[lineIdx] ?? null;
 }
 
 export function renderFooter(app: TuiApp, cols: number): string[] {
@@ -275,3 +155,6 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
 function chip(key: string): string {
   return `${C.dim}[${C.reset}${C.bold}${key}${C.reset}${C.dim}]${C.reset}`;
 }
+
+export { computeColumnWidths, type ColumnWidths } from './layouts/table.ts';
+export { calculateScroll, formatAge, getAgeColor, getStateColor } from './layouts/shared.ts';

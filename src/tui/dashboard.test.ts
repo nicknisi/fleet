@@ -164,11 +164,11 @@ describe('stateAtLine click mapping', () => {
       makeState('solo', AgentStatus.IDLE, '%3', 'main'),
     ]);
     // rows: header(cli), agent(%1), agent(%2), agent(%3)
-    expect(stateAtLine(app, 0, 20)).toBeNull();
-    expect(stateAtLine(app, 1, 20)?.paneId).toBe('%1');
-    expect(stateAtLine(app, 2, 20)?.paneId).toBe('%2');
-    expect(stateAtLine(app, 3, 20)?.paneId).toBe('%3');
-    expect(stateAtLine(app, 4, 20)).toBeNull();
+    expect(stateAtLine(app, 0, 20, 120)).toBeNull();
+    expect(stateAtLine(app, 1, 20, 120)?.paneId).toBe('%1');
+    expect(stateAtLine(app, 2, 20, 120)?.paneId).toBe('%2');
+    expect(stateAtLine(app, 3, 20, 120)?.paneId).toBe('%3');
+    expect(stateAtLine(app, 4, 20, 120)).toBeNull();
   });
 
   test('accounts for scroll offset', () => {
@@ -182,12 +182,14 @@ describe('stateAtLine click mapping', () => {
     const maxRows = 10;
     const lines = renderSessionList(app, maxRows, 120);
     // The first rendered line and stateAtLine(0) must describe the same row.
-    const first = stateAtLine(app, 0, maxRows);
+    const first = stateAtLine(app, 0, maxRows, 120);
     const firstLine = stripAnsi(lines[0]!);
     if (first) {
       expect(firstLine).toContain(first.window);
     } else {
-      expect(firstLine).toContain('agents'); // header line
+      // Chrome line (null state): a group header or a scroll indicator. When the
+      // list is scrolled, the top line is the "↑ N more" indicator.
+      expect(/agents|more/.test(firstLine)).toBe(true);
     }
   });
 });

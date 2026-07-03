@@ -640,7 +640,8 @@ async function launchTui(): Promise<number> {
             // The session list interleaves header lines with agent rows, so map
             // the clicked line through the row model (scroll-aware) instead of
             // indexing visibleStates() directly. Header clicks select nothing.
-            const sel = lineIdx >= 0 ? stateAtLine(app, lineIdx, contentRows) : null;
+            const listCols = app.mode === TuiMode.DASHBOARD ? sz.cols : app.listWidth(sz.cols);
+            const sel = lineIdx >= 0 ? stateAtLine(app, lineIdx, contentRows, listCols) : null;
             if (sel) {
               const idx = app.visibleStates().findIndex((s) => s.paneId === sel.paneId);
               if (idx >= 0) app.selectedIndex = idx;
