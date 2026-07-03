@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { runStatusLineInject, runStatusLineRemove } from './statusline.ts';
@@ -126,11 +126,19 @@ function ensureMarketplace(fleetDir: string): string {
     ) + '\n',
   );
 
-  const link = join(mpDir, 'fleet');
-  if (existsSync(link)) unlinkSync(link);
-  symlinkSync(fleetDir, link);
+  linkPluginDir(fleetDir, join(mpDir, 'fleet'));
 
   return mpDir;
+}
+
+// Point `link` at `fleetDir`, replacing whatever is already there.
+// rmSync removes the symlink itself (it never follows it) and is a no-op when
+// nothing exists. existsSync would be wrong here: it *follows* the link, so a
+// symlink to a Cellar version removed by `brew upgrade` reports as absent, the
+// stale link survives, and symlinkSync then fails with EEXIST.
+export function linkPluginDir(fleetDir: string, link: string): void {
+  rmSync(link, { force: true });
+  symlinkSync(fleetDir, link);
 }
 
 export function runInstall(): number {
