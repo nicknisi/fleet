@@ -1,8 +1,24 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addTmuxConfLine, addTmuxKeybindLines, removeTmuxConfLine, resolvePluginDir, tmuxConfPath } from './install.ts';
+import {
+  addTmuxConfLine,
+  addTmuxKeybindLines,
+  linkPluginDir,
+  removeTmuxConfLine,
+  resolvePluginDir,
+  tmuxConfPath,
+} from './install.ts';
 
 let workDir: string;
 let confFile: string;
@@ -132,6 +148,38 @@ describe('resolvePluginDir', () => {
     mkdirSync(join(plugin, 'hooks'), { recursive: true });
     writeFileSync(join(plugin, 'hooks', 'hooks.json'), '{}');
     expect(resolvePluginDir([bare, plugin])).toBe(plugin);
+  });
+});
+
+describe('linkPluginDir', () => {
+  test('creates a symlink to the plugin dir when none exists', () => {
+    const target = join(workDir, 'plugin-0.10.0');
+    const link = join(workDir, 'fleet');
+    mkdirSync(target, { recursive: true });
+    linkPluginDir(target, link);
+    expect(readlinkSync(link)).toBe(target);
+  });
+
+  test('replaces an existing valid symlink', () => {
+    const oldTarget = join(workDir, 'plugin-0.9.0');
+    const newTarget = join(workDir, 'plugin-0.10.0');
+    const link = join(workDir, 'fleet');
+    mkdirSync(oldTarget, { recursive: true });
+    mkdirSync(newTarget, { recursive: true });
+    symlinkSync(oldTarget, link);
+    linkPluginDir(newTarget, link);
+    expect(readlinkSync(link)).toBe(newTarget);
+  });
+
+  test('replaces a dangling symlink left by a removed target (brew upgrade)', () => {
+    const removedTarget = join(workDir, 'cellar-0.9.0'); // never created — simulates removed keg
+    const newTarget = join(workDir, 'cellar-0.10.0');
+    const link = join(workDir, 'fleet');
+    mkdirSync(newTarget, { recursive: true });
+    symlinkSync(removedTarget, link);
+    expect(existsSync(link)).toBe(false); // the trap: existsSync follows the link and can't see it
+    linkPluginDir(newTarget, link);
+    expect(readlinkSync(link)).toBe(newTarget);
   });
 });
 
