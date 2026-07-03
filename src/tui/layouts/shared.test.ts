@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { windowLines, type LayoutLines } from './shared.ts';
+import { stateIcon, windowLines, type LayoutLines } from './shared.ts';
 import { CARD_LAYOUT_MAX_COLS, pickLayout } from './index.ts';
+import { AgentStatus } from '../../state/types.ts';
 
 const fake = (n: number): LayoutLines => ({
   lines: Array.from({ length: n }, (_, i) => `line${i}`),
@@ -12,6 +13,17 @@ describe('pickLayout', () => {
     expect(pickLayout(CARD_LAYOUT_MAX_COLS - 1)).toBe('cards');
     expect(pickLayout(CARD_LAYOUT_MAX_COLS)).toBe('table');
     expect(pickLayout(200)).toBe('table');
+  });
+});
+
+describe('stateIcon', () => {
+  test('busy icon renders the working glyph in both phases', () => {
+    expect(stateIcon(AgentStatus.BUSY, false)).toContain('◉');
+    expect(stateIcon(AgentStatus.BUSY, true)).toContain('◉');
+  });
+  test('non-busy states ignore the pulse phase entirely', () => {
+    expect(stateIcon(AgentStatus.PERMIT, true)).toBe(stateIcon(AgentStatus.PERMIT, false));
+    expect(stateIcon(AgentStatus.IDLE, true)).toBe(stateIcon(AgentStatus.IDLE, false));
   });
 });
 

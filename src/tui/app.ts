@@ -44,6 +44,7 @@ export class TuiApp {
   splitRatio: number = DEFAULT_SPLIT;
   dragging: boolean = false;
   hoverPaneId: string | null = null;
+  pulsePhase: boolean = false;
 
   updateStates(newStates: AgentState[]): void {
     const selectedPaneId = this.selectedState()?.paneId ?? null;

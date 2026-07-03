@@ -1,5 +1,5 @@
 import { C } from '../../terminal/colors.ts';
-import { AgentStatus, type AgentState } from '../../state/types.ts';
+import { AgentStatus, STATUS_DISPLAY, type AgentState } from '../../state/types.ts';
 
 // One entry per rendered line: states[i] is the agent on lines[i], or null for
 // chrome lines (headers, separators, indicators). Render and hit-testing both
@@ -26,6 +26,14 @@ export function getStateColor(status: AgentStatus): string {
     case AgentStatus.DOWN:
       return C.down;
   }
+}
+
+// BUSY breathes: alternate dim/normal each fast tick. Everything else is steady.
+export function stateIcon(status: AgentStatus, pulsePhase: boolean): string {
+  const icon = STATUS_DISPLAY[status].icon;
+  const color = getStateColor(status);
+  if (status === AgentStatus.BUSY && pulsePhase) return `${C.dim}${color}${icon}${C.reset}`;
+  return `${color}${icon}${C.reset}`;
 }
 
 export function getAgeColor(ts: number): string {

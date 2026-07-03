@@ -841,6 +841,10 @@ async function launchTui(): Promise<number> {
     refreshTimer = setInterval(() => {
       if (isTyping()) return;
       doRefresh();
+      if (app.visibleStates().some((s) => s.status === AgentStatus.BUSY)) {
+        app.pulsePhase = !app.pulsePhase;
+        needsRender = true;
+      }
       tick();
     }, FAST_REFRESH_MS);
 

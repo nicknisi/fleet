@@ -2,7 +2,7 @@ import { C } from '../../terminal/colors.ts';
 import { padAnsi, truncateAnsi, truncateWidth, visibleLength } from '../../terminal/ansi.ts';
 import { STATUS_DISPLAY, windowLabel, type AgentState } from '../../state/types.ts';
 import type { DashboardRow, TuiApp } from '../app.ts';
-import { formatAge, getAgeColor, getStateColor, type LayoutLines } from './shared.ts';
+import { formatAge, getAgeColor, getStateColor, stateIcon, type LayoutLines } from './shared.ts';
 
 export interface ColumnWidths {
   name: number;
@@ -52,9 +52,9 @@ function formatAgentRow(
   cols: number,
   selected: boolean,
   hovered: boolean,
+  pulse: boolean,
 ): string {
   const state = row.state;
-  const display = STATUS_DISPLAY[state.status];
   const stColor = getStateColor(state.status);
 
   const sel = selected ? `${stColor}▌${C.reset}` : ' ';
@@ -80,7 +80,7 @@ function formatAgentRow(
   const portStr = state.ports.length > 0 ? ` ${C.cyan}⌁${state.ports[0]}${C.reset}` : '';
 
   const detailColor = state.claudeName ? C.dim : C.gray;
-  const line = `${sel} ${stColor}${display.icon}${C.reset} ${nameColor}${name}${C.reset}${detailColor}${padAnsi(truncateWidth(detail, widths.detail), widths.detail)}${C.reset}${branchPart} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
+  const line = `${sel} ${stateIcon(state.status, pulse)} ${nameColor}${name}${C.reset}${detailColor}${padAnsi(truncateWidth(detail, widths.detail), widths.detail)}${C.reset}${branchPart} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
 
   return truncateAnsi(line, cols);
 }
@@ -97,7 +97,14 @@ export function buildTableLines(app: TuiApp, cols: number): LayoutLines {
       states.push(null);
     } else {
       lines.push(
-        formatAgentRow(row, widths, cols, row.state.paneId === selectedPane, row.state.paneId === app.hoverPaneId),
+        formatAgentRow(
+          row,
+          widths,
+          cols,
+          row.state.paneId === selectedPane,
+          row.state.paneId === app.hoverPaneId,
+          app.pulsePhase,
+        ),
       );
       states.push(row.state);
     }

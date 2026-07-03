@@ -2,7 +2,7 @@ import { C } from '../../terminal/colors.ts';
 import { truncateAnsi, truncateWidth, visibleLength } from '../../terminal/ansi.ts';
 import { STATUS_DISPLAY, windowLabel, type AgentState } from '../../state/types.ts';
 import type { TuiApp } from '../app.ts';
-import { formatAge, getAgeColor, getStateColor, type LayoutLines } from './shared.ts';
+import { formatAge, getAgeColor, getStateColor, stateIcon, type LayoutLines } from './shared.ts';
 
 // Sidebar cards: every agent is a fixed 4-line block —
 //   ▌⚠ name            4s
@@ -41,7 +41,7 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
     const gap = ' '.repeat(Math.max(1, nameW - visibleLength(name) + 1));
     lines.push(
       truncateAnsi(
-        `${bar} ${color}${display.icon}${C.reset} ${selected ? C.bold : hovered ? C.underline : ''}${name}${C.reset}${gap}${getAgeColor(st.ts)}${age}${C.reset}`,
+        `${bar} ${stateIcon(st.status, app.pulsePhase)} ${selected ? C.bold : hovered ? C.underline : ''}${name}${C.reset}${gap}${getAgeColor(st.ts)}${age}${C.reset}`,
         cols,
       ),
     );
