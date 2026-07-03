@@ -58,12 +58,22 @@ export function windowLines(all: LayoutLines, selectedLine: number, maxRows: num
   const total = all.lines.length;
   if (total <= maxRows) return all;
 
+  // Indicator visibility depends on the offset, which depends on how many
+  // rows the indicators consume — a fixed point. Offset is monotone
+  // non-decreasing as the window shrinks, so this stabilizes in ≤3 rounds.
+  let showTop = false;
+  let showBot = false;
   let inner = maxRows;
-  let offset = calculateScroll(selectedLine, inner, total);
-  const showTop = offset > 0;
-  const showBot = offset + inner < total;
-  inner = maxRows - (showTop ? 1 : 0) - (showBot ? 1 : 0);
-  offset = calculateScroll(selectedLine, inner, total);
+  let offset = 0;
+  for (let round = 0; round < 4; round++) {
+    inner = maxRows - (showTop ? 1 : 0) - (showBot ? 1 : 0);
+    offset = calculateScroll(selectedLine, inner, total);
+    const nextTop = offset > 0;
+    const nextBot = offset + inner < total;
+    if (nextTop === showTop && nextBot === showBot) break;
+    showTop = nextTop;
+    showBot = nextBot;
+  }
 
   const lines: string[] = [];
   const states: (AgentState | null)[] = [];
