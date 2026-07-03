@@ -1,10 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { runStatusLineInject, runStatusLineRemove } from './statusline.ts';
 
 const FLEET_MANAGED_MARKER = '# fleet-managed';
 const FLEET_TMUX_LINE = `run-shell "fleet statusline --inject" ${FLEET_MANAGED_MARKER}`;
+const FLEET_KEYBIND_SIDEBAR = `bind-key f split-window -hb -l 34 fleet ${FLEET_MANAGED_MARKER}`;
+const FLEET_KEYBIND_POPUP = `bind-key F display-popup -E -w 80% -h 60% fleet ${FLEET_MANAGED_MARKER}`;
 
 export function resolvePluginDir(candidates: string[]): string | null {
   for (const dir of candidates) {
@@ -61,6 +63,48 @@ export function removeTmuxConfLine(path: string = tmuxConfPath()): boolean {
 
   writeFileSync(path, filtered);
   return true;
+}
+
+// Offer the sidebar/popup bindings one at a time. `ask` is injected so tests
+// don't touch a TTY. Declined bindings are printed for manual adoption.
+// Uninstall needs no changes: removeTmuxConfLine strips every marker line.
+export function addTmuxKeybindLines(path: string, ask: (question: string) => boolean): string[] {
+  if (!existsSync(path)) return [];
+  let contents = readFileSync(path, 'utf8');
+  const added: string[] = [];
+  const candidates = [
+    {
+      line: FLEET_KEYBIND_SIDEBAR,
+      question: 'Add tmux binding — prefix+f: fleet in a 34-col sidebar split? [y/N] ',
+    },
+    {
+      line: FLEET_KEYBIND_POPUP,
+      question: 'Add tmux binding — prefix+F: fleet in a popup? [y/N] ',
+    },
+  ];
+  for (const cand of candidates) {
+    if (contents.includes(cand.line)) continue;
+    if (ask(cand.question)) {
+      contents += (contents.endsWith('\n') || contents.length === 0 ? '' : '\n') + cand.line + '\n';
+      added.push(cand.line);
+    } else {
+      process.stdout.write(`  skipped — add it yourself anytime:\n    ${cand.line}\n`);
+    }
+  }
+  if (added.length > 0) writeFileSync(path, contents);
+  return added;
+}
+
+function askYesNo(question: string): boolean {
+  if (!process.stdin.isTTY) return false;
+  process.stdout.write(question);
+  const buf = Buffer.alloc(64);
+  try {
+    const n = readSync(0, buf, 0, 64, null);
+    return /^y/i.test(buf.subarray(0, n).toString().trim());
+  } catch {
+    return false;
+  }
 }
 
 function ensureMarketplace(fleetDir: string): string {
@@ -123,6 +167,13 @@ export function runInstall(): number {
     process.stdout.write(`Added fleet statusline hook to ${confPath}\n`);
   } else {
     process.stderr.write(`tmux.conf not found at ${confPath} — skipping tmux integration\n`);
+  }
+
+  const addedBindings = addTmuxKeybindLines(confPath, askYesNo);
+  if (addedBindings.length > 0) {
+    process.stdout.write(
+      `Added ${addedBindings.length} fleet keybinding(s) — reload with: tmux source-file ${confPath}\n`,
+    );
   }
 
   runStatusLineInject();

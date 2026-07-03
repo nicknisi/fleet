@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addTmuxConfLine, removeTmuxConfLine, resolvePluginDir, tmuxConfPath } from './install.ts';
+import { addTmuxConfLine, addTmuxKeybindLines, removeTmuxConfLine, resolvePluginDir, tmuxConfPath } from './install.ts';
 
 let workDir: string;
 let confFile: string;
@@ -162,5 +162,43 @@ describe('tmuxConfPath', () => {
     } finally {
       rmSync(xdg, { recursive: true, force: true });
     }
+  });
+});
+
+describe('addTmuxKeybindLines', () => {
+  const confWith = (content: string): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'fleet-test-'));
+    const path = join(dir, 'tmux.conf');
+    writeFileSync(path, content);
+    return path;
+  };
+
+  test('accepting both prompts appends both managed bindings', () => {
+    const path = confWith('set -g mouse on\n');
+    const added = addTmuxKeybindLines(path, () => true);
+    expect(added).toHaveLength(2);
+    const conf = readFileSync(path, 'utf8');
+    expect(conf).toContain('bind-key f split-window');
+    expect(conf).toContain('bind-key F display-popup');
+    expect(conf.match(/# fleet-managed/g)?.length).toBe(2);
+  });
+
+  test('declining adds nothing and leaves the file untouched', () => {
+    const path = confWith('set -g mouse on\n');
+    expect(addTmuxKeybindLines(path, () => false)).toHaveLength(0);
+    expect(readFileSync(path, 'utf8')).toBe('set -g mouse on\n');
+  });
+
+  test('idempotent: existing bindings are not re-added or re-asked', () => {
+    const path = confWith('set -g mouse on\n');
+    addTmuxKeybindLines(path, () => true);
+    let asked = 0;
+    const added = addTmuxKeybindLines(path, () => (asked++, true));
+    expect(added).toHaveLength(0);
+    expect(asked).toBe(0);
+  });
+
+  test('missing conf file adds nothing', () => {
+    expect(addTmuxKeybindLines('/nonexistent/tmux.conf', () => true)).toHaveLength(0);
   });
 });
