@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/nicknisi/fleet/compare/v0.9.0...v0.10.0) (2026-07-03)
+
+
+### Features
+
+* adaptive theming, responsive sidebar layout, and UI polish ([#19](https://github.com/nicknisi/fleet/issues/19)) ([9f513aa](https://github.com/nicknisi/fleet/commit/9f513aa51a6f62edb9b930e800bac701428714b9))
+
 ## [0.9.0](https://github.com/nicknisi/fleet/compare/v0.8.0...v0.9.0) (2026-06-23)
 
 
