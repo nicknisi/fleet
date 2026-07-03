@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/nicknisi/fleet/compare/v0.10.0...v0.10.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* replace dangling marketplace symlink on install ([#21](https://github.com/nicknisi/fleet/issues/21)) ([c476d55](https://github.com/nicknisi/fleet/commit/c476d55c7de7c250c477aa454fd644f08e12629b))
+
 ## [0.10.0](https://github.com/nicknisi/fleet/compare/v0.9.0...v0.10.0) (2026-07-03)
 
 
