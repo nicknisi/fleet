@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/nicknisi/fleet/compare/v0.11.0...v0.12.0) (2026-07-04)
+
+
+### Features
+
+* agent-awareness polish — explain, detection manifests, Codex, wait, window rollup, labels/rename ([#25](https://github.com/nicknisi/fleet/issues/25)) ([3e6cd36](https://github.com/nicknisi/fleet/commit/3e6cd365ba458a156eb359e7b80b9040aee91106))
+
 ## [0.11.0](https://github.com/nicknisi/fleet/compare/v0.10.1...v0.11.0) (2026-07-03)
 
 
