@@ -4,7 +4,6 @@ import { dirname, join, resolve } from 'node:path';
 import {
   runStatusLineInject,
   runStatusLineRemove,
-  buildRollupEnableCommands,
   WINDOW_STATUS_FORMAT,
   WINDOW_STATUS_CURRENT_FORMAT,
 } from './statusline.ts';
@@ -224,15 +223,12 @@ export function runInstall(): number {
     );
   }
 
-  const addedRollup = addTmuxRollupLines(confPath, askYesNo);
-  if (addedRollup.length > 0) {
-    // Apply immediately so the recolor takes effect without a config reload.
-    for (const cmd of buildRollupEnableCommands()) {
-      Bun.spawnSync({ cmd, stdout: 'ignore', stderr: 'ignore' });
-    }
-    process.stdout.write('Enabled window state rollup — tmux windows recolor by agent state.\n');
-  }
-
+  // Window state rollup is intentionally NOT offered here. Its tmux config
+  // (see addTmuxRollupLines) overrides window-status-format wholesale, which
+  // would discard a user's themed window formatting — fleet extends tmux, it
+  // does not overwrite it. The runtime recolor stays dormant behind the
+  // @fleet_rollup option (index.ts gates emitWindowColors on rollupEnabled()),
+  // so it is a no-op unless a user deliberately opts in via their tmux.conf.
   runStatusLineInject();
   return 0;
 }

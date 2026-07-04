@@ -311,3 +311,29 @@ describe('addTmuxRollupLines', () => {
     expect(addTmuxRollupLines('/nonexistent/tmux.conf', () => true)).toHaveLength(0);
   });
 });
+
+// Regression lock for "fleet install rewrote my tmux statusline". The two
+// conf writers reachable from runInstall — addTmuxConfLine (unconditional) and
+// addTmuxKeybindLines (only when the user accepts a prompt) — must never emit a
+// window-status-format override. addTmuxRollupLines is the sole writer that
+// does, and it is deliberately not wired into runInstall (see install.ts), so
+// installing fleet cannot clobber a user's themed window formatting.
+describe('install conf writers never touch window-status-format', () => {
+  test('addTmuxConfLine adds only the statusline hook', () => {
+    writeFileSync(confFile, 'set -g mouse on\n');
+    addTmuxConfLine(confFile);
+    const conf = readFileSync(confFile, 'utf8');
+    expect(conf).toContain('run-shell "fleet statusline --inject"');
+    expect(conf).not.toContain('window-status-format');
+    expect(conf).not.toContain('@fleet_rollup');
+  });
+
+  test('accepting every keybind prompt still writes no window-status-format', () => {
+    writeFileSync(confFile, 'set -g mouse on\n');
+    addTmuxKeybindLines(confFile, () => true);
+    const conf = readFileSync(confFile, 'utf8');
+    expect(conf).toContain('bind-key');
+    expect(conf).not.toContain('window-status-format');
+    expect(conf).not.toContain('@fleet_rollup');
+  });
+});
