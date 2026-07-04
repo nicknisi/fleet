@@ -107,8 +107,29 @@ export const CLAUDE_MANIFEST: DetectionManifest = {
   ],
 };
 
+// --- the embedded built-in `codex` manifest (Phase 3) ---
+// Codex fires PreToolUse+Stop hooks, so BUSY/DONE come from the hook (which is
+// authoritative and faster than any spinner regex) — no BUSY scrape rule is
+// needed. Codex has no Notification hook and its on-screen prompts don't cleanly
+// separate a permission request from a question, so every prompt rule is PERMIT
+// (QUESTION is not currently sourced for Codex — a documented limitation). Rules
+// are ORDERED, first match wins, exactly like CLAUDE_MANIFEST; ids follow the
+// same `<state>.<slug>` convention. A TS object literal (never a runtime file
+// read) so `bun build --compile` bundles it into the binary.
+export const CODEX_MANIFEST: DetectionManifest = {
+  agent: 'codex',
+  linesFromBottom: 15,
+  promptMarker: '❯',
+  rules: [
+    { id: 'permit.allow', pattern: 'allow command\\?', flags: 'i', state: 'PERMIT' },
+    { id: 'permit.confirm', pattern: 'press enter to confirm or esc to cancel', flags: 'i', state: 'PERMIT' },
+    { id: 'permit.yn', pattern: '\\[y/n\\]', flags: 'i', state: 'PERMIT' },
+    { id: 'permit.do-you-want', pattern: 'do you want to', flags: 'i', state: 'PERMIT' },
+  ],
+};
+
 // --- loader: built-in, replaced wholesale by a valid override ---
-const BUILTINS: Record<string, DetectionManifest> = { claude: CLAUDE_MANIFEST };
+const BUILTINS: Record<string, DetectionManifest> = { claude: CLAUDE_MANIFEST, codex: CODEX_MANIFEST };
 const manifestCache = new Map<string, DetectionManifest>();
 
 export function loadDetectionManifest(agent: string): DetectionManifest {

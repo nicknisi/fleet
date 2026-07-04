@@ -24,6 +24,7 @@ import { scrapePane } from './src/state/scraper.ts';
 import { loadRenames, saveRename } from './src/state/rename.ts';
 import { AgentStatus, ACK_ALL_RANGE, extractClaudeName, type AgentState } from './src/state/types.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
+import type { AgentDir } from './src/agents/config.ts';
 import { listPanesResult, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
 import { detectPorts } from './src/tmux/ports.ts';
 import { sendKeys, sendRawKey } from './src/tmux/send.ts';
@@ -31,6 +32,7 @@ import { runStatus } from './src/cli/status.ts';
 import { runNext } from './src/cli/next.ts';
 import { runSend } from './src/cli/send.ts';
 import { runInstall, runUninstall } from './src/cli/install.ts';
+import { runInstallCodex, runUninstallCodex } from './src/cli/install-codex.ts';
 import { runDoctor } from './src/cli/doctor.ts';
 import { runReconcile } from './src/cli/reconcile.ts';
 import { runExplain } from './src/cli/explain.ts';
@@ -73,7 +75,9 @@ function printHelp(): number {
       '',
       `  ${C.bold}Plugin${C.reset}`,
       `    ${C.idle}fleet install${C.reset}                    ${C.gray}Register as Claude Code plugin${C.reset}`,
+      `    ${C.idle}fleet install codex${C.reset}              ${C.gray}Wire fleet into Codex's hooks + config${C.reset}`,
       `    ${C.idle}fleet uninstall${C.reset}                  ${C.gray}Remove plugin registration${C.reset}`,
+      `    ${C.idle}fleet uninstall codex${C.reset}            ${C.gray}Remove fleet's Codex hooks + config${C.reset}`,
       `    ${C.idle}fleet doctor${C.reset}                     ${C.gray}Health check${C.reset}`,
       '',
       `  ${C.bold}Tmux${C.reset}`,
@@ -88,7 +92,7 @@ function printHelp(): number {
 }
 
 function verifyPaneState(state: AgentState, statusDirs: string[]): void {
-  const scraped = scrapePane(state.paneId);
+  const scraped = scrapePane(state.paneId, state.agentType || 'claude');
   if (scraped === null) return;
   if (scraped === state.status) return;
 
@@ -186,8 +190,9 @@ function acknowledgePane(paneId: string, statusDirs: string[]): void {
 // Acknowledge every ready agent across all tracked panes in one sweep — backs
 // the status-line "clear all" chip. Reuses acknowledgePane's ready-only gating,
 // so working/waiting/asking agents are left untouched.
-function acknowledgeAllReady(statusDirs: string[]): void {
-  for (const hook of readAllStatusDirs(statusDirs)) {
+function acknowledgeAllReady(dirs: AgentDir[]): void {
+  const statusDirs = dirs.map((d) => d.statusDir);
+  for (const hook of readAllStatusDirs(dirs)) {
     acknowledgePane(hook.pane, statusDirs);
   }
 }
@@ -224,7 +229,7 @@ function reloadRenameCache(): void {
   renameCache = loadRenames();
 }
 
-function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): void {
+function refreshSlowCaches(panes: { paneId: string; currentPath: string }[], dirs: AgentDir[]): void {
   const paths = new Set<string>();
   for (const p of panes) paths.add(p.currentPath);
   branchCache.clear();
@@ -242,11 +247,21 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): vo
   } catch {}
   portCache = newPorts;
 
+  // Which agent owns each pane, so the scraper picks that agent's detection
+  // manifest. Scraping runs before refreshStates derives agentType, so learn it
+  // up front from the status files. Freshness-wins on a pane-id collision across
+  // dirs — same rule as refreshStates' hookByPane.
+  const paneAgent = new Map<string, { agent: string; ts: number }>();
+  for (const h of readAllStatusDirs(dirs)) {
+    const prev = paneAgent.get(h.pane);
+    if (!prev || h.ts > prev.ts) paneAgent.set(h.pane, { agent: h.agent, ts: h.ts });
+  }
+
   // Layer 3: pane scraping (~50ms per pane) — slow cycle only
   const seen = new Set<string>();
   for (const p of panes) {
     seen.add(p.paneId);
-    scrapeCache.set(p.paneId, scrapePane(p.paneId));
+    scrapeCache.set(p.paneId, scrapePane(p.paneId, paneAgent.get(p.paneId)?.agent ?? 'claude'));
   }
   for (const paneId of scrapeCache.keys()) {
     if (!seen.has(paneId)) scrapeCache.delete(paneId);
@@ -254,14 +269,19 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[]): vo
 }
 
 // Fast refresh: ONE tmux call + status file reads + last-line JSONL reads. No git, no lsof.
-function refreshStates(statusDirs: string[]): AgentState[] {
-  const hookStatuses = readAllStatusDirs(statusDirs);
+function refreshStates(dirs: AgentDir[]): AgentState[] {
+  const hookStatuses = readAllStatusDirs(dirs);
   const { ok: tmuxOk, panes } = listPanesResult();
   lastTmuxOk = tmuxOk;
 
+  // tmux pane ids (%N) are server-global, so the same pane number can have a
+  // .status in two agents' dirs while only one agent truly occupies it. Keep the
+  // freshest record per pane; its `agent`/`statusDir` then drive agentType and
+  // the events read below.
   const hookByPane = new Map<string, (typeof hookStatuses)[number]>();
   for (const h of hookStatuses) {
-    hookByPane.set(h.pane, h);
+    const prev = hookByPane.get(h.pane);
+    if (!prev || h.ts > prev.ts) hookByPane.set(h.pane, h);
   }
 
   const states: AgentState[] = [];
@@ -272,20 +292,18 @@ function refreshStates(statusDirs: string[]): AgentState[] {
     let status: AgentStatus;
     let tool: string | null = null;
     let ts = Math.floor(Date.now() / 1000);
+    let agentType = ''; // shell pane: honestly no agent (cards.ts filters it out)
 
     if (hook) {
-      let eventStatus: AgentStatus | null = null;
-      for (const dir of statusDirs) {
-        const eventsFile = join(dir, `${pane.paneNum}.events.jsonl`);
-        const recent = readLastEvents(eventsFile, 12);
-        if (recent.length > 0) {
-          eventStatus = deriveStatusFromEvents(recent);
-          break;
-        }
-      }
+      // Read events from the WINNING hook's own dir (not a first-match scan
+      // across all dirs, which could read the wrong agent's stream on collision).
+      const eventsFile = join(hook.statusDir, `${pane.paneNum}.events.jsonl`);
+      const recent = readLastEvents(eventsFile, 12);
+      const eventStatus = recent.length > 0 ? deriveStatusFromEvents(recent) : null;
 
       tool = hook.tool || null;
       ts = hook.ts;
+      agentType = hook.agent;
 
       status = fuseState({
         hookState: hook.state,
@@ -313,7 +331,7 @@ function refreshStates(statusDirs: string[]): AgentState[] {
       branch: branchCache.get(pane.currentPath) ?? null,
       ports: portCache.get(pane.paneId) ?? [],
       ts,
-      agentType: 'claude',
+      agentType,
     });
   }
 
@@ -321,10 +339,10 @@ function refreshStates(statusDirs: string[]): AgentState[] {
 }
 
 // Full refresh: runs slow caches then fast refresh
-function fullRefreshStates(statusDirs: string[]): AgentState[] {
+function fullRefreshStates(dirs: AgentDir[]): AgentState[] {
   const panes = listPanesResult().panes;
-  refreshSlowCaches(panes);
-  return refreshStates(statusDirs);
+  refreshSlowCaches(panes, dirs);
+  return refreshStates(dirs);
 }
 
 async function handleCli(args: string[]): Promise<number | null> {
@@ -335,12 +353,13 @@ async function handleCli(args: string[]): Promise<number | null> {
   if (!command) return null;
 
   const registry = new AgentRegistry();
-  const statusDirs = registry.statusDirs();
+  const dirs = registry.all(); // AgentDir[] for the read path (name rides with the data)
+  const statusDirs = registry.statusDirs(); // string[] for the file-locating write helpers
   reloadRenameCache();
 
   switch (command) {
     case 'status': {
-      const states = fullRefreshStates(statusDirs);
+      const states = fullRefreshStates(dirs);
       const output = runStatus(args.slice(1), states);
       if (output.length > 0) process.stdout.write(output + '\n');
       // Emit runs even when output is empty: an all-calm bar still needs every
@@ -350,7 +369,7 @@ async function handleCli(args: string[]): Promise<number | null> {
       return 0;
     }
     case 'next': {
-      const states = fullRefreshStates(statusDirs);
+      const states = fullRefreshStates(dirs);
       return runNext(states);
     }
     case 'ack': {
@@ -363,7 +382,7 @@ async function handleCli(args: string[]): Promise<number | null> {
         return 1;
       }
       if (target === ACK_ALL_RANGE) {
-        acknowledgeAllReady(statusDirs);
+        acknowledgeAllReady(dirs);
       } else {
         acknowledgePane(target, statusDirs);
       }
@@ -381,7 +400,7 @@ async function handleCli(args: string[]): Promise<number | null> {
         return 1;
       }
       if (target === ACK_ALL_RANGE) {
-        acknowledgeAllReady(statusDirs);
+        acknowledgeAllReady(dirs);
         refreshTmuxStatus();
         return 0;
       }
@@ -403,7 +422,7 @@ async function handleCli(args: string[]): Promise<number | null> {
         process.stderr.write('Usage: fleet send <session> <prompt>\n');
         return 1;
       }
-      const states = fullRefreshStates(statusDirs);
+      const states = fullRefreshStates(dirs);
       const force = args.includes('--force');
       return runSend(session, prompt, states, force);
     }
@@ -414,13 +433,13 @@ async function handleCli(args: string[]): Promise<number | null> {
         return 1;
       }
       const showSnapshot = args.includes('--show-snapshot');
-      const states = fullRefreshStates(statusDirs);
+      const states = fullRefreshStates(dirs);
       return runExplain(session, states, statusDirs, showSnapshot);
     }
     case 'install':
-      return runInstall();
+      return args[1] === 'codex' ? runInstallCodex() : runInstall();
     case 'uninstall':
-      return runUninstall();
+      return args[1] === 'codex' ? runUninstallCodex() : runUninstall();
     case 'doctor':
       return runDoctor();
     case 'reconcile': {
@@ -445,7 +464,7 @@ async function handleCli(args: string[]): Promise<number | null> {
         session: args[1],
         stateArg: stateIdx >= 0 ? args[stateIdx + 1] : undefined,
         timeoutArg: timeoutIdx >= 0 ? args[timeoutIdx + 1] : undefined,
-        getStates: () => fullRefreshStates(statusDirs),
+        getStates: () => fullRefreshStates(dirs),
         sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
         now: () => Date.now(),
       });
@@ -524,7 +543,7 @@ function handleSendInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, _fi
   }
 }
 
-function handleRenameInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, statusDirs: string[]): void {
+function handleRenameInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, dirs: AgentDir[]): void {
   switch (key.type) {
     case 'escape':
       app.exitRename();
@@ -540,7 +559,7 @@ function handleRenameInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, s
       if (selected) {
         saveRename(selected.session, app.renameBuffer); // empty buffer clears
         reloadRenameCache();
-        app.updateStates(refreshStates(statusDirs)); // re-resolve customName
+        app.updateStates(refreshStates(dirs)); // re-resolve customName
       }
       app.exitRename();
       break;
@@ -548,7 +567,7 @@ function handleRenameInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, s
   }
 }
 
-function handleKillConfirmInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, statusDirs: string[]): void {
+function handleKillConfirmInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, dirs: AgentDir[]): void {
   if (key.type === 'char' && (key.char === 'y' || key.char === 'x')) {
     const selected = app.selectedState();
     if (selected && canKillSession(selected).ok) {
@@ -557,7 +576,7 @@ function handleKillConfirmInput(app: TuiApp, key: ReturnType<typeof parseKeyEven
       } catch {
         // Pane may already be gone — refresh will drop it either way
       }
-      app.updateStates(fullRefreshStates(statusDirs));
+      app.updateStates(fullRefreshStates(dirs));
     }
   }
   // Any other key (or a rejected confirm) just returns to the prior mode.
@@ -586,7 +605,8 @@ function handlePassthroughInput(app: TuiApp, buf: Buffer): void {
 
 async function launchTui(): Promise<number> {
   const registry = new AgentRegistry();
-  const statusDirs = registry.statusDirs();
+  const dirs = registry.all(); // read path (agent name rides with each status)
+  const statusDirs = registry.statusDirs(); // watcher + file-locating write helpers
   const app = new TuiApp();
 
   const args = process.argv.slice(2);
@@ -616,7 +636,7 @@ async function launchTui(): Promise<number> {
   };
 
   const doRefresh = () => {
-    const states = refreshStates(statusDirs);
+    const states = refreshStates(dirs);
     app.updateStates(states);
     app.tmuxDown = !lastTmuxOk;
     app.hooksMissing = !statusDirs.some((d) => existsSync(d));
@@ -624,7 +644,7 @@ async function launchTui(): Promise<number> {
   };
 
   const doFullRefresh = () => {
-    const states = fullRefreshStates(statusDirs);
+    const states = fullRefreshStates(dirs);
     app.updateStates(states);
     app.tmuxDown = !lastTmuxOk;
     app.hooksMissing = !statusDirs.some((d) => existsSync(d));
@@ -733,7 +753,7 @@ async function launchTui(): Promise<number> {
             if (idx >= 0) app.selectedIndex = idx;
             if (sel.status === AgentStatus.DONE) {
               acknowledgePane(sel.paneId, statusDirs);
-              app.updateStates(refreshStates(statusDirs));
+              app.updateStates(refreshStates(dirs));
             }
             needsRender = true;
           }
@@ -768,7 +788,7 @@ async function launchTui(): Promise<number> {
       }
 
       if (app.mode === TuiMode.CONFIRM_KILL) {
-        handleKillConfirmInput(app, key, statusDirs);
+        handleKillConfirmInput(app, key, dirs);
         needsRender = true;
         return;
       }
@@ -780,7 +800,7 @@ async function launchTui(): Promise<number> {
       }
 
       if (app.mode === TuiMode.RENAME) {
-        handleRenameInput(app, key, statusDirs);
+        handleRenameInput(app, key, dirs);
         needsRender = true;
         return;
       }
@@ -836,7 +856,7 @@ async function launchTui(): Promise<number> {
                 }
               }
               {
-                const states = fullRefreshStates(statusDirs);
+                const states = fullRefreshStates(dirs);
                 runNext(states);
                 finish(0);
                 return;

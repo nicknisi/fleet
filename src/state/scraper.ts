@@ -47,17 +47,17 @@ export function detectFromPaneContent(lines: string[], manifest: DetectionManife
   return { status: null, ruleId: null };
 }
 
-export function scrapePane(paneId: string, manifest?: DetectionManifest): AgentStatus | null {
+export function scrapePane(paneId: string, agent: string): AgentStatus | null {
   let lines: string[];
   try {
     lines = capturePane(paneId, SCRAPE_LINES);
   } catch {
     return null;
   }
-  // Agent identity is hardcoded 'claude' until Phase 3; resolve its manifest
-  // (built-in, or a user override) here so the live path honors overrides.
-  const m = manifest ?? loadDetectionManifest('claude');
-  return detectFromPaneContent(lines, m).status;
+  // Phase 3: the agent is real (was hardcoded 'claude'). Resolve its manifest
+  // (built-in, or a user override) so each agent's prompts classify against its
+  // own rules; an unknown agent degrades to an empty manifest (detects nothing).
+  return detectFromPaneContent(lines, loadDetectionManifest(agent)).status;
 }
 
 export interface ScrapeDetail {

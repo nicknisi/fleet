@@ -46,6 +46,27 @@ To remove everything cleanly:
 fleet uninstall
 ```
 
+### Codex
+
+Fleet also tracks [Codex](https://github.com/openai/codex) sessions. Codex has no plugin marketplace, so `fleet install codex` wires fleet into Codex's own config instead:
+
+```bash
+fleet install codex
+```
+
+This:
+
+1. Creates the Codex status dir (`~/.cache/codex-status`)
+2. Adds fleet `PreToolUse` + `Stop` hooks to `~/.codex/hooks.json` (your own Codex hooks are preserved)
+3. Ensures `[features] hooks = true` in `~/.codex/config.toml`
+4. Registers `codex` in `~/.config/fleet/agents.json`
+
+Re-run it after a `brew upgrade` to re-point fleet's hook path. Codex panes then appear on the dashboard labeled `codex`, alongside `claude`. To reverse it (leaving your own Codex hooks intact):
+
+```bash
+fleet uninstall codex
+```
+
 ## Usage
 
 ### TUI Dashboard
@@ -179,7 +200,9 @@ Fleet also works as a non-interactive CLI for scripting and tmux integration.
 | `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.          |
 | `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.               |
 | `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.               |
+| `fleet install codex`                     | Wire fleet into Codex's `hooks.json` + `config.toml` (preserves your own hooks).   |
 | `fleet uninstall`                         | Remove plugin registration + tmux status row.                                      |
+| `fleet uninstall codex`                   | Remove fleet's Codex hooks + config (leaves your own Codex hooks intact).          |
 | `fleet statusline --inject`               | Manually add the second tmux status row.                                           |
 | `fleet statusline --remove`               | Manually remove the second tmux status row.                                        |
 
@@ -287,7 +310,7 @@ Fleet reads agent directories from (in priority order):
 
 1. `~/.config/fleet/agents.json` (new format)
 2. `~/.config/agent-status/agents.conf` (legacy format)
-3. Hardcoded fallback: `~/.cache/claude-status` + `~/.cache/pi-status`
+3. Hardcoded fallback: `~/.cache/claude-status` + `~/.cache/codex-status` + `~/.cache/pi-status`
 
 ### New format (`agents.json`)
 

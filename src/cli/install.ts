@@ -29,7 +29,7 @@ export function resolvePluginDir(candidates: string[]): string | null {
   return null;
 }
 
-function fleetPluginDir(): string | null {
+export function fleetPluginDir(): string | null {
   const fromBin = resolve(dirname(process.execPath), '..');
   const fromDev = resolve(import.meta.dir, '../..');
   return resolvePluginDir([fromBin, fromDev]);

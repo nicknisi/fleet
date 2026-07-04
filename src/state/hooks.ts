@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, existsSync, watch } from 'node:fs';
 import { join } from 'node:path';
-import type { HookStatus } from './types.ts';
+import type { HookStatus, ResolvedHookStatus } from './types.ts';
+import type { AgentDir } from '../agents/config.ts';
 
 export function parseStatusFile(content: string): HookStatus | null {
   try {
@@ -18,9 +19,12 @@ export function parseStatusFile(content: string): HookStatus | null {
   }
 }
 
-export function readStatusDir(dir: string): HookStatus[] {
+// Each record is stamped with its owning `agent` and source `statusDir` so the
+// caller (index.ts) knows which agent authored the status and which dir to read
+// the matching .events.jsonl from — the name travels with the data.
+export function readStatusDir(dir: string, agent: string): ResolvedHookStatus[] {
   if (!existsSync(dir)) return [];
-  const statuses: HookStatus[] = [];
+  const statuses: ResolvedHookStatus[] = [];
   try {
     const files = readdirSync(dir);
     for (const file of files) {
@@ -28,7 +32,7 @@ export function readStatusDir(dir: string): HookStatus[] {
       try {
         const content = readFileSync(join(dir, file), 'utf-8');
         const status = parseStatusFile(content);
-        if (status) statuses.push(status);
+        if (status) statuses.push({ ...status, agent, statusDir: dir });
       } catch {
         // Skip unreadable files
       }
@@ -39,10 +43,10 @@ export function readStatusDir(dir: string): HookStatus[] {
   return statuses;
 }
 
-export function readAllStatusDirs(dirs: string[]): HookStatus[] {
-  const all: HookStatus[] = [];
-  for (const dir of dirs) {
-    all.push(...readStatusDir(dir));
+export function readAllStatusDirs(dirs: AgentDir[]): ResolvedHookStatus[] {
+  const all: ResolvedHookStatus[] = [];
+  for (const d of dirs) {
+    all.push(...readStatusDir(d.statusDir, d.name));
   }
   return all;
 }

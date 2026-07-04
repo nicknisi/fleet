@@ -14,6 +14,13 @@ const HOME = homedir();
 // side). These two must never drift: a mismatch silently breaks detection.
 export const CLAUDE_STATUS_DIR = join(HOME, '.cache', 'claude-status');
 
+// Codex's canonical status dir (Phase 3). Mirrors CLAUDE_STATUS_DIR's naming
+// (~/.cache/<agent>-status) because Phase 2 kept claude at ~/.cache/claude-status
+// rather than moving everything under ~/.cache/fleet/. This is the single source
+// of truth: install-codex.ts (mkdir + agents.json entry) and the Codex hook's
+// FLEET_STATUS_DIR must resolve to this same dir or detection silently breaks.
+export const CODEX_STATUS_DIR = join(HOME, '.cache', 'codex-status');
+
 export function loadAgentDirs(): AgentDir[] {
   const configDir = process.env.XDG_CONFIG_HOME ?? join(HOME, '.config');
 
@@ -53,6 +60,7 @@ export function loadAgentDirs(): AgentDir[] {
 
   const fallback: AgentDir[] = [];
   if (existsSync(CLAUDE_STATUS_DIR)) fallback.push({ name: 'claude', statusDir: CLAUDE_STATUS_DIR });
+  if (existsSync(CODEX_STATUS_DIR)) fallback.push({ name: 'codex', statusDir: CODEX_STATUS_DIR });
   const piDir = join(HOME, '.cache', 'pi-status');
   if (existsSync(piDir)) fallback.push({ name: 'pi', statusDir: piDir });
 

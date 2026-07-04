@@ -109,6 +109,16 @@ export interface HookStatus {
   tmux_pid: number;
 }
 
+// HookStatus stays the pure on-disk wire shape (unchanged). ResolvedHookStatus is
+// the in-memory record after we know which agent dir produced it: the owning
+// agent name and its source dir ride WITH the data, so the read path never has to
+// re-derive who authored a status. index.ts sets AgentState.agentType from
+// `agent`, and reads the matching .events.jsonl from `statusDir`.
+export interface ResolvedHookStatus extends HookStatus {
+  agent: string; // registry name of the owning AgentDir -> AgentState.agentType
+  statusDir: string; // the dir this file came from -> read the matching .events.jsonl
+}
+
 export interface EventEntry {
   event: string;
   ts: number;

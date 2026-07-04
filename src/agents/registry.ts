@@ -15,10 +15,6 @@ export class AgentRegistry {
     return this.dirs.map((d) => d.statusDir);
   }
 
-  nameForDir(dir: string): string | null {
-    return this.dirs.find((d) => d.statusDir === dir)?.name ?? null;
-  }
-
   reload(): void {
     this.dirs = loadAgentDirs();
   }
