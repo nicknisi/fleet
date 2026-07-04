@@ -9,6 +9,23 @@ export interface AgentDir {
 
 const HOME = homedir();
 
+// Claude's canonical status dir. Named once here (the read side) so it is
+// testable and can be asserted equal to what hooks/lib.sh writes (the write
+// side). These two must never drift: a mismatch silently breaks detection.
+export const CLAUDE_STATUS_DIR = join(HOME, '.cache', 'claude-status');
+
+// Codex's canonical status dir (Phase 3). Mirrors CLAUDE_STATUS_DIR's naming
+// (~/.cache/<agent>-status) because Phase 2 kept claude at ~/.cache/claude-status
+// rather than moving everything under ~/.cache/fleet/. This is the single source
+// of truth: install-codex.ts (mkdir + agents.json entry) and the Codex hook's
+// FLEET_STATUS_DIR must resolve to this same dir or detection silently breaks.
+export const CODEX_STATUS_DIR = join(HOME, '.cache', 'codex-status');
+
+// pi's canonical status dir. Same naming + same drift contract as the others:
+// install-pi.ts (mkdir + agents.json entry) and the fleet-pi extension's
+// FLEET_PI_STATUS_DIR default must resolve here or pi detection silently breaks.
+export const PI_STATUS_DIR = join(HOME, '.cache', 'pi-status');
+
 export function loadAgentDirs(): AgentDir[] {
   const configDir = process.env.XDG_CONFIG_HOME ?? join(HOME, '.config');
 
@@ -47,10 +64,9 @@ export function loadAgentDirs(): AgentDir[] {
   }
 
   const fallback: AgentDir[] = [];
-  const claudeDir = join(HOME, '.cache', 'claude-status');
-  if (existsSync(claudeDir)) fallback.push({ name: 'claude', statusDir: claudeDir });
-  const piDir = join(HOME, '.cache', 'pi-status');
-  if (existsSync(piDir)) fallback.push({ name: 'pi', statusDir: piDir });
+  if (existsSync(CLAUDE_STATUS_DIR)) fallback.push({ name: 'claude', statusDir: CLAUDE_STATUS_DIR });
+  if (existsSync(CODEX_STATUS_DIR)) fallback.push({ name: 'codex', statusDir: CODEX_STATUS_DIR });
+  if (existsSync(PI_STATUS_DIR)) fallback.push({ name: 'pi', statusDir: PI_STATUS_DIR });
 
   return fallback;
 }

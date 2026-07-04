@@ -7,7 +7,9 @@ const makeState = (session: string, status: AgentStatus, paneId?: string, window
   paneNum: Math.floor(Math.random() * 1000),
   session,
   window: window ?? 'main',
+  windowId: '@1',
   claudeName: null,
+  customName: null,
   status,
   tool: null,
   project: `~/Developer/${session}`,
@@ -175,7 +177,7 @@ describe('grouped rows', () => {
     ]);
     const rows = app.dashboardRows();
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toEqual({ kind: 'header', session: 'cli', count: 2, aggregate: AgentStatus.PERMIT });
+    expect(rows[0]).toEqual({ kind: 'header', session: 'cli', label: 'cli', count: 2, aggregate: AgentStatus.PERMIT });
     expect(rows[1]!.kind).toBe('agent');
     expect(rows[2]!.kind).toBe('agent');
     expect(rows.slice(1).every((r) => r.kind === 'agent' && r.grouped)).toBe(true);

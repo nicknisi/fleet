@@ -5,6 +5,7 @@ import {
   compareStatus,
   extractClaudeName,
   displayName,
+  sessionDisplay,
   sessionLabel,
   windowLabel,
   type AgentState,
@@ -70,7 +71,9 @@ const base: AgentState = {
   paneNum: 1,
   session: 'dotfiles',
   window: 'editor',
+  windowId: '@1',
   claudeName: null,
+  customName: null,
   status: AgentStatus.IDLE,
   tool: null,
   project: null,
@@ -115,5 +118,23 @@ describe('displayName', () => {
 
   test('falls back to session:window when no claudeName', () => {
     expect(displayName(base)).toBe('dotfiles:editor');
+  });
+
+  test('customName wins over claudeName and session', () => {
+    expect(displayName({ ...base, customName: 'prod hotfix', claudeName: 'Fix auth bug' })).toBe('prod hotfix');
+  });
+
+  test('claudeName is used when customName is null', () => {
+    expect(displayName({ ...base, customName: null, claudeName: 'Fix auth bug' })).toBe('Fix auth bug');
+  });
+});
+
+describe('sessionDisplay', () => {
+  test('returns customName when set', () => {
+    expect(sessionDisplay({ ...base, customName: 'prod hotfix' })).toBe('prod hotfix');
+  });
+
+  test('falls back to the raw session name when customName is null', () => {
+    expect(sessionDisplay(base)).toBe('dotfiles');
   });
 });

@@ -46,6 +46,47 @@ To remove everything cleanly:
 fleet uninstall
 ```
 
+### Codex
+
+Fleet also tracks [Codex](https://github.com/openai/codex) sessions. Codex has no plugin marketplace, so `fleet install codex` wires fleet into Codex's own config instead:
+
+```bash
+fleet install codex
+```
+
+This:
+
+1. Creates the Codex status dir (`~/.cache/codex-status`)
+2. Adds fleet `PreToolUse` + `Stop` hooks to `~/.codex/hooks.json` (your own Codex hooks are preserved)
+3. Ensures `[features] hooks = true` in `~/.codex/config.toml`
+4. Registers `codex` in `~/.config/fleet/agents.json`
+
+Re-run it after a `brew upgrade` to re-point fleet's hook path. Codex panes then appear on the dashboard labeled `codex`, alongside `claude`. To reverse it (leaving your own Codex hooks intact):
+
+```bash
+fleet uninstall codex
+```
+
+### pi
+
+Fleet also tracks [pi](https://www.npmjs.com/package/@mariozechner/pi-coding-agent) sessions. pi has no shell hooks — it loads TypeScript extensions auto-discovered from `~/.pi/agent/extensions/` — so `fleet install pi` drops fleet's extension there:
+
+```bash
+fleet install pi
+```
+
+This:
+
+1. Creates the pi status dir (`~/.cache/pi-status`)
+2. Symlinks the `fleet-pi` extension into `~/.pi/agent/extensions/` (your own pi extensions are untouched)
+3. Registers `pi` in `~/.config/fleet/agents.json`
+
+The extension publishes fleet status from pi's `agent_start` / `tool_execution_start` / `agent_end` lifecycle events, so pi panes appear on the dashboard labeled `pi` (working / idle / done). pi auto-runs its tools, so there is no permission-prompt (PERMIT/QUESTION) state to surface — working/done is the full picture. Re-run after a `brew upgrade` to re-point the extension; in an already-running pi session, `/reload` picks it up. To reverse it (leaving your own pi extensions intact):
+
+```bash
+fleet uninstall pi
+```
+
 ## Usage
 
 ### TUI Dashboard
@@ -90,6 +131,7 @@ Below 48 columns — like that narrow sidebar — Fleet automatically reflows th
 | `y`                        | Approve permission prompt (preview)    |
 | `/`                        | Filter sessions by name or project     |
 | `x`                        | Kill selected session (confirms first) |
+| `R`                        | Rename selected session                |
 | `?`                        | Help overlay                           |
 | `q` or `Esc`               | Quit (or clear filter)                 |
 
@@ -178,7 +220,11 @@ Fleet also works as a non-interactive CLI for scripting and tmux integration.
 | `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.          |
 | `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.               |
 | `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.               |
+| `fleet install codex`                     | Wire fleet into Codex's `hooks.json` + `config.toml` (preserves your own hooks).   |
+| `fleet install pi`                        | Wire fleet into pi via an auto-discovered extension (preserves your own).          |
 | `fleet uninstall`                         | Remove plugin registration + tmux status row.                                      |
+| `fleet uninstall codex`                   | Remove fleet's Codex hooks + config (leaves your own Codex hooks intact).          |
+| `fleet uninstall pi`                      | Remove fleet's pi extension + registration.                                        |
 | `fleet statusline --inject`               | Manually add the second tmux status row.                                           |
 | `fleet statusline --remove`               | Manually remove the second tmux status row.                                        |
 
@@ -286,15 +332,15 @@ Fleet reads agent directories from (in priority order):
 
 1. `~/.config/fleet/agents.json` (new format)
 2. `~/.config/agent-status/agents.conf` (legacy format)
-3. Hardcoded fallback: `~/.cache/claude-status` + `~/.cache/pi-status`
+3. Hardcoded fallback: `~/.cache/claude-status` + `~/.cache/codex-status` + `~/.cache/pi-status`
 
 ### New format (`agents.json`)
 
 ```json
 {
   "agents": [
-    { "name": "claude", "statusDir": "~/.cache/fleet/claude" },
-    { "name": "codex", "statusDir": "~/.cache/fleet/codex" }
+    { "name": "claude", "statusDir": "~/.cache/claude-status" },
+    { "name": "codex", "statusDir": "~/.cache/codex-status" }
   ]
 }
 ```

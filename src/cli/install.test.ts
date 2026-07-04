@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import {
   addTmuxConfLine,
   addTmuxKeybindLines,
+  addTmuxRollupLines,
   linkPluginDir,
   removeTmuxConfLine,
   resolvePluginDir,
@@ -120,6 +121,20 @@ describe('removeTmuxConfLine', () => {
     expect(result).not.toContain('# fleet-managed');
     expect(result).toContain('set -g mouse on');
     expect(result).toContain('set -g foo bar');
+  });
+
+  test('strips the three window-rollup lines added by addTmuxRollupLines', () => {
+    writeFileSync(confFile, 'set -g mouse on\n');
+    addTmuxRollupLines(confFile, () => true);
+    expect(readFileSync(confFile, 'utf8')).toContain('@fleet_rollup');
+
+    expect(removeTmuxConfLine(confFile)).toBe(true);
+    const result = readFileSync(confFile, 'utf8');
+    expect(result).not.toContain('# fleet-managed');
+    expect(result).not.toContain('@fleet_rollup');
+    expect(result).not.toContain('window-status-format');
+    expect(result).not.toContain('window-status-current-format');
+    expect(result).toContain('set -g mouse on');
   });
 });
 
@@ -248,5 +263,77 @@ describe('addTmuxKeybindLines', () => {
 
   test('missing conf file adds nothing', () => {
     expect(addTmuxKeybindLines('/nonexistent/tmux.conf', () => true)).toHaveLength(0);
+  });
+});
+
+describe('addTmuxRollupLines', () => {
+  const confWith = (content: string): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'fleet-rollup-test-'));
+    const path = join(dir, 'tmux.conf');
+    writeFileSync(path, content);
+    return path;
+  };
+
+  test('accepting appends the gate option and both window-status format lines', () => {
+    const path = confWith('set -g mouse on\n');
+    const added = addTmuxRollupLines(path, () => true);
+    expect(added).toHaveLength(3);
+    const conf = readFileSync(path, 'utf8');
+    expect(conf).toContain('set -g @fleet_rollup 1 # fleet-managed');
+    expect(conf).toContain(
+      'set -g window-status-format "#{?#{@fleet_state},#[fg=#{@fleet_state}],}#I:#W#F" # fleet-managed',
+    );
+    expect(conf).toContain(
+      'set -g window-status-current-format "#{?#{@fleet_state},#[fg=#{@fleet_state}],}#[bold]#I:#W#F#[nobold]" # fleet-managed',
+    );
+    expect(conf.match(/# fleet-managed/g)?.length).toBe(3);
+    expect(conf).toContain('set -g mouse on');
+  });
+
+  test('declining adds nothing and leaves the file untouched', () => {
+    const path = confWith('set -g mouse on\n');
+    expect(addTmuxRollupLines(path, () => false)).toHaveLength(0);
+    expect(readFileSync(path, 'utf8')).toBe('set -g mouse on\n');
+  });
+
+  test('idempotent: an already-configured conf is neither re-added nor re-asked', () => {
+    const path = confWith('set -g mouse on\n');
+    addTmuxRollupLines(path, () => true);
+    const before = readFileSync(path, 'utf8');
+    let asked = 0;
+    const added = addTmuxRollupLines(path, () => (asked++, true));
+    expect(added).toHaveLength(0);
+    expect(asked).toBe(0);
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  test('missing conf file adds nothing', () => {
+    expect(addTmuxRollupLines('/nonexistent/tmux.conf', () => true)).toHaveLength(0);
+  });
+});
+
+// Regression lock for "fleet install rewrote my tmux statusline". The two
+// conf writers reachable from runInstall — addTmuxConfLine (unconditional) and
+// addTmuxKeybindLines (only when the user accepts a prompt) — must never emit a
+// window-status-format override. addTmuxRollupLines is the sole writer that
+// does, and it is deliberately not wired into runInstall (see install.ts), so
+// installing fleet cannot clobber a user's themed window formatting.
+describe('install conf writers never touch window-status-format', () => {
+  test('addTmuxConfLine adds only the statusline hook', () => {
+    writeFileSync(confFile, 'set -g mouse on\n');
+    addTmuxConfLine(confFile);
+    const conf = readFileSync(confFile, 'utf8');
+    expect(conf).toContain('run-shell "fleet statusline --inject"');
+    expect(conf).not.toContain('window-status-format');
+    expect(conf).not.toContain('@fleet_rollup');
+  });
+
+  test('accepting every keybind prompt still writes no window-status-format', () => {
+    writeFileSync(confFile, 'set -g mouse on\n');
+    addTmuxKeybindLines(confFile, () => true);
+    const conf = readFileSync(confFile, 'utf8');
+    expect(conf).toContain('bind-key');
+    expect(conf).not.toContain('window-status-format');
+    expect(conf).not.toContain('@fleet_rollup');
   });
 });

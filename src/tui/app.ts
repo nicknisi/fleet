@@ -3,13 +3,14 @@ import { AgentStatus, compareStatus, windowLabel, type AgentState } from '../sta
 // A rendered dashboard line: sessions with 2+ agents get a header row followed
 // by grouped (indented, window-named) agent rows; singletons render inline.
 export type DashboardRow =
-  | { kind: 'header'; session: string; count: number; aggregate: AgentStatus }
+  | { kind: 'header'; session: string; label: string; count: number; aggregate: AgentStatus }
   | { kind: 'agent'; state: AgentState; grouped: boolean };
 
 export const TuiMode = {
   DASHBOARD: 'DASHBOARD',
   PREVIEW: 'PREVIEW',
   SEND: 'SEND',
+  RENAME: 'RENAME',
   HELP: 'HELP',
   PASSTHROUGH: 'PASSTHROUGH',
   CONFIRM_KILL: 'CONFIRM_KILL',
@@ -36,8 +37,10 @@ export class TuiApp {
   selectedIndex: number = 0;
   mode: TuiMode = TuiMode.DASHBOARD;
   private modeBeforeSend: TuiMode = TuiMode.DASHBOARD;
+  private modeBeforeRename: TuiMode = TuiMode.DASHBOARD;
   private modeBeforeKill: TuiMode = TuiMode.DASHBOARD;
   sendBuffer: string = '';
+  renameBuffer: string = '';
   shouldQuit: boolean = false;
   tmuxDown: boolean = false;
   hooksMissing: boolean = false;
@@ -114,7 +117,13 @@ export class TuiApp {
       if (members.length === 1) {
         rows.push({ kind: 'agent', state: members[0]!, grouped: false });
       } else {
-        rows.push({ kind: 'header', session, count: members.length, aggregate: members[0]!.status });
+        rows.push({
+          kind: 'header',
+          session,
+          label: members[0]!.customName ?? session,
+          count: members.length,
+          aggregate: members[0]!.status,
+        });
         for (const member of members) rows.push({ kind: 'agent', state: member, grouped: true });
       }
       i = j;
@@ -142,6 +151,7 @@ export class TuiApp {
         s.session.toLowerCase().includes(lower) ||
         s.window.toLowerCase().includes(lower) ||
         (s.claudeName?.toLowerCase().includes(lower) ?? false) ||
+        (s.customName?.toLowerCase().includes(lower) ?? false) ||
         (s.project?.toLowerCase().includes(lower) ?? false),
     );
   }
@@ -182,6 +192,17 @@ export class TuiApp {
   exitSend(): void {
     this.mode = this.modeBeforeSend;
     this.sendBuffer = '';
+  }
+
+  enterRename(prefill: string): void {
+    this.modeBeforeRename = this.mode;
+    this.mode = TuiMode.RENAME;
+    this.renameBuffer = prefill;
+  }
+
+  exitRename(): void {
+    this.mode = this.modeBeforeRename;
+    this.renameBuffer = '';
   }
 
   enterKillConfirm(): void {

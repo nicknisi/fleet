@@ -56,7 +56,9 @@ export interface AgentState {
   paneNum: number;
   session: string;
   window: string;
+  windowId: string;
   claudeName: string | null;
+  customName: string | null; // user rename for this pane's session, or null
   status: AgentStatus;
   tool: string | null;
   project: string | null;
@@ -87,8 +89,15 @@ export function windowLabel(state: AgentState): string {
   return state.window;
 }
 
+// Precedence for a row's primary label: user rename > Claude auto-name > session.
 export function displayName(state: AgentState): string {
-  return state.claudeName ?? sessionLabel(state);
+  return state.customName ?? state.claudeName ?? sessionLabel(state);
+}
+
+// Session-level display string (rename wins over the raw session name). Used by
+// the dashboard's session column/header; window sub-labels are unaffected.
+export function sessionDisplay(state: AgentState): string {
+  return state.customName ?? state.session;
 }
 
 export interface HookStatus {
@@ -100,6 +109,16 @@ export interface HookStatus {
   tmux_pid: number;
 }
 
+// HookStatus stays the pure on-disk wire shape (unchanged). ResolvedHookStatus is
+// the in-memory record after we know which agent dir produced it: the owning
+// agent name and its source dir ride WITH the data, so the read path never has to
+// re-derive who authored a status. index.ts sets AgentState.agentType from
+// `agent`, and reads the matching .events.jsonl from `statusDir`.
+export interface ResolvedHookStatus extends HookStatus {
+  agent: string; // registry name of the owning AgentDir -> AgentState.agentType
+  statusDir: string; // the dir this file came from -> read the matching .events.jsonl
+}
+
 export interface EventEntry {
   event: string;
   ts: number;
@@ -107,4 +126,27 @@ export interface EventEntry {
   stop_reason?: string;
   background_tasks?: boolean;
   notification_type?: string;
+}
+
+// Scraper return — was: AgentStatus | null. `ruleId` names the match branch that
+// fired (namespaced state.marker, e.g. 'permit.yn', 'idle.prompt') so the fusion
+// trace can show *why* the scraper read what it did. null/null == no match.
+export interface DetectResult {
+  status: AgentStatus | null;
+  ruleId: string | null;
+}
+
+// Fusion trace — one per pane per refresh, discarded by the hot loop. Records
+// which layer authored the final state and why, for `fleet explain`.
+export interface StateDecision {
+  final: AgentStatus;
+  candidates: { hook: AgentStatus | null; event: AgentStatus | null; scrape: AgentStatus | null };
+  hookTs: number;
+  eventTs: number | null;
+  now: number;
+  winner: 'hook' | 'event' | 'scrape' | 'default';
+  reason: string; // human-readable why
+  workingTimeoutFired: boolean;
+  freshnessEvaluated: boolean; // MUST be false under live wiring — see engine notes
+  scrapeRuleId: string | null;
 }

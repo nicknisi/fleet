@@ -14,7 +14,8 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.IDLE,
       currentTs: now - 10,
     });
-    expect(result).toBe(AgentStatus.BUSY);
+    expect(result.status).toBe(AgentStatus.BUSY);
+    expect(result.decision.winner).toBe('hook');
   });
 
   test('freshness invariant rejects stale hook data', () => {
@@ -26,7 +27,10 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.DONE,
       currentTs: now - 5,
     });
-    expect(result).toBe(AgentStatus.DONE);
+    expect(result.status).toBe(AgentStatus.DONE);
+    // Only the stale-hook shape reaches the freshness branch.
+    expect(result.decision.freshnessEvaluated).toBe(true);
+    expect(result.decision.winner).toBe('default');
   });
 
   test('event layer overrides hook when more specific', () => {
@@ -38,7 +42,8 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.IDLE,
       currentTs: now - 10,
     });
-    expect(result).toBe(AgentStatus.BUSY);
+    expect(result.status).toBe(AgentStatus.BUSY);
+    expect(result.decision.winner).toBe('event');
   });
 
   test('scrape PERMIT always wins', () => {
@@ -47,10 +52,14 @@ describe('fuseState', () => {
       hookTs: now,
       eventStatus: AgentStatus.BUSY,
       scrapeStatus: AgentStatus.PERMIT,
+      scrapeRuleId: 'permit.yn',
       currentStatus: AgentStatus.BUSY,
       currentTs: now - 5,
     });
-    expect(result).toBe(AgentStatus.PERMIT);
+    expect(result.status).toBe(AgentStatus.PERMIT);
+    expect(result.decision.winner).toBe('scrape');
+    expect(result.decision.reason).toContain('permission');
+    expect(result.decision.scrapeRuleId).toBe('permit.yn');
   });
 
   test('scrape PERMIT overrides hook BUSY with no event', () => {
@@ -62,7 +71,8 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.IDLE,
       currentTs: now - 10,
     });
-    expect(result).toBe(AgentStatus.PERMIT);
+    expect(result.status).toBe(AgentStatus.PERMIT);
+    expect(result.decision.winner).toBe('scrape');
   });
 
   test('DONE never auto-decays — a finished turn waits on you', () => {
@@ -76,7 +86,10 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.IDLE,
       currentTs: 0,
     });
-    expect(result).toBe(AgentStatus.DONE);
+    expect(result.status).toBe(AgentStatus.DONE);
+    // Live wiring (currentStatus: IDLE, currentTs: 0) never reaches the freshness
+    // branch — this is the invariant fleet explain reports as "not evaluated".
+    expect(result.decision.freshnessEvaluated).toBe(false);
   });
 
   test('maps waiting to PERMIT', () => {
@@ -88,7 +101,7 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.IDLE,
       currentTs: now - 10,
     });
-    expect(result).toBe(AgentStatus.PERMIT);
+    expect(result.status).toBe(AgentStatus.PERMIT);
   });
 
   test('scrape IDLE does not override a fresh working hook', () => {
@@ -102,7 +115,7 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.IDLE,
       currentTs: 0,
     });
-    expect(result).toBe(AgentStatus.BUSY);
+    expect(result.status).toBe(AgentStatus.BUSY);
   });
 
   test('scrape IDLE clears a stale permit', () => {
@@ -116,7 +129,8 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.IDLE,
       currentTs: 0,
     });
-    expect(result).toBe(AgentStatus.IDLE);
+    expect(result.status).toBe(AgentStatus.IDLE);
+    expect(result.decision.winner).toBe('scrape');
   });
 
   test('scrape BUSY wins over an idle hook', () => {
@@ -128,7 +142,8 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.IDLE,
       currentTs: 0,
     });
-    expect(result).toBe(AgentStatus.BUSY);
+    expect(result.status).toBe(AgentStatus.BUSY);
+    expect(result.decision.winner).toBe('scrape');
   });
 
   test('scrape IDLE does not override a fresh DONE', () => {
@@ -144,7 +159,7 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.IDLE,
       currentTs: 0,
     });
-    expect(result).toBe(AgentStatus.DONE);
+    expect(result.status).toBe(AgentStatus.DONE);
   });
 
   test('working hook past the timeout decays to idle', () => {
@@ -156,6 +171,8 @@ describe('fuseState', () => {
       currentStatus: AgentStatus.IDLE,
       currentTs: 0,
     });
-    expect(result).toBe(AgentStatus.IDLE);
+    expect(result.status).toBe(AgentStatus.IDLE);
+    expect(result.decision.workingTimeoutFired).toBe(true);
+    expect(result.decision.winner).toBe('default');
   });
 });
