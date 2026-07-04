@@ -33,6 +33,7 @@ import { runNext } from './src/cli/next.ts';
 import { runSend } from './src/cli/send.ts';
 import { runInstall, runUninstall } from './src/cli/install.ts';
 import { runInstallCodex, runUninstallCodex } from './src/cli/install-codex.ts';
+import { runInstallPi, runUninstallPi } from './src/cli/install-pi.ts';
 import { runDoctor } from './src/cli/doctor.ts';
 import { runReconcile } from './src/cli/reconcile.ts';
 import { runExplain } from './src/cli/explain.ts';
@@ -76,8 +77,10 @@ function printHelp(): number {
       `  ${C.bold}Plugin${C.reset}`,
       `    ${C.idle}fleet install${C.reset}                    ${C.gray}Register as Claude Code plugin${C.reset}`,
       `    ${C.idle}fleet install codex${C.reset}              ${C.gray}Wire fleet into Codex's hooks + config${C.reset}`,
+      `    ${C.idle}fleet install pi${C.reset}                 ${C.gray}Wire fleet into pi via an extension${C.reset}`,
       `    ${C.idle}fleet uninstall${C.reset}                  ${C.gray}Remove plugin registration${C.reset}`,
       `    ${C.idle}fleet uninstall codex${C.reset}            ${C.gray}Remove fleet's Codex hooks + config${C.reset}`,
+      `    ${C.idle}fleet uninstall pi${C.reset}               ${C.gray}Remove fleet's pi extension${C.reset}`,
       `    ${C.idle}fleet doctor${C.reset}                     ${C.gray}Health check${C.reset}`,
       '',
       `  ${C.bold}Tmux${C.reset}`,
@@ -437,9 +440,13 @@ async function handleCli(args: string[]): Promise<number | null> {
       return runExplain(session, states, statusDirs, showSnapshot);
     }
     case 'install':
-      return args[1] === 'codex' ? runInstallCodex() : runInstall();
+      if (args[1] === 'codex') return runInstallCodex();
+      if (args[1] === 'pi') return runInstallPi();
+      return runInstall();
     case 'uninstall':
-      return args[1] === 'codex' ? runUninstallCodex() : runUninstall();
+      if (args[1] === 'codex') return runUninstallCodex();
+      if (args[1] === 'pi') return runUninstallPi();
+      return runUninstall();
     case 'doctor':
       return runDoctor();
     case 'reconcile': {

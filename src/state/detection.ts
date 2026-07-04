@@ -128,8 +128,27 @@ export const CODEX_MANIFEST: DetectionManifest = {
   ],
 };
 
+// --- the embedded built-in `pi` manifest ---
+// pi (npm: @mariozechner/pi-coding-agent) is wired via a fleet extension, not
+// scraping:
+// the fleet-pi extension subscribes to pi's agent_start / tool_execution_start /
+// agent_end lifecycle events and writes working/done to ~/.cache/pi-status, so
+// BUSY/DONE/IDLE are hook-sourced and authoritative. pi auto-runs its tools —
+// there is no interactive "[y/n]" permission prompt or selection dialog on the
+// screen to match — so there are no PERMIT/QUESTION scrape rules (a documented
+// limitation, mirroring Codex's absent QUESTION). The manifest is intentionally
+// empty; it exists so `pi` resolves to a built-in (no "no manifest" warning) and
+// is a registered, known agent. A user can still drop a ~/.config/fleet/detection/
+// pi.json override to add scrape rules.
+export const PI_MANIFEST: DetectionManifest = {
+  agent: 'pi',
+  linesFromBottom: 15,
+  promptMarker: '',
+  rules: [],
+};
+
 // --- loader: built-in, replaced wholesale by a valid override ---
-const BUILTINS: Record<string, DetectionManifest> = { claude: CLAUDE_MANIFEST, codex: CODEX_MANIFEST };
+const BUILTINS: Record<string, DetectionManifest> = { claude: CLAUDE_MANIFEST, codex: CODEX_MANIFEST, pi: PI_MANIFEST };
 const manifestCache = new Map<string, DetectionManifest>();
 
 export function loadDetectionManifest(agent: string): DetectionManifest {

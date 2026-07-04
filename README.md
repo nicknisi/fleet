@@ -67,6 +67,26 @@ Re-run it after a `brew upgrade` to re-point fleet's hook path. Codex panes then
 fleet uninstall codex
 ```
 
+### pi
+
+Fleet also tracks [pi](https://www.npmjs.com/package/@mariozechner/pi-coding-agent) sessions. pi has no shell hooks — it loads TypeScript extensions auto-discovered from `~/.pi/agent/extensions/` — so `fleet install pi` drops fleet's extension there:
+
+```bash
+fleet install pi
+```
+
+This:
+
+1. Creates the pi status dir (`~/.cache/pi-status`)
+2. Symlinks the `fleet-pi` extension into `~/.pi/agent/extensions/` (your own pi extensions are untouched)
+3. Registers `pi` in `~/.config/fleet/agents.json`
+
+The extension publishes fleet status from pi's `agent_start` / `tool_execution_start` / `agent_end` lifecycle events, so pi panes appear on the dashboard labeled `pi` (working / idle / done). pi auto-runs its tools, so there is no permission-prompt (PERMIT/QUESTION) state to surface — working/done is the full picture. Re-run after a `brew upgrade` to re-point the extension; in an already-running pi session, `/reload` picks it up. To reverse it (leaving your own pi extensions intact):
+
+```bash
+fleet uninstall pi
+```
+
 ## Usage
 
 ### TUI Dashboard
@@ -201,8 +221,10 @@ Fleet also works as a non-interactive CLI for scripting and tmux integration.
 | `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.               |
 | `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.               |
 | `fleet install codex`                     | Wire fleet into Codex's `hooks.json` + `config.toml` (preserves your own hooks).   |
+| `fleet install pi`                        | Wire fleet into pi via an auto-discovered extension (preserves your own).          |
 | `fleet uninstall`                         | Remove plugin registration + tmux status row.                                      |
 | `fleet uninstall codex`                   | Remove fleet's Codex hooks + config (leaves your own Codex hooks intact).          |
+| `fleet uninstall pi`                      | Remove fleet's pi extension + registration.                                        |
 | `fleet statusline --inject`               | Manually add the second tmux status row.                                           |
 | `fleet statusline --remove`               | Manually remove the second tmux status row.                                        |
 

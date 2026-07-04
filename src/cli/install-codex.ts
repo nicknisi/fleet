@@ -30,14 +30,16 @@ const CODEX_HOOK_SCRIPT = join(STABLE_LINK, 'hooks', 'codex', 'codex-hook.sh');
 // expands the leading ~ back to CODEX_STATUS_DIR when it reads this.
 const CODEX_STATUS_DIR_CONFIG = '~/.cache/codex-status';
 
-function agentsJsonPath(): string {
+// Exported so install-pi.ts registers pi in the same agents.json the read path
+// resolves — these helpers are agent-agnostic, they just live here.
+export function agentsJsonPath(): string {
   // Mirror loadAgentDirs' resolution exactly so install writes where the read
   // path looks.
   const configDir = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config');
   return join(configDir, 'fleet', 'agents.json');
 }
 
-function withTilde(p: string): string {
+export function withTilde(p: string): string {
   const home = homedir();
   return p.startsWith(home) ? '~' + p.slice(home.length) : p;
 }
