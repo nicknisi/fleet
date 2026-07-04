@@ -213,8 +213,7 @@ describe('formatStatusLine', () => {
 describe('windowColorArgs', () => {
   // Find the single arg list that targets a given window id (its position
   // differs between the set and unset forms, so match by membership).
-  const argsFor = (all: string[][], windowId: string): string[] | undefined =>
-    all.find((a) => a.includes(windowId));
+  const argsFor = (all: string[][], windowId: string): string[] | undefined => all.find((a) => a.includes(windowId));
 
   test('groups by window and reduces to the worst state: PERMIT window set, IDLE window unset', () => {
     const args = windowColorArgs([

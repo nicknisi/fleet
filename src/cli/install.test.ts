@@ -280,7 +280,9 @@ describe('addTmuxRollupLines', () => {
     expect(added).toHaveLength(3);
     const conf = readFileSync(path, 'utf8');
     expect(conf).toContain('set -g @fleet_rollup 1 # fleet-managed');
-    expect(conf).toContain('set -g window-status-format "#{?#{@fleet_state},#[fg=#{@fleet_state}],}#I:#W#F" # fleet-managed');
+    expect(conf).toContain(
+      'set -g window-status-format "#{?#{@fleet_state},#[fg=#{@fleet_state}],}#I:#W#F" # fleet-managed',
+    );
     expect(conf).toContain(
       'set -g window-status-current-format "#{?#{@fleet_state},#[fg=#{@fleet_state}],}#[bold]#I:#W#F#[nobold]" # fleet-managed',
     );

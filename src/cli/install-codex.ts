@@ -68,7 +68,9 @@ function isFleetEntry(entry: CodexHookEntry): boolean {
 // Add fleet's PreToolUse+Stop entries, preserving any the user already has.
 // Throws on malformed JSON (the caller aborts without writing — never clobber).
 export function addCodexHooks(path: string, script: string): void {
-  const doc: CodexHooksDoc = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as CodexHooksDoc) : { hooks: {} };
+  const doc: CodexHooksDoc = existsSync(path)
+    ? (JSON.parse(readFileSync(path, 'utf8')) as CodexHooksDoc)
+    : { hooks: {} };
   const hooks = (doc.hooks ??= {});
   for (const ev of CODEX_EVENTS) {
     const arr = (hooks[ev] ??= []);
