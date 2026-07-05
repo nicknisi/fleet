@@ -20,13 +20,14 @@ import { fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
 import { acknowledgePlan } from './src/state/acknowledge.ts';
-import { scrapePane } from './src/state/scraper.ts';
+import { scrapePane, scrapePaneCapture } from './src/state/scraper.ts';
 import { loadRenames, saveRename } from './src/state/rename.ts';
 import { AgentStatus, ACK_ALL_RANGE, STATUS_DISPLAY, extractClaudeName, type AgentState } from './src/state/types.ts';
 import { decideNotifications, applySuppression } from './src/notify/transitions.ts';
 import { deliverDesktop } from './src/notify/deliver.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import type { AgentDir } from './src/agents/config.ts';
+import { scanDiscovered, type DiscoveredAgent } from './src/agents/discovery.ts';
 import { listPanesResult, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
 import { detectPorts } from './src/tmux/ports.ts';
 import { sendKeys, sendRawKey } from './src/tmux/send.ts';
@@ -238,6 +239,12 @@ function shortenPath(path: string): string {
 const branchCache = new Map<string, string | null>();
 let portCache = new Map<string, number[]>();
 const scrapeCache = new Map<string, AgentStatus | null>();
+// Hook-less discovery (Phase 3): paneId -> synthetic agent, rebuilt on the slow
+// tick and read on every fast tick — same lifecycle as scrapeCache/portCache.
+// discoveryLastWorking carries the spinner-debounce timestamps across slow ticks
+// (pruned inside discoverAgents to only currently-discovered panes).
+let discoveryCache = new Map<string, DiscoveredAgent>();
+let discoveryLastWorking = new Map<string, number>();
 let lastTmuxOk = true;
 
 // User renames (session name → custom label), loaded once per entry point and
@@ -276,14 +283,34 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[], dir
     if (!prev || h.ts > prev.ts) paneAgent.set(h.pane, { agent: h.agent, ts: h.ts });
   }
 
-  // Layer 3: pane scraping (~50ms per pane) — slow cycle only
+  // Layer 3: pane scraping (~50ms per pane) — slow cycle only. Capture each pane
+  // ONCE and keep its lines so hook-less discovery can reuse them for the spinner
+  // check (zero extra capture-pane calls).
   const seen = new Set<string>();
+  const captureCache = new Map<string, string[]>();
   for (const p of panes) {
     seen.add(p.paneId);
-    scrapeCache.set(p.paneId, scrapePane(p.paneId, paneAgent.get(p.paneId)?.agent ?? 'claude'));
+    const { status, lines } = scrapePaneCapture(p.paneId, paneAgent.get(p.paneId)?.agent ?? 'claude');
+    scrapeCache.set(p.paneId, status);
+    if (lines.length > 0) captureCache.set(p.paneId, lines);
   }
   for (const paneId of scrapeCache.keys()) {
     if (!seen.has(paneId)) scrapeCache.delete(paneId);
+  }
+
+  // Hook-less agent discovery: map allowlisted processes with no .status file to
+  // their host pane and classify working from the spinner glyph, reusing the
+  // captures above (only one ps + one list-panes call is added). A synthetic
+  // agent here fills refreshStates' no-hook branch, so a hooked agent's status
+  // always wins its pane and discovery never shadows it. Failure -> empty, and
+  // the pane falls back to SHELL exactly as before Phase 3.
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const discovered = scanDiscovered(captureCache, discoveryLastWorking, now);
+    discoveryCache = new Map(discovered.agents.map((a) => [a.paneId, a]));
+    discoveryLastWorking = discovered.lastWorking;
+  } catch {
+    discoveryCache = new Map();
   }
 }
 
@@ -333,7 +360,16 @@ function refreshStates(dirs: AgentDir[]): AgentState[] {
         currentTs: 0,
       }).status;
     } else {
-      status = AgentStatus.SHELL;
+      // No winning hook. Before falling to SHELL, check hook-less discovery: an
+      // allowlisted process in this pane surfaces as a synthetic agent — BUSY
+      // when the pane shows a spinner glyph, IDLE when it does not.
+      const disc = discoveryCache.get(pane.paneId);
+      if (disc) {
+        status = disc.working ? AgentStatus.BUSY : AgentStatus.IDLE;
+        agentType = disc.agentType;
+      } else {
+        status = AgentStatus.SHELL;
+      }
     }
 
     states.push({
