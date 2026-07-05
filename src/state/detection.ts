@@ -87,6 +87,15 @@ function validateManifest(raw: unknown, agent: string): DetectionManifest {
   };
 }
 
+// Braille block U+2800–U+28FF: the animated progress glyph a harness paints only
+// while it is actively working, so it cannot be spoofed by transcript text and does
+// not depend on any English string. Exported so Phase 3's standalone discovery check
+// reuses this exact range rather than duplicating it.
+// Calibration source: the agent-radar reference poller matches this same range
+// byte-wise (E2 A0-A3 xx = U+2800–U+28FF) for the claude/codex/pi working glyph
+// (agent-radar scripts/agent-radar-poller, docs/adr/detection-mechanism.md).
+export const WORKING_GLYPH_PATTERN = '[\\u2800-\\u28FF]';
+
 // --- the embedded built-in `claude` manifest (byte-for-byte reproduction) ---
 // Each rule id, pattern, flag, and state is a direct translation of the literal
 // regexes the scraper used before Phase 2, in the same statement order. First
@@ -104,6 +113,10 @@ export const CLAUDE_MANIFEST: DetectionManifest = {
     { id: 'busy.token-counter-min', pattern: '\\(\\d+m\\s+\\d+s\\s+·.*tokens?\\)', state: 'BUSY' },
     { id: 'busy.token-counter-sec', pattern: '\\(\\d+s\\s+·.*tokens?\\)', state: 'BUSY' },
     { id: 'busy.esc-interrupt', pattern: 'esc to interrupt', flags: 'i', state: 'BUSY' },
+    // Last within the BUSY group so PERMIT/QUESTION rules and the richer
+    // token-counter / esc-interrupt rules still win first (first-match-wins): a
+    // pane showing both a spinner and a [y/n] prompt must still read PERMIT.
+    { id: 'busy.spinner-glyph', pattern: WORKING_GLYPH_PATTERN, state: 'BUSY' },
   ],
 };
 

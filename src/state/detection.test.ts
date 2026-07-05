@@ -90,6 +90,112 @@ describe('CLAUDE_MANIFEST reproduces the pre-Phase-2 scraper', () => {
   }
 });
 
+// 1b. Phase 1 — braille working-glyph BUSY rule (busy.spinner-glyph). The animated
+//     braille glyph (U+2800–U+28FF) is a positive "working" signal no English string
+//     can spoof; a pane that merely QUOTES `esc to interrupt` (no live glyph) must not
+//     read BUSY via THIS rule. Range boundaries are asserted inclusive.
+describe('busy.spinner-glyph: braille working glyph → BUSY', () => {
+  const cases: Array<{ name: string; lines: string[]; status: AgentStatus | null; ruleId: string | null }> = [
+    {
+      name: 'braille glyph alone → BUSY via the glyph rule',
+      lines: ['⠹ Puzzling…', '', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.spinner-glyph',
+    },
+    {
+      name: 'a different braille frame also matches',
+      lines: ['⠏ Herding…', '', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.spinner-glyph',
+    },
+    // Inclusive range boundaries U+2800..U+28FF.
+    {
+      name: 'lower boundary U+2800 matches',
+      lines: ['⠀ working', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.spinner-glyph',
+    },
+    {
+      name: 'upper boundary U+28FF matches',
+      lines: ['⣿ working', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.spinner-glyph',
+    },
+    // Just outside the range must NOT read BUSY via the glyph (→ idle via marker).
+    {
+      name: 'just below range (U+27FF) is not a glyph',
+      lines: ['⟿ Thinking…', '❯'],
+      status: AgentStatus.IDLE,
+      ruleId: 'idle.prompt',
+    },
+    {
+      name: 'just above range (U+2900) is not a glyph',
+      lines: ['⤀ Thinking…', '❯'],
+      status: AgentStatus.IDLE,
+      ruleId: 'idle.prompt',
+    },
+    // Dingbat "star" spinners (U+2736 etc.) are NOT braille → no false BUSY here.
+    {
+      name: 'dingbat star spinner is not caught by the braille rule',
+      lines: ['✶ Thinking…', '', '❯'],
+      status: AgentStatus.IDLE,
+      ruleId: 'idle.prompt',
+    },
+    // Quoted `esc to interrupt` with NO glyph still resolves via busy.esc-interrupt,
+    // NOT via the glyph rule — guards the braille range against matching ASCII.
+    {
+      name: 'quoted esc-to-interrupt (no glyph) wins via the esc rule, not the glyph rule',
+      lines: ['(esc to interrupt)', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.esc-interrupt',
+    },
+    // Pure ASCII punctuation (stars, brackets, mid-dot, em dash) → no BUSY via glyph.
+    {
+      name: 'ascii punctuation only → not BUSY via the glyph rule',
+      lines: ['done * [ok] a·b — no braille', '❯'],
+      status: AgentStatus.IDLE,
+      ruleId: 'idle.prompt',
+    },
+  ];
+  for (const c of cases) {
+    test(c.name, () => {
+      const r = detectFromPaneContent(c.lines, CLAUDE_MANIFEST);
+      expect(r.status).toBe(c.status);
+      expect(r.ruleId).toBe(c.ruleId);
+    });
+  }
+});
+
+// 1c. Ordering guard: busy.spinner-glyph is appended LAST, so any earlier rule wins
+//     even when a braille glyph is co-present on the same window (first-match-wins).
+describe('busy.spinner-glyph is last: earlier rules win when a glyph is also present', () => {
+  const cases: Array<{ name: string; lines: string[]; status: AgentStatus; ruleId: string }> = [
+    {
+      name: 'PERMIT [y/n] beats a co-present glyph',
+      lines: ['Allow Edit? [y/n]', '⠹ working', '❯'],
+      status: AgentStatus.PERMIT,
+      ruleId: 'permit.yn',
+    },
+    {
+      name: 'QUESTION selector beats a co-present glyph',
+      lines: ['Enter to select · ↑/↓ to navigate · Esc to cancel', '⠹', '❯'],
+      status: AgentStatus.QUESTION,
+      ruleId: 'question.enter-select',
+    },
+    {
+      name: 'token-counter beats the glyph (ruleId stays specific for `fleet explain`)',
+      lines: ['⠹ Trapping Gollum… (8s · ↑ 240 tokens)', '', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.token-counter-sec',
+    },
+  ];
+  for (const c of cases) {
+    test(c.name, () => {
+      expect(detectFromPaneContent(c.lines, CLAUDE_MANIFEST)).toEqual({ status: c.status, ruleId: c.ruleId });
+    });
+  }
+});
+
 // 2. Ordered precedence — proves "first match wins", not "most specific wins".
 test('ordered rules: the first matching rule wins on text that matches several', () => {
   const both = ['Do you want to proceed? (8s · ↑ 240 tokens)'];
