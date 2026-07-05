@@ -30,6 +30,10 @@ const MIN_SPLIT = 0.2;
 const MAX_SPLIT = 0.8;
 const DEFAULT_SPLIT = 0.45;
 
+// Two left-presses on the same row within this window count as a double-click
+// (the mouse "jump to agent" gesture, mirroring Enter).
+const DOUBLE_CLICK_MS = 400;
+
 export class TuiApp {
   private states: AgentState[] = [];
   private filter: string = '';
@@ -48,6 +52,8 @@ export class TuiApp {
   dragging: boolean = false;
   hoverPaneId: string | null = null;
   pulsePhase: boolean = false;
+  private lastClickPaneId: string | null = null;
+  private lastClickTs: number = 0;
 
   updateStates(newStates: AgentState[]): void {
     const selectedPaneId = this.selectedState()?.paneId ?? null;
@@ -256,6 +262,21 @@ export class TuiApp {
 
   endDrag(): void {
     this.dragging = false;
+  }
+
+  // True when this left-press completes a double-click: the same pane pressed
+  // again within DOUBLE_CLICK_MS. Resets on a match so a triple-click isn't read
+  // as two overlapping doubles. `now` (ms) is injected so callers stay testable.
+  registerClick(paneId: string, now: number): boolean {
+    const isDouble = paneId === this.lastClickPaneId && now - this.lastClickTs <= DOUBLE_CLICK_MS;
+    if (isDouble) {
+      this.lastClickPaneId = null;
+      this.lastClickTs = 0;
+    } else {
+      this.lastClickPaneId = paneId;
+      this.lastClickTs = now;
+    }
+    return isDouble;
   }
 
   private clampSelection(): void {

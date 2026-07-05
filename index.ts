@@ -746,9 +746,10 @@ async function launchTui(): Promise<number> {
           return;
         }
 
-        // Click a session row → select it, and acknowledge it in place if it's
-        // ready. Lets you clear finished agents by clicking, without leaving the
-        // dashboard (statusline clicks switch instead — see `fleet switch`).
+        // Left-click a row → select it (single) or jump to it (double-click,
+        // the same action as Enter). A single click also acks a done agent in
+        // place, so you can clear finished agents without leaving the dashboard.
+        // Statusline clicks switch instead — see `fleet switch`.
         if (
           mouse.button === 'left' &&
           mouse.type === 'press' &&
@@ -756,11 +757,21 @@ async function launchTui(): Promise<number> {
         ) {
           const sel = listHit(mouse.x, mouse.y);
           if (sel) {
+            if (app.registerClick(sel.paneId, Date.now())) {
+              // Double-click → jump to the agent, mirroring the Enter handler.
+              verifyPaneState(sel, statusDirs);
+              acknowledgePane(sel.paneId, statusDirs);
+              finish(0);
+              switchClient(sel.paneId);
+              return;
+            }
             const idx = app.visibleStates().findIndex((s) => s.paneId === sel.paneId);
             if (idx >= 0) app.selectedIndex = idx;
             if (sel.status === AgentStatus.DONE) {
+              // Ack in place, but DON'T refresh now: a re-sort would slide the
+              // row out from under a second press and break double-click on done
+              // agents. The fast refresh timer reflects the ack within ~500ms.
               acknowledgePane(sel.paneId, statusDirs);
-              app.updateStates(refreshStates(dirs));
             }
             needsRender = true;
           }

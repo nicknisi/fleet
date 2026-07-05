@@ -259,6 +259,33 @@ describe('hover', () => {
   });
 });
 
+describe('double-click detection', () => {
+  test('same pane pressed twice within the window is a double-click', () => {
+    const app = new TuiApp();
+    expect(app.registerClick('%1', 1000)).toBe(false); // first press: single
+    expect(app.registerClick('%1', 1300)).toBe(true); // within window: double
+  });
+
+  test('same pane pressed twice outside the window is two single-clicks', () => {
+    const app = new TuiApp();
+    expect(app.registerClick('%1', 1000)).toBe(false);
+    expect(app.registerClick('%1', 1600)).toBe(false); // too slow: not a double
+  });
+
+  test('a different pane is never a double-click', () => {
+    const app = new TuiApp();
+    expect(app.registerClick('%1', 1000)).toBe(false);
+    expect(app.registerClick('%2', 1100)).toBe(false); // different row, even if fast
+  });
+
+  test('triple-click does not read as two overlapping double-clicks', () => {
+    const app = new TuiApp();
+    expect(app.registerClick('%1', 1000)).toBe(false); // single
+    expect(app.registerClick('%1', 1200)).toBe(true); // double (resets)
+    expect(app.registerClick('%1', 1300)).toBe(false); // third press starts fresh
+  });
+});
+
 describe('split drag', () => {
   test('listWidth uses splitRatio', () => {
     const app = new TuiApp();
