@@ -22,7 +22,9 @@ import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
 import { acknowledgePlan } from './src/state/acknowledge.ts';
 import { scrapePane } from './src/state/scraper.ts';
 import { loadRenames, saveRename } from './src/state/rename.ts';
-import { AgentStatus, ACK_ALL_RANGE, extractClaudeName, type AgentState } from './src/state/types.ts';
+import { AgentStatus, ACK_ALL_RANGE, STATUS_DISPLAY, extractClaudeName, type AgentState } from './src/state/types.ts';
+import { decideNotifications, applySuppression } from './src/notify/transitions.ts';
+import { deliverDesktop } from './src/notify/deliver.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import type { AgentDir } from './src/agents/config.ts';
 import { listPanesResult, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
@@ -207,6 +209,20 @@ function refreshTmuxStatus(): void {
     Bun.spawnSync({ cmd: ['tmux', 'refresh-client', '-S'] });
   } catch {
     // Not in tmux, or refresh failed — non-critical
+  }
+}
+
+// The pane the user is currently focused on (active pane of the attached client's
+// current window). Returns null when tmux can't answer, which disables the
+// notifier's per-pane suppression — better a redundant toast than a missed one.
+function resolveActivePane(): string | null {
+  try {
+    const p = Bun.spawnSync({ cmd: ['tmux', 'display-message', '-p', '#{pane_id}'], stdout: 'pipe', stderr: 'pipe' });
+    if (p.exitCode !== 0) return null;
+    const v = p.stdout.toString().trim();
+    return v.length > 0 ? v : null;
+  } catch {
+    return null;
   }
 }
 
@@ -642,21 +658,36 @@ async function launchTui(): Promise<number> {
     process.stdout.write(render(app, size));
   };
 
-  const doRefresh = () => {
-    const states = refreshStates(dirs);
+  // The pane fleet itself runs in — used to suppress every toast while you're
+  // watching the dashboard. Null when launched outside tmux (harmless: per-pane
+  // suppression still works).
+  const fleetPaneId = process.env.TMUX_PANE ?? null;
+  let notifyPrev = new Map<string, AgentStatus>();
+
+  // Compare this snapshot's statuses to the last and fire a silent desktop toast
+  // on each work->stop transition, suppressing the pane you're focused on (and
+  // every toast while you're watching fleet itself). Detection advances notifyPrev
+  // every call, so a transition fires exactly once and re-arms on the next BUSY.
+  const maybeNotify = (states: AgentState[]) => {
+    const { candidates, previous } = decideNotifications(states, notifyPrev);
+    notifyPrev = previous;
+    if (candidates.length === 0) return; // resolve the active pane only when something fires
+    const activePaneId = resolveActivePane();
+    for (const n of applySuppression(candidates, activePaneId, fleetPaneId)) {
+      deliverDesktop(`${STATUS_DISPLAY[n.status].label}: ${n.label}`, n.agentType);
+    }
+  };
+
+  const applyStates = (states: AgentState[]) => {
     app.updateStates(states);
     app.tmuxDown = !lastTmuxOk;
     app.hooksMissing = !statusDirs.some((d) => existsSync(d));
     needsRender = true;
   };
 
-  const doFullRefresh = () => {
-    const states = fullRefreshStates(dirs);
-    app.updateStates(states);
-    app.tmuxDown = !lastTmuxOk;
-    app.hooksMissing = !statusDirs.some((d) => existsSync(d));
-    needsRender = true;
-  };
+  const doRefresh = () => applyStates(refreshStates(dirs));
+
+  const doFullRefresh = () => applyStates(fullRefreshStates(dirs));
 
   reloadRenameCache();
   doFullRefresh();
@@ -954,10 +985,14 @@ async function launchTui(): Promise<number> {
 
     const isTyping = () => app.mode === TuiMode.SEND || app.mode === TuiMode.RENAME || app.isFiltering();
 
-    // Fast timer: keep running in passthrough (preview needs live updates), skip during typing
+    // Fast timer: keep running in passthrough (preview needs live updates).
+    // Notification detection runs every tick even while typing — only the list
+    // refresh + render pause, so a background agent finishing still toasts.
     refreshTimer = setInterval(() => {
+      const states = refreshStates(dirs);
+      maybeNotify(states);
       if (isTyping()) return;
-      doRefresh();
+      applyStates(states);
       if (app.visibleStates().some((s) => s.status === AgentStatus.BUSY)) {
         app.pulsePhase = !app.pulsePhase;
         needsRender = true;
