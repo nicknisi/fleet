@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/nicknisi/fleet/compare/v0.12.0...v0.13.0) (2026-07-05)
+
+
+### Features
+
+* double-click a sidebar row to jump to that agent ([#27](https://github.com/nicknisi/fleet/issues/27)) ([8fca9df](https://github.com/nicknisi/fleet/commit/8fca9df0352208698f0f200652db8662592e2b1d))
+
 ## [0.12.0](https://github.com/nicknisi/fleet/compare/v0.11.0...v0.12.0) (2026-07-04)
 
 
