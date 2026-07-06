@@ -1,3 +1,5 @@
+import { oscTitle } from './ansi.ts';
+
 export interface TerminalSize {
   rows: number;
   cols: number;
@@ -69,6 +71,22 @@ export function disableMouse(): void {
   }
 }
 
+let lastTitle: string | null = null;
+
+// Sets the pane title (OSC 2) — inside tmux this is #{pane_title}, which the
+// user's automatic-rename hook can prefer over command+cwd naming.
+export function setPaneTitle(title: string): void {
+  if (title === lastTitle) return;
+  lastTitle = title;
+  process.stdout.write(oscTitle(title));
+}
+
+export function clearPaneTitle(): void {
+  if (lastTitle === null) return;
+  lastTitle = null;
+  process.stdout.write(oscTitle(''));
+}
+
 export function moveCursor(row: number, col: number): string {
   return `\x1b[${row};${col}H`;
 }
@@ -85,6 +103,7 @@ export function getTerminalSize(): TerminalSize {
 }
 
 export function restore(): void {
+  clearPaneTitle();
   disableMouse();
   showCursor();
   leaveAlternateScreen();

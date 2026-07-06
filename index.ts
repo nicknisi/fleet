@@ -1,7 +1,7 @@
 import packageJson from './package.json' with { type: 'json' };
 import { TuiApp, TuiMode } from './src/tui/app.ts';
 import { render } from './src/tui/render.ts';
-import { renderFooter, renderHeader, stateAtLine } from './src/tui/dashboard.ts';
+import { paneTitle, renderFooter, renderHeader, stateAtLine } from './src/tui/dashboard.ts';
 import { canSendTo } from './src/tui/send.ts';
 import { canKillSession } from './src/tui/kill.ts';
 import { parseKeyEvent } from './src/terminal/input.ts';
@@ -12,6 +12,7 @@ import {
   enterRawMode,
   enableMouse,
   restore,
+  setPaneTitle,
   getTerminalSize,
 } from './src/terminal/terminal.ts';
 import { setThemeMode, C } from './src/terminal/colors.ts';
@@ -692,6 +693,9 @@ async function launchTui(): Promise<number> {
   const draw = () => {
     const size = getTerminalSize();
     process.stdout.write(render(app, size));
+    // Advertise status in the pane title (deduped inside setPaneTitle);
+    // restore() clears it on exit so automatic-rename falls back cleanly.
+    setPaneTitle(paneTitle(app.summary(), app.shellCount()));
   };
 
   // The pane fleet itself runs in — used to suppress every toast while you're
