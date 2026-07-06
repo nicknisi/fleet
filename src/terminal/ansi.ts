@@ -5,6 +5,16 @@ export function stripAnsi(value: string): string {
   return value.replace(ANSI_PATTERN, '');
 }
 
+/**
+ * OSC 2 "set title" sequence. Inside tmux this sets `#{pane_title}` for the
+ * pane; outside tmux it sets the terminal window title. Control characters
+ * are stripped so a hostile payload can't terminate the sequence early.
+ */
+export function oscTitle(title: string): string {
+  // oxlint-disable-next-line no-control-regex
+  return `\x1b]2;${title.replace(/[\x00-\x1f\x7f]/g, '')}\x07`;
+}
+
 function charWidth(codePoint: number): number {
   if (codePoint < 0x20 || codePoint === 0x7f) return 0;
   // Zero-width joiners, variation selectors.

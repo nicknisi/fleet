@@ -1,7 +1,7 @@
 import { C } from '../terminal/colors.ts';
 import { truncateAnsi } from '../terminal/ansi.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
-import { TuiMode, type TuiApp } from './app.ts';
+import { TuiMode, type TuiApp, type Summary } from './app.ts';
 import { buildTableLines } from './layouts/table.ts';
 import { buildCardLines } from './layouts/cards.ts';
 import { pickLayout } from './layouts/index.ts';
@@ -30,6 +30,20 @@ function getQuip(): string {
 
 function logo(): string {
   return `${C.permit}f${C.question}l${C.done}e${C.busy}e${C.idle}t${C.reset}`;
+}
+
+// The pane title fleet advertises via OSC 2 — surfaced as the tmux window
+// name by title-aware automatic-rename setups. Plain text only (no ANSI
+// colors: tmux renders window names literally). Must never start with ✳,
+// which extractClaudeName treats as a Claude agent marker.
+//
+// TODO(nicknisi): decide what the window name says in each state — e.g.
+// all quiet vs. "fleet ◉2" (busy) vs. "fleet ⚠1" (needs you). Inputs:
+// s.busy / s.permit / s.question / s.done, and shellCount to derive the
+// agent count like renderHeader does. Keep it short — it lives in the
+// tmux status bar next to your other window names.
+export function paneTitle(_s: Summary, _shellCount: number): string {
+  return 'fleet';
 }
 
 export function renderHeader(app: TuiApp, cols: number): string[] {

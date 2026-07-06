@@ -1,5 +1,19 @@
 import { describe, expect, test } from 'bun:test';
-import { padAnsi, stripAnsi, truncateAnsi, truncateWidth, visibleLength } from './ansi.ts';
+import { oscTitle, padAnsi, stripAnsi, truncateAnsi, truncateWidth, visibleLength } from './ansi.ts';
+
+describe('oscTitle', () => {
+  test('wraps title in an OSC 2 sequence', () => {
+    expect(oscTitle('fleet — 2 working')).toBe('\x1b]2;fleet — 2 working\x07');
+  });
+
+  test('strips control characters that would break the sequence', () => {
+    expect(oscTitle('a\x1bb\x07c\nd')).toBe('\x1b]2;abcd\x07');
+  });
+
+  test('empty title clears the pane title', () => {
+    expect(oscTitle('')).toBe('\x1b]2;\x07');
+  });
+});
 
 describe('stripAnsi', () => {
   test('removes SGR sequences', () => {
