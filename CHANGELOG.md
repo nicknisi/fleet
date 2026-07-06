@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/nicknisi/fleet/compare/v0.13.0...v0.14.0) (2026-07-06)
+
+
+### Features
+
+* harness-agnostic awareness — spinner-glyph detection, hook-less discovery, silent notifications ([#29](https://github.com/nicknisi/fleet/issues/29)) ([c6b3c08](https://github.com/nicknisi/fleet/commit/c6b3c082f41e62042f2035aa4b4c20cbf4387523))
+
 ## [0.13.0](https://github.com/nicknisi/fleet/compare/v0.12.0...v0.13.0) (2026-07-05)
 
 
