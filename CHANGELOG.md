@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/nicknisi/fleet/compare/v0.14.0...v0.15.0) (2026-07-06)
+
+
+### Features
+
+* advertise fleet via OSC 2 pane title for title-aware window naming ([#31](https://github.com/nicknisi/fleet/issues/31)) ([2bc261e](https://github.com/nicknisi/fleet/commit/2bc261e5e66f04cb878e35b95f170c706bc58780))
+
 ## [0.14.0](https://github.com/nicknisi/fleet/compare/v0.13.0...v0.14.0) (2026-07-06)
 
 
