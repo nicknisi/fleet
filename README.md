@@ -2,7 +2,7 @@
 
 A terminal dashboard for managing multiple AI agent sessions in tmux.
 
-Fleet watches your Claude Code sessions, shows which agents need attention, and lets you send prompts — all from a single pane. It replaces a sprawl of bash scripts with a compiled Bun binary and a Claude Code plugin that hooks into the event system automatically.
+Fleet watches your Claude Code sessions, shows which agents need attention, and lets you send prompts — all from a single pane. It replaces a sprawl of bash scripts with a compiled Bun binary and a Claude Code plugin that hooks into the event system automatically. Beyond hooked agents (Claude Code, Codex, pi), it also surfaces ones it has no integration for — aider, opencode, and the like — by spotting them in the process table.
 
 <img width="3744" height="2402" alt="capture_20260527_180922" src="https://github.com/user-attachments/assets/0ad4ea10-948f-4e64-a509-9ad7ca2a2db4" />
 
@@ -193,6 +193,22 @@ Press `i` from the preview to enter passthrough mode. Every keystroke is forward
 
 This is the power feature: approve prompts, answer questions, type commands, and watch the output — all without switching panes. The footer shows `● LIVE` when passthrough is active.
 
+### Hook-less agents
+
+Fleet also surfaces agents it has **no** hook integration for. On its 5-second refresh it scans the process table for known agent commands — `aider`, `cursor`, `opencode`, `gemini`, `amp`, `droid` (plus `claude`/`codex`/`pi`) — maps each back to its tmux pane, and shows it on the dashboard labeled by type. No install, no config: start `aider` in a pane and it appears within ~5s.
+
+Discovered agents read as **working** or **idle** only — the animated braille spinner in the pane is the signal (present → working, absent → idle). The richer states (waiting/asking/ready) need a hook, so an agent you've wired up always wins its pane: when a `.status` file exists, the hooked reading takes over and you get the full seven states. Discovery only ever fills the gap where there's no hook.
+
+Tune it with tmux options (see [Configuration](#configuration)): `@fleet_discover off` turns it off, `@fleet_discover_agents` overrides the allowlist, `@fleet_discover_idle_secs` sets the debounce.
+
+### Desktop notifications
+
+When an agent finishes a turn — or stops to ask you something — while you're **not** looking, Fleet fires a **silent** OS-native desktop notification (`osascript` on macOS, `notify-send` on Linux). It's deliberately soundless: at fifteen agents, a chime per finish is noise, not a signal. Delivery is best-effort and no-ops cleanly when there's no desktop session (headless, SSH).
+
+Two suppressions keep toasts from being redundant: none for the pane you're **currently focused on**, and none at all while you're **watching the Fleet dashboard itself** (you can already see the change on screen). A toast fires only on a real working → stopped transition, exactly once, and re-arms when the agent starts working again.
+
+The in-tmux status-line flash still fires as before. The terminal **bell**, though, is now **off by default** — turn it back on with `tmux set -g @fleet_bell on` if you want the audible cue.
+
 ## Theming
 
 Fleet ships two palettes — Catppuccin Mocha for dark terminals, Catppuccin Latte for light ones — and picks between them automatically. Detection walks a chain and stops at the first hit:
@@ -204,6 +220,20 @@ Fleet ships two palettes — Catppuccin Mocha for dark terminals, Catppuccin Lat
 5. Otherwise it defaults to dark (Mocha).
 
 `NO_COLOR` is always honored: set it and Fleet renders monochrome, whatever the theme would have been.
+
+## Configuration
+
+Beyond the theme chain above, Fleet reads a handful of tmux user options — set them live with `tmux set -g <option> <value>` or drop them in `~/.tmux.conf`. All are optional, and changes take effect within one 5-second refresh (no restart).
+
+| Option                      | Default       | Description                                                                                                                                                                             |
+| --------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@fleet-theme`              | auto          | Pin the palette to `light` or `dark` (see [Theming](#theming)).                                                                                                                         |
+| `@fleet_bell`               | `off`         | Ring the terminal bell on a cross-session transition. Off keeps Fleet silent at scale; the visual flash fires regardless.                                                               |
+| `@fleet_discover`           | `on`          | Discover agents with no hook integration from the process table. Set `off` to disable.                                                                                                  |
+| `@fleet_discover_agents`    | built-in list | Comma-separated allowlist of command names to treat as agents. **Replaces** the default `claude,codex,pi,aider,cursor,opencode,gemini,amp,droid`, so keep the built-ins you still want. |
+| `@fleet_discover_idle_secs` | `3`           | Grace period (seconds) before a discovered agent flips working → idle, absorbing a single spinner-less frame.                                                                           |
+
+Environment variables `FLEET_THEME` (`light`/`dark`) and `NO_COLOR` are honored too — see [Theming](#theming).
 
 ## CLI Commands
 
@@ -284,7 +314,7 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 
 2. **JSONL event stream** (Layer 2) — Each hook appends to a per-pane event log. The TUI reads only the last event. Key insight: a `stop_reason` of `tool_use` means the agent is about to run another tool (BUSY), while `end_turn` means actually done.
 
-3. **Pane scraping** (Layer 3, ~50ms) — `tmux capture-pane` as the visual arbiter. Detects permission prompts (`[y/n]`), question dialogs (`Enter to select`), the working token counter (`(1m 11s · ↓ 3.4k tokens)`), and idle prompts. The scraper is authoritative only for what it can read unambiguously off the screen — `PERMIT` and `QUESTION` always win. For working-vs-idle it defers to the hooks: a scraper miss (Claude's spinner animates between capture frames) can't downgrade a fresh `working` hook to idle, but a scraped idle prompt does clear a stale permission.
+3. **Pane scraping** (Layer 3, ~50ms) — `tmux capture-pane` as the visual arbiter. Detects permission prompts (`[y/n]`), question dialogs (`Enter to select`), the working token counter (`(1m 11s · ↓ 3.4k tokens)`), the animated **braille spinner glyph** (U+2800–U+28FF), and idle prompts. The spinner is a strong working signal: a harness paints it only while actually working, so — unlike the English strings — it can't be spoofed by a transcript that quotes them, and it still reads as working after the token-counter line scrolls off. Detection is an ordered, first-match-wins rule list, so `PERMIT` and `QUESTION` still win over any working rule. For working-vs-idle the scraper defers to the hooks — a scraper miss can't downgrade a fresh `working` hook to idle — but a scraped idle prompt does clear a stale permission. (The same spinner check drives [hook-less discovery](#hook-less-agents) for agents with no hook at all.)
 
 **Freshness invariant:** A state transition is only accepted if its timestamp is newer than the current state's timestamp. Prevents out-of-order hook deliveries from causing flicker.
 
@@ -313,7 +343,7 @@ The Claude Code plugin (`hooks/`) fires on five events:
 - **SubagentStop** — Subagent finished; parent keeps working
 - **SessionEnd** — Cleanup status and event files
 
-Each hook script sources `hooks/lib.sh` which handles status file writes, JSONL event appends, and tmux notifications (with self-notification suppression).
+Each hook script sources `hooks/lib.sh` which handles status file writes, JSONL event appends, and the in-tmux notification flash (with self-notification suppression). The flash always fires; the terminal bell it used to ring is now gated behind `@fleet_bell` (default off — see [Configuration](#configuration)). The silent desktop toasts are fired separately by the TUI, not the hooks (see [Desktop notifications](#desktop-notifications)).
 
 ### Performance
 
@@ -353,6 +383,8 @@ claude=$HOME/.cache/claude-status
 pi=$HOME/.cache/pi-status
 ```
 
+This file is only for **hooked** agents — ones that write status files. Agents picked up by [hook-less discovery](#hook-less-agents) need no entry here; they're found in the process table.
+
 ## Development
 
 Fleet is a zero-dependency Bun project.
@@ -361,7 +393,7 @@ Fleet is a zero-dependency Bun project.
 bun install              # Install dev dependencies
 bun run dev              # Run without compiling
 bun run build            # Compile to standalone binary (dist/fleet)
-bun test                 # Run tests (273 tests, ~70ms)
+bun test                 # Run tests (457 tests, ~150ms)
 bun run typecheck        # tsc --noEmit
 bun run lint             # oxlint
 bun run format           # oxfmt
@@ -373,7 +405,7 @@ bun run format:check     # oxfmt --check
 Tests are collocated (`*.test.ts` next to source). The state engine, ANSI utilities, TUI model, and CLI commands are unit-tested. Tmux-dependent code has integration-style tests that gracefully degrade outside tmux.
 
 ```bash
-bun test                 # 273 tests, ~70ms
+bun test                 # 457 tests, ~150ms
 bun test src/state/      # State engine only
 bun test src/terminal/   # Terminal primitives only
 bun test src/tui/        # TUI model only

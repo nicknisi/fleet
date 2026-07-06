@@ -79,7 +79,10 @@ fleet_notify() {
 
   tmux display-message -d 3000 "$msg" 2>/dev/null
 
-  if [ "$current_session" != "$session" ]; then
+  # Only ring the bell when the user has opted in (@fleet_bell = on). Default:
+  # silent — the bell becomes noise at agent scale. The visual flash above stays.
+  # Pattern: theme.ts reads @fleet-theme via `tmux show -gqv`.
+  if [ "$(tmux show-option -gqv @fleet_bell 2>/dev/null)" = "on" ] && [ "$current_session" != "$session" ]; then
     tmux run-shell -t "$pane_id" "printf '\\a'" 2>/dev/null
   fi
 }
