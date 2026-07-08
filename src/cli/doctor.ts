@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { tmux } from '../tmux/ipc.ts';
 import { loadAgentDirs } from '../agents/config.ts';
+import { marketplaceDir } from './install.ts';
 
 interface Check {
   name: string;
@@ -34,6 +35,16 @@ export function installedPluginHasHooks(pluginsRoot: string, prefix = 'fleet@'):
     }
   }
   return false;
+}
+
+// The plugin cache can hold hooks while the marketplace *source* is broken —
+// e.g. a symlink into a Homebrew keg that `brew upgrade` deleted. Claude Code
+// then drops the plugin at session start and hooks silently stop firing, while
+// the cache-based check above still passes. existsSync follows symlinks, so a
+// dangling link reads as missing. Only meaningful when the marketplace root
+// exists at all (a source-less setup is reported by the plugin check instead).
+export function marketplaceSourceOk(mpDir: string): boolean {
+  return existsSync(join(mpDir, 'fleet', 'hooks', 'hooks.json'));
 }
 
 export function runDoctor(): number {
@@ -88,6 +99,18 @@ export function runDoctor(): number {
       ? 'registered'
       : 'installed plugin has no hooks/hooks.json — dashboard will stay empty (reinstall: fleet install)',
   });
+
+  const mpRoot = marketplaceDir();
+  if (existsSync(mpRoot)) {
+    const sourceOk = marketplaceSourceOk(mpRoot);
+    checks.push({
+      name: 'marketplace source',
+      ok: sourceOk,
+      detail: sourceOk
+        ? join(mpRoot, 'fleet')
+        : `${join(mpRoot, 'fleet')} does not resolve — likely a symlink into a Homebrew keg removed by brew upgrade; hooks silently stop loading (re-run: fleet install)`,
+    });
+  }
 
   let allOk = true;
   for (const check of checks) {

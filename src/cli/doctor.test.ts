@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installedPluginHasHooks } from './doctor.ts';
+import { installedPluginHasHooks, marketplaceSourceOk } from './doctor.ts';
 
 let pluginsRoot: string;
 
@@ -72,5 +72,32 @@ describe('installedPluginHasHooks', () => {
     });
     expect(installedPluginHasHooks(pluginsRoot, 'custom@')).toBe(true);
     expect(installedPluginHasHooks(pluginsRoot, 'fleet@')).toBe(false);
+  });
+});
+
+describe('marketplaceSourceOk', () => {
+  test('returns true when the fleet source dir has hooks/hooks.json', () => {
+    const src = join(pluginsRoot, 'fleet');
+    mkdirSync(join(src, 'hooks'), { recursive: true });
+    writeFileSync(join(src, 'hooks', 'hooks.json'), '{}');
+    expect(marketplaceSourceOk(pluginsRoot)).toBe(true);
+  });
+
+  test('resolves through a healthy symlink (the fleet install layout)', () => {
+    const keg = join(pluginsRoot, 'keg');
+    mkdirSync(join(keg, 'hooks'), { recursive: true });
+    writeFileSync(join(keg, 'hooks', 'hooks.json'), '{}');
+    symlinkSync(keg, join(pluginsRoot, 'fleet'));
+    expect(marketplaceSourceOk(pluginsRoot)).toBe(true);
+  });
+
+  test('returns false for a dangling symlink (keg removed by brew upgrade)', () => {
+    symlinkSync(join(pluginsRoot, 'gone-keg'), join(pluginsRoot, 'fleet'));
+    expect(marketplaceSourceOk(pluginsRoot)).toBe(false);
+  });
+
+  test('returns false when the source dir lacks hooks', () => {
+    mkdirSync(join(pluginsRoot, 'fleet'), { recursive: true });
+    expect(marketplaceSourceOk(pluginsRoot)).toBe(false);
   });
 });

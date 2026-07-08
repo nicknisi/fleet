@@ -1,6 +1,35 @@
 import { describe, expect, test } from 'bun:test';
-import { fuseState } from './engine.ts';
+import { fuseDiscoveredState, fuseState } from './engine.ts';
 import { AgentStatus } from './types.ts';
+
+describe('fuseDiscoveredState', () => {
+  const now = Math.floor(Date.now() / 1000);
+
+  test('scraped permission prompt outranks everything — even with no glyph', () => {
+    expect(fuseDiscoveredState(false, AgentStatus.PERMIT, now)).toBe(AgentStatus.PERMIT);
+  });
+
+  test('scraped question dialog reads QUESTION', () => {
+    expect(fuseDiscoveredState(false, AgentStatus.QUESTION, now)).toBe(AgentStatus.QUESTION);
+  });
+
+  test('scraped token counter reads BUSY without a spinner glyph', () => {
+    expect(fuseDiscoveredState(false, AgentStatus.BUSY, now)).toBe(AgentStatus.BUSY);
+  });
+
+  test('spinner glyph alone reads BUSY when the scraper sees nothing', () => {
+    expect(fuseDiscoveredState(true, null, now)).toBe(AgentStatus.BUSY);
+  });
+
+  test('a scraped bare prompt never demotes a live glyph', () => {
+    expect(fuseDiscoveredState(true, AgentStatus.IDLE, now)).toBe(AgentStatus.BUSY);
+  });
+
+  test('no glyph and no scrape reads IDLE', () => {
+    expect(fuseDiscoveredState(false, null, now)).toBe(AgentStatus.IDLE);
+    expect(fuseDiscoveredState(false, AgentStatus.IDLE, now)).toBe(AgentStatus.IDLE);
+  });
+});
 
 describe('fuseState', () => {
   const now = Math.floor(Date.now() / 1000);
