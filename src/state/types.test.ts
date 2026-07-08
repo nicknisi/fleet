@@ -95,6 +95,10 @@ describe('sessionLabel', () => {
   test('omits window when empty', () => {
     expect(sessionLabel({ ...base, window: '' })).toBe('dotfiles');
   });
+
+  test("masks fleet's advertised title with the project basename", () => {
+    expect(sessionLabel({ ...base, window: 'fleet', project: '~/Developer/sessions' })).toBe('dotfiles:sessions');
+  });
 });
 
 describe('windowLabel', () => {
@@ -108,6 +112,25 @@ describe('windowLabel', () => {
 
   test('falls back to session when window matches the session name', () => {
     expect(windowLabel({ ...base, window: 'dotfiles' })).toBe('dotfiles');
+  });
+
+  // A window named exactly 'fleet' was named by a title-aware renamer reading
+  // fleet's own OSC 2 pane title, not this agent — the label must not mask the
+  // agent's real project.
+  test("window named after fleet's advertised title falls back to the project basename", () => {
+    expect(windowLabel({ ...base, window: 'fleet', project: '~/Developer/sessions' })).toBe('sessions');
+  });
+
+  test('fleet-titled window with no project falls back to the session', () => {
+    expect(windowLabel({ ...base, window: 'fleet', project: null })).toBe('dotfiles');
+  });
+
+  test('fleet-titled window in the fleet repo still reads fleet', () => {
+    expect(windowLabel({ ...base, window: 'fleet', project: '~/Developer/fleet' })).toBe('fleet');
+  });
+
+  test('a window merely containing fleet is untouched', () => {
+    expect(windowLabel({ ...base, window: '󱙺 fleet', project: '~/Developer/sessions' })).toBe('󱙺 fleet');
   });
 });
 

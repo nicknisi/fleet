@@ -1,6 +1,6 @@
 import { C } from '../terminal/colors.ts';
 import { truncateAnsi } from '../terminal/ansi.ts';
-import { AgentStatus, type AgentState } from '../state/types.ts';
+import { AgentStatus, FLEET_PANE_TITLE, type AgentState } from '../state/types.ts';
 import { TuiMode, type TuiApp, type Summary } from './app.ts';
 import { buildTableLines } from './layouts/table.ts';
 import { buildCardLines } from './layouts/cards.ts';
@@ -43,7 +43,7 @@ function logo(): string {
 // agent count like renderHeader does. Keep it short — it lives in the
 // tmux status bar next to your other window names.
 export function paneTitle(_s: Summary, _shellCount: number): string {
-  return 'fleet';
+  return FLEET_PANE_TITLE;
 }
 
 export function renderHeader(app: TuiApp, cols: number): string[] {

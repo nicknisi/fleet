@@ -53,6 +53,22 @@ describe('buildCardLines', () => {
     expect(built.states[0]).toBeNull();
   });
 
+  test('grouped rows show only the window label — the header already names the session', () => {
+    const app = new TuiApp();
+    app.updateStates([state({ paneId: '%1', window: 'one' }), state({ paneId: '%2', window: 'two' })]);
+    const built = buildCardLines(app, 34);
+    // lines[0] is the "api · 2" header; lines[1] is the first agent row.
+    expect(built.lines[1]).toContain('one');
+    expect(built.lines[1]).not.toContain('api ·');
+  });
+
+  test('ungrouped row keeps the session · window label', () => {
+    const app = new TuiApp();
+    app.updateStates([state({ window: 'editor' })]);
+    const built = buildCardLines(app, 40);
+    expect(built.lines[0]).toContain('api · editor');
+  });
+
   test('no line exceeds the requested width', () => {
     const app = new TuiApp();
     app.updateStates([state({ branch: 'feature/very-long-branch-name-here', tool: 'WebFetch' })]);

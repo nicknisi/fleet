@@ -1,8 +1,8 @@
 import { C } from '../../terminal/colors.ts';
 import { padAnsi, truncateAnsi, truncateWidth, visibleLength } from '../../terminal/ansi.ts';
-import { STATUS_DISPLAY, sessionDisplay, windowLabel, type AgentState } from '../../state/types.ts';
+import { STATUS_DISPLAY, type AgentState } from '../../state/types.ts';
 import type { DashboardRow, TuiApp } from '../app.ts';
-import { formatAge, getAgeColor, getStateColor, stateIcon, type LayoutLines } from './shared.ts';
+import { agentRowLabel, formatAge, getAgeColor, getStateColor, stateIcon, type LayoutLines } from './shared.ts';
 
 export interface ColumnWidths {
   name: number;
@@ -34,12 +34,7 @@ export function computeColumnWidths(rows: DashboardRow[], cols: number): ColumnW
 }
 
 function nameCell(row: Extract<DashboardRow, { kind: 'agent' }>): string {
-  const label = windowLabel(row.state);
-  if (row.grouped) return `  ${label}`;
-  // Window-presence logic keys on the real session (windowLabel compares against
-  // it); only the shown string swaps to the rename via sessionDisplay.
-  const session = sessionDisplay(row.state);
-  return label === row.state.session ? session : `${session} · ${label}`;
+  return row.grouped ? `  ${agentRowLabel(row)}` : agentRowLabel(row);
 }
 
 function formatHeaderRow(row: Extract<DashboardRow, { kind: 'header' }>, cols: number): string {
