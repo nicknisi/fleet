@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.1](https://github.com/nicknisi/fleet/compare/v0.15.0...v0.15.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* honest sidebar labels and a stable preview divider ([#33](https://github.com/nicknisi/fleet/issues/33)) ([af08231](https://github.com/nicknisi/fleet/commit/af08231ba8ded63e14c04e8cbdf2d64d6d0ff169))
+* survive brew upgrade and detect status without hooks ([#34](https://github.com/nicknisi/fleet/issues/34)) ([053c916](https://github.com/nicknisi/fleet/commit/053c91600449c429d255efb487d1cc8541eb83ea))
+
 ## [0.15.0](https://github.com/nicknisi/fleet/compare/v0.14.0...v0.15.0) (2026-07-06)
 
 

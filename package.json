@@ -1,6 +1,6 @@
 {
   "name": "fleet",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "Agent dashboard TUI for managing AI sessions in tmux",
   "module": "index.ts",
   "type": "module",
