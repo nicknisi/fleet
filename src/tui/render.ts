@@ -6,6 +6,7 @@ import { renderRenameMode } from './rename.ts';
 import { renderKillConfirm } from './kill.ts';
 import { renderHelp } from './help.ts';
 import { C } from '../terminal/colors.ts';
+import { visibleLength } from '../terminal/ansi.ts';
 import type { TerminalSize } from '../terminal/terminal.ts';
 
 export function render(app: TuiApp, size: TerminalSize): string {
@@ -84,7 +85,10 @@ export function render(app: TuiApp, size: TerminalSize): string {
       const sessionLine = sessionLines[row] ?? '';
       const previewLine = previewLines[row] ?? '';
       out.push(sessionLine);
-      const sessionVis = visibleLengthFast(sessionLine);
+      // Must be the same width function the layout builders pad with — a
+      // code-unit count (string .length) disagrees on surrogate-pair glyphs
+      // like nerd-font icons in window names, shifting the divider per row.
+      const sessionVis = visibleLength(sessionLine);
       if (sessionVis < listWidth) out.push(' '.repeat(listWidth - sessionVis));
       out.push(app.dragging ? `${C.cyan}│${C.reset}` : `${C.gray}│${C.reset}`);
       out.push(previewLine);
@@ -123,10 +127,4 @@ export function render(app: TuiApp, size: TerminalSize): string {
   }
 
   return out.join('');
-}
-
-function visibleLengthFast(s: string): number {
-  // Quick approximation — strip ANSI codes
-  // oxlint-disable-next-line no-control-regex
-  return s.replace(/\x1b\[[0-9;:]*[@-~]/g, '').length;
 }

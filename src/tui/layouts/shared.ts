@@ -1,5 +1,6 @@
 import { C } from '../../terminal/colors.ts';
-import { AgentStatus, STATUS_DISPLAY, type AgentState } from '../../state/types.ts';
+import { AgentStatus, STATUS_DISPLAY, sessionDisplay, windowLabel, type AgentState } from '../../state/types.ts';
+import type { DashboardRow } from '../app.ts';
 
 // One entry per rendered line: states[i] is the agent on lines[i], or null for
 // chrome lines (headers, separators, indicators). Render and hit-testing both
@@ -7,6 +8,18 @@ import { AgentStatus, STATUS_DISPLAY, type AgentState } from '../../state/types.
 export interface LayoutLines {
   lines: string[];
   states: (AgentState | null)[];
+}
+
+// Row label shared by both layouts. Grouped rows sit under a session header,
+// so repeating the session per row is noise — the window label alone names
+// them. Ungrouped rows carry the session inline. Window-presence logic keys on
+// the real session (windowLabel compares against it); only the shown string
+// swaps to the rename via sessionDisplay.
+export function agentRowLabel(row: Extract<DashboardRow, { kind: 'agent' }>): string {
+  const label = windowLabel(row.state);
+  if (row.grouped) return label;
+  const session = sessionDisplay(row.state);
+  return label === row.state.session ? session : `${session} · ${label}`;
 }
 
 export function getStateColor(status: AgentStatus): string {

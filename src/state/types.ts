@@ -75,17 +75,31 @@ export function extractClaudeName(paneTitle: string): string | null {
   return name.length > 0 ? name : null;
 }
 
+// The pane title fleet advertises via OSC 2 (tui/dashboard.ts paneTitle).
+// Title-aware window renamers copy the focused pane's title into the window
+// name, so a window ends up named after fleet itself whenever the fleet pane
+// holds focus — that name describes fleet, not the agents sharing the window.
+export const FLEET_PANE_TITLE = 'fleet';
+
 // tmux target-style label (`session:window`). The window is dropped when it adds
 // no information — empty, or auto-named after the session itself.
 export function sessionLabel(state: AgentState): string {
-  if (state.window.length === 0 || state.window === state.session) return state.session;
-  return `${state.session}:${state.window}`;
+  const label = windowLabel(state);
+  return label === state.session ? state.session : `${state.session}:${label}`;
 }
 
 // Window-first label: the window name is what distinguishes agents; the
-// session is the fallback when the window adds no information.
+// session is the fallback when the window adds no information. A window named
+// exactly after fleet's advertised pane title was named by a title-aware
+// renamer reading the fleet pane, not this agent — the agent's project
+// directory is the honest label there (and when the agent really is working
+// in a repo named fleet, the basename shows "fleet" anyway).
 export function windowLabel(state: AgentState): string {
   if (state.window.length === 0 || state.window === state.session) return state.session;
+  if (state.window === FLEET_PANE_TITLE) {
+    const project = state.project?.split('/').pop();
+    return project && project.length > 0 ? project : state.session;
+  }
   return state.window;
 }
 

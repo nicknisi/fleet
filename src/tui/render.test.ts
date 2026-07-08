@@ -76,3 +76,26 @@ describe('render preview pane isolation', () => {
     expect(row).toContain('\x1b[0m');
   });
 });
+
+describe('render preview divider alignment', () => {
+  test('divider stays in one column when window names carry surrogate-pair glyphs', async () => {
+    const { visibleLength } = await import('../terminal/ansi.ts');
+    const app = new TuiApp();
+    // 󱙺 (U+F167A) is a plane-15 nerd-font glyph: 2 UTF-16 code units but 1
+    // terminal column — exactly the shape that skews code-unit padding.
+    app.updateStates([
+      { ...makeState(), window: '󱙺 one' },
+      { ...makeState(), paneId: '%2', window: 'two' },
+    ]);
+    app.mode = TuiMode.PREVIEW;
+
+    const out = render(app, { cols: 100, rows: 40 });
+    const columns = new Set<number>();
+    for (const line of out.split('\r\n')) {
+      const bar = line.indexOf('│');
+      if (bar === -1) continue;
+      columns.add(visibleLength(line.slice(0, bar)));
+    }
+    expect(columns.size).toBe(1);
+  });
+});
