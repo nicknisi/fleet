@@ -18,6 +18,7 @@ import {
   linkPluginDir,
   removeTmuxConfLine,
   resolvePluginDir,
+  stableKegPath,
   tmuxConfPath,
 } from './install.ts';
 
@@ -163,6 +164,25 @@ describe('resolvePluginDir', () => {
     mkdirSync(join(plugin, 'hooks'), { recursive: true });
     writeFileSync(join(plugin, 'hooks', 'hooks.json'), '{}');
     expect(resolvePluginDir([bare, plugin])).toBe(plugin);
+  });
+});
+
+describe('stableKegPath', () => {
+  test('maps a versioned Cellar keg to the upgrade-stable opt path', () => {
+    expect(stableKegPath('/opt/homebrew/Cellar/fleet/0.15.0')).toBe('/opt/homebrew/opt/fleet');
+  });
+
+  test('handles non-standard brew prefixes', () => {
+    expect(stableKegPath('/home/linuxbrew/.linuxbrew/Cellar/fleet/1.2.3')).toBe('/home/linuxbrew/.linuxbrew/opt/fleet');
+  });
+
+  test('returns null for a non-Cellar path (dev checkout, plain install)', () => {
+    expect(stableKegPath('/Users/nicknisi/Developer/fleet')).toBeNull();
+    expect(stableKegPath('/usr/local/lib/fleet')).toBeNull();
+  });
+
+  test('returns null for a Cellar path without a version segment', () => {
+    expect(stableKegPath('/opt/homebrew/Cellar/fleet')).toBeNull();
   });
 });
 

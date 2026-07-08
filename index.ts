@@ -17,7 +17,7 @@ import {
 } from './src/terminal/terminal.ts';
 import { setThemeMode, C } from './src/terminal/colors.ts';
 import { detectThemeMode } from './src/terminal/theme.ts';
-import { fuseState } from './src/state/engine.ts';
+import { fuseDiscoveredState, fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
 import { acknowledgePlan } from './src/state/acknowledge.ts';
@@ -362,11 +362,14 @@ function refreshStates(dirs: AgentDir[]): AgentState[] {
       }).status;
     } else {
       // No winning hook. Before falling to SHELL, check hook-less discovery: an
-      // allowlisted process in this pane surfaces as a synthetic agent — BUSY
-      // when the pane shows a spinner glyph, IDLE when it does not.
+      // allowlisted process in this pane surfaces as a synthetic agent. Its
+      // status fuses the spinner-glyph heuristic with the pane scrape that
+      // already ran this tick — an on-screen permission prompt, question
+      // dialog, or live token counter must not read as idle just because no
+      // hook is writing (e.g. the plugin's hooks were silently unloaded).
       const disc = discoveryCache.get(pane.paneId);
       if (disc) {
-        status = disc.working ? AgentStatus.BUSY : AgentStatus.IDLE;
+        status = fuseDiscoveredState(disc.working, scrapeCache.get(pane.paneId) ?? null, ts);
         agentType = disc.agentType;
       } else {
         status = AgentStatus.SHELL;

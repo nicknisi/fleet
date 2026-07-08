@@ -36,6 +36,23 @@ function mapHookState(state: string): AgentStatus {
   }
 }
 
+// Status for a hook-less discovered agent — the same fusion as the hook path
+// with the hook layer silenced. The scraper's positive reads (an on-screen
+// permission prompt, question dialog, or live token counter) outrank the
+// spinner-glyph heuristic; the glyph stands in as the activity (BUSY) signal
+// when the scraper sees nothing; a scraped bare prompt never demotes a live
+// glyph (the discovery debounce owns that decay).
+export function fuseDiscoveredState(working: boolean, scrapeStatus: AgentStatus | null, now: number): AgentStatus {
+  return fuseState({
+    hookState: 'idle',
+    hookTs: now, // anchors the BUSY decay window at "fresh" so it can't fire here
+    eventStatus: working ? AgentStatus.BUSY : null,
+    scrapeStatus,
+    currentStatus: AgentStatus.IDLE,
+    currentTs: 0,
+  }).status;
+}
+
 export function fuseState(input: FuseInput): FuseResult {
   const now = Math.floor(Date.now() / 1000);
   const hookCandidate = mapHookState(input.hookState);

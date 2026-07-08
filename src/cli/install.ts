@@ -28,13 +28,24 @@ export function resolvePluginDir(candidates: string[]): string | null {
   return null;
 }
 
+// A versioned Homebrew keg (…/Cellar/fleet/0.14.0) is deleted by `brew
+// upgrade`, which breaks the marketplace symlink pointing into it — Claude Code
+// then silently drops the plugin and hooks stop firing. Homebrew keeps
+// …/opt/<name> aimed at the current keg across upgrades, so map a Cellar path
+// to its stable opt equivalent. Null when the path isn't a Cellar keg.
+export function stableKegPath(dir: string): string | null {
+  const m = dir.match(/^(.*)\/Cellar\/([^/]+)\/[^/]+$/);
+  return m ? `${m[1]}/opt/${m[2]}` : null;
+}
+
 export function fleetPluginDir(): string | null {
   const fromBin = resolve(dirname(process.execPath), '..');
   const fromDev = resolve(import.meta.dir, '../..');
-  return resolvePluginDir([fromBin, fromDev]);
+  const candidates = [stableKegPath(fromBin), fromBin, fromDev].filter((c): c is string => c !== null);
+  return resolvePluginDir(candidates);
 }
 
-function marketplaceDir(): string {
+export function marketplaceDir(): string {
   return join(homedir(), '.local', 'share', 'fleet-marketplace');
 }
 
