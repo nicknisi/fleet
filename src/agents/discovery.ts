@@ -16,6 +16,8 @@
 // pure core so it is unit-testable without a live process table or tmux server.
 
 import { WORKING_GLYPH_PATTERN } from '../state/detection.ts';
+import { fuseDiscoveredState } from '../state/engine.ts';
+import { AgentStatus } from '../state/types.ts';
 
 export interface DiscoveredAgent {
   paneId: string;
@@ -146,6 +148,86 @@ export function discoverAgents(
   }
 
   return { agents, lastWorking: nextLastWorking };
+}
+
+// ---- discovered-status fusion (pure) ----
+//
+// A discovered (hook-less) agent has three detection inputs, none authoritative:
+// the braille spinner glyph from the process scan, the slow-cycle screen scrape
+// (classified against the agent's OWN manifest), and the fast-cycle title match.
+// resolveDiscoveredStatus fuses them and runs the DONE state machine, so a
+// hook-less agent gets the full status vocabulary (PERMIT/QUESTION/BUSY/DONE/
+// IDLE) instead of the old glyph-only BUSY/IDLE.
+
+// Carried across ticks by the caller (module state in index.ts). wasBusy
+// remembers panes last seen working so a working→idle transition is observable;
+// done holds panes that finished while unfocused, until viewed or busy again.
+// In-memory only: one-shot CLI invocations (fleet status) start cold and simply
+// never synthesize DONE — same accepted fidelity loss as the glyph debounce.
+export interface DoneTracking {
+  wasBusy: Set<string>;
+  done: Set<string>;
+}
+
+export interface DiscoveredSignals {
+  glyphWorking: boolean; // discovery's debounced spinner-glyph read (slow cycle)
+  scrape: AgentStatus | null; // right-manifest screen classification (slow cycle)
+  title: AgentStatus | null; // title-rule classification (fast cycle)
+  focused: boolean; // the user is looking at this pane right now
+}
+
+// Fuse one discovered pane's signals into its display status, updating
+// `tracking` in place. Prompt/busy precedence is delegated to the engine's
+// fuseDiscoveredState — the same fusion the hook path uses, so precedence rules
+// can never drift between the tiers. The title takes the scrape slot when it
+// fires (same rule as the hooked branch in refreshStates): it is re-read every
+// fast tick while the scrape can be ~5s stale, so a live title signal outranks
+// a lingering scraped prompt. On top of that base this layer runs the DONE
+// state machine:
+//   - a PERMIT/QUESTION base holds wasBusy open (the turn is still in flight),
+//     so answering a prompt that ends the turn still lands on DONE;
+//   - a BUSY base arms the working→idle transition;
+//   - an IDLE base consumes the transition: DONE if it happened while
+//     unfocused, cleared on view (focus) or when work resumes — the "finished
+//     while you were elsewhere" semantic fleet's hook tier already has via
+//     acknowledge.ts but the discovery tier lacked entirely.
+export function resolveDiscoveredStatus(
+  paneId: string,
+  signals: DiscoveredSignals,
+  tracking: DoneTracking,
+  now: number,
+): AgentStatus {
+  const base = fuseDiscoveredState(signals.glyphWorking, signals.title ?? signals.scrape, now);
+
+  if (base === AgentStatus.PERMIT || base === AgentStatus.QUESTION) {
+    tracking.done.delete(paneId);
+    tracking.wasBusy.add(paneId);
+    return base;
+  }
+
+  if (base === AgentStatus.BUSY) {
+    tracking.wasBusy.add(paneId);
+    tracking.done.delete(paneId);
+    return AgentStatus.BUSY;
+  }
+
+  if (tracking.wasBusy.has(paneId)) {
+    tracking.wasBusy.delete(paneId);
+    if (!signals.focused) tracking.done.add(paneId);
+  }
+  if (signals.focused) tracking.done.delete(paneId); // viewing the pane acknowledges it
+  return tracking.done.has(paneId) ? AgentStatus.DONE : AgentStatus.IDLE;
+}
+
+// Drop tracking entries for panes discovery no longer sees (agent exited, pane
+// closed) so the sets can't grow unboundedly across a long dashboard session.
+export function pruneDoneTracking(tracking: DoneTracking, livePanes: ReadonlySet<string>): void {
+  for (const id of tracking.wasBusy) {
+    if (!livePanes.has(id)) tracking.wasBusy.delete(id);
+  }
+  for (const id of tracking.done) {
+    if (!livePanes.has(id)) tracking.done.delete(id);
+  }
 }
 
 // ---- config (pure parse + I/O read) ----

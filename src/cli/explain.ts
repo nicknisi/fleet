@@ -7,6 +7,7 @@ import {
   type StateDecision,
 } from '../state/types.ts';
 import { fuseState } from '../state/engine.ts';
+import { loadDetectionManifest } from '../state/detection.ts';
 import { scrapePaneDetailed, type ScrapeDetail } from '../state/scraper.ts';
 import { parseStatusFile } from '../state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from '../state/events.ts';
@@ -62,10 +63,15 @@ export function renderExplain(block: ExplainBlock, showSnapshot: boolean): strin
     '',
   ];
 
-  // A hookless pane is a plain shell — refreshStates never fuses it, so there is
-  // no decision to trace.
+  // A hookless pane has no fusion decision to trace. It may still be a
+  // DISCOVERED agent (process scan) whose state comes from scrape/title/glyph —
+  // distinguish that from a plain shell so the trace isn't misleading.
   if (block.decision === null) {
-    lines.push('  shell (no agent hook) — nothing to fuse');
+    lines.push(
+      block.agentType.length > 0
+        ? `  discovered agent (no hook) — state read from scrape/title/spinner, not fused`
+        : '  shell (no agent hook) — nothing to fuse',
+    );
     if (showSnapshot) {
       lines.push('');
       lines.push(...renderSnapshot(block));
@@ -192,8 +198,10 @@ export function runExplain(session: string, states: AgentState[], statusDirs: st
   const out: string[] = [];
   for (const state of targets) {
     // Re-scrape live so the ruleId and snapshot reflect the screen right now,
-    // not the cache the dashboard warmed on its last slow tick.
-    const detail = scrapePaneDetailed(state.paneId);
+    // not the cache the dashboard warmed on its last slow tick — and with the
+    // pane's OWN agent manifest, so a discovered (hook-less) agent's trace shows
+    // the rules that actually classify it, not claude's.
+    const detail = scrapePaneDetailed(state.paneId, loadDetectionManifest(state.agentType || 'claude'));
     const hook = findHook(state.paneId, statusDirs);
     if (!hook) {
       out.push(renderExplain(shellBlock(state, detail, showSnapshot), showSnapshot));

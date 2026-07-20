@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { detectFromPaneContent } from './scraper.ts';
+import { detectFromPaneContent, detectFromTitle } from './scraper.ts';
+import { CLAUDE_MANIFEST, CODEX_MANIFEST, OPENCODE_MANIFEST, PI_MANIFEST } from './detection.ts';
 import { AgentStatus } from './types.ts';
 
 describe('detectFromPaneContent', () => {
@@ -62,5 +63,53 @@ describe('detectFromPaneContent', () => {
     const result = detectFromPaneContent(lines);
     expect(result.status).toBeNull();
     expect(result.ruleId).toBeNull();
+  });
+});
+
+// Title classification runs against #{pane_title} every FAST tick (the title
+// rides the one list-panes call), so these are the freshest signals fleet has.
+// Title strings below follow real captured pane titles.
+describe('detectFromTitle', () => {
+  test('claude working title (braille prefix) → BUSY', () => {
+    expect(detectFromTitle('⠂ fix flaky tests', CLAUDE_MANIFEST)).toEqual({
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.title-spinner',
+    });
+  });
+
+  test('claude idle title (✳ prefix) matches nothing', () => {
+    expect(detectFromTitle('✳ project', CLAUDE_MANIFEST)).toEqual({ status: null, ruleId: null });
+  });
+
+  test('codex blocked title → PERMIT', () => {
+    expect(detectFromTitle('Action Required', CODEX_MANIFEST)).toEqual({
+      status: AgentStatus.PERMIT,
+      ruleId: 'permit.title-action-required',
+    });
+  });
+
+  test('codex working title (braille prefix) → BUSY', () => {
+    expect(detectFromTitle('⠇ refactor auth module', CODEX_MANIFEST)).toEqual({
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.title-spinner',
+    });
+  });
+
+  test('codex idle title (dash prefix) matches nothing', () => {
+    expect(detectFromTitle('- project', CODEX_MANIFEST)).toEqual({ status: null, ruleId: null });
+  });
+
+  test('blocked title outranks a working spinner for codex (first match wins)', () => {
+    // Contrived combined title — guards the PERMIT-before-BUSY ordering.
+    expect(detectFromTitle('⠇ Action Required', CODEX_MANIFEST).status).toBe(AgentStatus.PERMIT);
+  });
+
+  test('a braille char NOT at the start of the title is not a spinner', () => {
+    expect(detectFromTitle('tail -f ⠇ spinner.log', CLAUDE_MANIFEST).status).toBeNull();
+  });
+
+  test('manifests without titleRules never title-match', () => {
+    expect(detectFromTitle('⠂ anything', PI_MANIFEST).status).toBeNull();
+    expect(detectFromTitle('Action Required', OPENCODE_MANIFEST).status).toBeNull();
   });
 });

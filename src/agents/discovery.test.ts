@@ -3,12 +3,17 @@ import {
   discoverAgents,
   normalizeComm,
   parsePsTable,
+  pruneDoneTracking,
+  resolveDiscoveredStatus,
   walkToPane,
   parseDiscoveryConfig,
   DEFAULT_ALLOWLIST,
   DEFAULT_IDLE_SECS,
+  type DiscoveredSignals,
   type DiscoveryOpts,
+  type DoneTracking,
 } from './discovery.ts';
+import { AgentStatus } from '../state/types.ts';
 
 // A braille spinner glyph (U+2839) — the working signal a harness paints while
 // actively running. Any char in U+2800–U+28FF works.
@@ -237,5 +242,139 @@ describe('parseDiscoveryConfig', () => {
     expect(parseDiscoveryConfig({ discover: null, agents: null, idleSecs: 'abc' }).idleSecs).toBe(DEFAULT_IDLE_SECS);
     expect(parseDiscoveryConfig({ discover: null, agents: null, idleSecs: '-1' }).idleSecs).toBe(DEFAULT_IDLE_SECS);
     expect(parseDiscoveryConfig({ discover: null, agents: null, idleSecs: '0' }).idleSecs).toBe(0);
+  });
+});
+
+// ---- resolveDiscoveredStatus: signal fusion + the DONE state machine ----
+
+function track(): DoneTracking {
+  return { wasBusy: new Set(), done: new Set() };
+}
+
+function sig(over: Partial<DiscoveredSignals> = {}): DiscoveredSignals {
+  return { glyphWorking: false, scrape: null, title: null, focused: false, ...over };
+}
+
+// The engine's fuseDiscoveredState anchors its BUSY decay window at `now`,
+// measured against the real clock — so pass the real epoch (a fixed small
+// number would look 50 years stale and decay every BUSY to idle).
+const NOW = Math.floor(Date.now() / 1000);
+function resolve(paneId: string, signals: DiscoveredSignals, tracking: DoneTracking): AgentStatus {
+  return resolveDiscoveredStatus(paneId, signals, tracking, NOW);
+}
+
+describe('resolveDiscoveredStatus — prompt precedence', () => {
+  test('title PERMIT wins over a co-present working glyph', () => {
+    expect(resolve('%1', sig({ glyphWorking: true, title: AgentStatus.PERMIT }), track())).toBe(AgentStatus.PERMIT);
+  });
+
+  test('scrape QUESTION surfaces when the title is silent', () => {
+    expect(resolve('%1', sig({ scrape: AgentStatus.QUESTION }), track())).toBe(AgentStatus.QUESTION);
+  });
+
+  test('title outranks scrape for prompts (fresher: re-read every fast tick)', () => {
+    expect(resolve('%1', sig({ title: AgentStatus.PERMIT, scrape: AgentStatus.QUESTION }), track())).toBe(
+      AgentStatus.PERMIT,
+    );
+  });
+
+  test('scrape BUSY does not shadow a title prompt', () => {
+    expect(resolve('%1', sig({ scrape: AgentStatus.BUSY, title: AgentStatus.QUESTION }), track())).toBe(
+      AgentStatus.QUESTION,
+    );
+  });
+
+  test('a live title spinner masks a stale scraped prompt (title takes the scrape slot)', () => {
+    // The scrape can be ~5s old: an answered prompt lingering on screen must
+    // not outrank a title that says the agent is actively working right now.
+    expect(resolve('%1', sig({ title: AgentStatus.BUSY, scrape: AgentStatus.PERMIT }), track())).toBe(AgentStatus.BUSY);
+  });
+
+  test('glyph + scraped prompt (no title) still reads the prompt', () => {
+    // With the title silent, the engine's trust-the-scraped-prompt rule holds:
+    // a glyph co-present with a real on-screen dialog must not hide it.
+    expect(resolve('%1', sig({ glyphWorking: true, scrape: AgentStatus.PERMIT }), track())).toBe(AgentStatus.PERMIT);
+  });
+});
+
+describe('resolveDiscoveredStatus — BUSY from any positive working signal', () => {
+  test('glyph alone', () => {
+    expect(resolve('%1', sig({ glyphWorking: true }), track())).toBe(AgentStatus.BUSY);
+  });
+  test('title spinner alone', () => {
+    expect(resolve('%1', sig({ title: AgentStatus.BUSY }), track())).toBe(AgentStatus.BUSY);
+  });
+  test('scrape BUSY alone', () => {
+    expect(resolve('%1', sig({ scrape: AgentStatus.BUSY }), track())).toBe(AgentStatus.BUSY);
+  });
+  test('scrape IDLE is not a working signal', () => {
+    expect(resolve('%1', sig({ scrape: AgentStatus.IDLE }), track())).toBe(AgentStatus.IDLE);
+  });
+});
+
+describe('resolveDiscoveredStatus — DONE synthesis (finished while you were elsewhere)', () => {
+  test('busy → idle while unfocused reads DONE, and DONE persists across ticks', () => {
+    const t = track();
+    expect(resolve('%1', sig({ glyphWorking: true }), t)).toBe(AgentStatus.BUSY);
+    expect(resolve('%1', sig(), t)).toBe(AgentStatus.DONE);
+    expect(resolve('%1', sig(), t)).toBe(AgentStatus.DONE); // sticky
+  });
+
+  test('busy → idle while FOCUSED reads IDLE — you watched it finish', () => {
+    const t = track();
+    resolve('%1', sig({ glyphWorking: true }), t);
+    expect(resolve('%1', sig({ focused: true }), t)).toBe(AgentStatus.IDLE);
+    // And no DONE materializes later once the transition was consumed.
+    expect(resolve('%1', sig(), t)).toBe(AgentStatus.IDLE);
+  });
+
+  test('viewing the pane clears a pending DONE (clear-on-view)', () => {
+    const t = track();
+    resolve('%1', sig({ glyphWorking: true }), t);
+    expect(resolve('%1', sig(), t)).toBe(AgentStatus.DONE);
+    expect(resolve('%1', sig({ focused: true }), t)).toBe(AgentStatus.IDLE);
+    expect(resolve('%1', sig(), t)).toBe(AgentStatus.IDLE); // stays cleared
+  });
+
+  test('work resuming clears DONE and re-arms the transition', () => {
+    const t = track();
+    resolve('%1', sig({ glyphWorking: true }), t);
+    expect(resolve('%1', sig(), t)).toBe(AgentStatus.DONE);
+    expect(resolve('%1', sig({ glyphWorking: true }), t)).toBe(AgentStatus.BUSY);
+    expect(resolve('%1', sig(), t)).toBe(AgentStatus.DONE); // fires again
+  });
+
+  test('a visible prompt holds the transition open: busy → prompt → idle still lands on DONE', () => {
+    const t = track();
+    resolve('%1', sig({ glyphWorking: true }), t);
+    expect(resolve('%1', sig({ scrape: AgentStatus.PERMIT }), t)).toBe(AgentStatus.PERMIT);
+    expect(resolve('%1', sig(), t)).toBe(AgentStatus.DONE);
+  });
+
+  test('a prompt with no busy history also lands on DONE once answered (turn ended)', () => {
+    const t = track();
+    expect(resolve('%1', sig({ title: AgentStatus.PERMIT }), t)).toBe(AgentStatus.PERMIT);
+    expect(resolve('%1', sig(), t)).toBe(AgentStatus.DONE);
+  });
+
+  test('never-busy pane is plain IDLE, focused or not', () => {
+    expect(resolve('%1', sig(), track())).toBe(AgentStatus.IDLE);
+    expect(resolve('%1', sig({ focused: true }), track())).toBe(AgentStatus.IDLE);
+  });
+
+  test('tracking is per-pane: one pane finishing does not mark another done', () => {
+    const t = track();
+    resolve('%1', sig({ glyphWorking: true }), t);
+    expect(resolve('%2', sig(), t)).toBe(AgentStatus.IDLE);
+    expect(resolve('%1', sig(), t)).toBe(AgentStatus.DONE);
+  });
+});
+
+describe('pruneDoneTracking', () => {
+  test('drops entries for panes discovery no longer sees, keeps live ones', () => {
+    const t: DoneTracking = { wasBusy: new Set(['%1', '%2']), done: new Set(['%3', '%4']) };
+    pruneDoneTracking(t, new Set(['%1', '%3']));
+    expect([...t.wasBusy]).toEqual(['%1']);
+    expect([...t.done]).toEqual(['%3']);
   });
 });

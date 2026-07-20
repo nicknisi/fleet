@@ -113,10 +113,26 @@ describe('renderExplain', () => {
   });
 
   test('shell block renders shell and no decision', () => {
-    const out = renderExplain(makeBlock({ finalStatus: AgentStatus.SHELL, decision: null, statusFile: null }), false);
+    // A true shell pane carries agentType '' (refreshStates sets it honestly).
+    const out = renderExplain(
+      makeBlock({ agentType: '', finalStatus: AgentStatus.SHELL, decision: null, statusFile: null }),
+      false,
+    );
     expect(out).toContain('shell');
     expect(out).toContain('no agent hook');
     expect(out).not.toContain('candidates');
+    expect(out).not.toContain('winner');
+  });
+
+  test('a hookless pane WITH an agentType renders as discovered, not shell', () => {
+    // Discovery names the pane's agent but writes no status file, so there is
+    // still no decision to trace — but the copy must not call it a plain shell.
+    const out = renderExplain(
+      makeBlock({ agentType: 'opencode', finalStatus: AgentStatus.PERMIT, decision: null, statusFile: null }),
+      false,
+    );
+    expect(out).toContain('discovered agent');
+    expect(out).not.toContain('nothing to fuse');
     expect(out).not.toContain('winner');
   });
 
