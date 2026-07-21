@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/nicknisi/fleet/compare/v0.16.0...v0.16.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* bug sweep + simplification pass across the codebase ([#38](https://github.com/nicknisi/fleet/issues/38)) ([96a531e](https://github.com/nicknisi/fleet/commit/96a531e65f3e737afd05ac5ff77e16305611e661))
+
 ## [0.16.0](https://github.com/nicknisi/fleet/compare/v0.15.1...v0.16.0) (2026-07-21)
 
 
