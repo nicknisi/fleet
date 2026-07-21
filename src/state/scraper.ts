@@ -63,25 +63,25 @@ export function detectFromTitle(title: string, manifest: DetectionManifest): Det
   return { status: null, ruleId: null };
 }
 
-// Capture a pane ONCE and return both its classified status and the raw captured
-// lines. A caller that also needs the capture (hook-less discovery's spinner-glyph
-// check) reuses these lines instead of capturing the same pane a second time.
-// scrapePane is exactly this minus the lines.
-export function scrapePaneCapture(paneId: string, agent: string): { status: AgentStatus | null; lines: string[] } {
-  let lines: string[];
+// Capture a pane's bottom window WITHOUT classifying — the slow tick captures
+// every pane once, resolves each pane's agent identity (hook or discovery),
+// then classifies each capture exactly once with the right manifest. Empty on
+// capture failure so callers degrade to "no scrape read".
+export function capturePaneLines(paneId: string): string[] {
   try {
-    lines = capturePane(paneId, SCRAPE_LINES);
+    return capturePane(paneId, SCRAPE_LINES);
   } catch {
-    return { status: null, lines: [] };
+    return [];
   }
-  // Phase 3: the agent is real (was hardcoded 'claude'). Resolve its manifest
-  // (built-in, or a user override) so each agent's prompts classify against its
-  // own rules; an unknown agent degrades to an empty manifest (detects nothing).
-  return { status: detectFromPaneContent(lines, loadDetectionManifest(agent)).status, lines };
 }
 
 export function scrapePane(paneId: string, agent: string): AgentStatus | null {
-  return scrapePaneCapture(paneId, agent).status;
+  const lines = capturePaneLines(paneId);
+  if (lines.length === 0) return null;
+  // Resolve the agent's manifest (built-in, or a user override) so each agent's
+  // prompts classify against its own rules; an unknown agent degrades to an
+  // empty manifest (detects nothing).
+  return detectFromPaneContent(lines, loadDetectionManifest(agent)).status;
 }
 
 export interface ScrapeDetail {

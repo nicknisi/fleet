@@ -9,7 +9,6 @@ const ENTER_ALT_SCREEN = '\x1b[?1049h';
 const LEAVE_ALT_SCREEN = '\x1b[?1049l';
 const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
-const CLEAR_SCREEN = '\x1b[2J\x1b[H';
 const ENABLE_MOUSE = '\x1b[?1002h\x1b[?1003h\x1b[?1006h';
 const DISABLE_MOUSE = '\x1b[?1002l\x1b[?1003l\x1b[?1006l';
 
@@ -87,14 +86,6 @@ export function clearPaneTitle(): void {
   process.stdout.write(oscTitle(''));
 }
 
-export function moveCursor(row: number, col: number): string {
-  return `\x1b[${row};${col}H`;
-}
-
-export function clearScreen(): void {
-  process.stdout.write(CLEAR_SCREEN);
-}
-
 export function getTerminalSize(): TerminalSize {
   return {
     rows: process.stdout.rows ?? 24,
@@ -137,15 +128,4 @@ function registerCleanup(): void {
     console.error(reason);
     process.exit(1);
   });
-}
-
-export async function withTerminal<T>(fn: () => Promise<T> | T): Promise<T> {
-  enterAlternateScreen();
-  hideCursor();
-  enterRawMode();
-  try {
-    return await fn();
-  } finally {
-    restore();
-  }
 }

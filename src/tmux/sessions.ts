@@ -46,7 +46,9 @@ export function parsePanesOutput(stdout: string): PaneInfo[] {
       panePid: parseInt(parts[6]!, 10),
       // pane_active/window_active are 1/0; session_attached counts clients.
       focused: parts[7] === '1' && parts[8] === '1' && parseInt(parts[9]!, 10) > 0,
-      paneTitle: parts[10]!,
+      // Title is the last field, so a tab inside it split into extra parts —
+      // rejoin them instead of silently truncating at the first tab.
+      paneTitle: parts.slice(10).join('\t'),
     });
   }
   return panes;

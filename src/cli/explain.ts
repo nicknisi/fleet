@@ -1,18 +1,17 @@
 import {
   AgentStatus,
   STATUS_DISPLAY,
+  formatAgeDelta,
   type AgentState,
   type HookStatus,
-  type EventEntry,
   type StateDecision,
 } from '../state/types.ts';
 import { fuseState } from '../state/engine.ts';
 import { loadDetectionManifest } from '../state/detection.ts';
-import { scrapePaneDetailed, type ScrapeDetail } from '../state/scraper.ts';
-import { parseStatusFile } from '../state/hooks.ts';
+import { detectFromTitle, scrapePaneDetailed, type ScrapeDetail } from '../state/scraper.ts';
+import { parseStatusFile, statusFilePath, eventsFilePath } from '../state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from '../state/events.ts';
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
 
 export interface ExplainBlock {
   session: string;
@@ -27,16 +26,9 @@ export interface ExplainBlock {
 
 const FRAME_WIDTH = 58;
 
-// Age of a delta in seconds. Pure (takes a delta, not a ts) so renderExplain
-// stays deterministic under test — it reads decision.now, never Date.now().
-function fmtAge(deltaSecs: number): string {
-  const d = Math.max(0, deltaSecs);
-  if (d < 5) return 'now';
-  if (d < 60) return `${d}s`;
-  if (d < 3600) return `${Math.floor(d / 60)}m`;
-  if (d < 86400) return `${Math.floor(d / 3600)}h`;
-  return `${Math.floor(d / 86400)}d`;
-}
+// Delta-based (never Date.now()) so renderExplain stays deterministic under
+// test — it reads decision.now.
+const fmtAge = formatAgeDelta;
 
 function candidateRow(label: string, status: string, age: string, detail: string): string {
   return `    ${label.padEnd(10)}${status.padEnd(9)}${age.padEnd(8)}${detail}`.trimEnd();
@@ -113,9 +105,6 @@ export function renderExplain(block: ExplainBlock, showSnapshot: boolean): strin
   lines.push(`    winner            ${d.winner}`);
   lines.push(`    reason            ${d.reason}`);
   lines.push(`    working-timeout   ${d.workingTimeoutFired ? 'fired (stale BUSY → idle)' : 'not fired'}`);
-  lines.push(
-    `    freshness         ${d.freshnessEvaluated ? 'evaluated — kept in-memory state' : 'not evaluated (live refresh is stateless)'}`,
-  );
 
   if (showSnapshot) {
     lines.push('');
@@ -129,30 +118,21 @@ export function renderExplain(block: ExplainBlock, showSnapshot: boolean): strin
 }
 
 // Scan statusDirs for the pane's .status file exactly as acknowledgePane does,
-// returning the parsed hook plus its resolved path (for the trace's source column).
-function findHook(paneId: string, statusDirs: string[]): { status: HookStatus; file: string } | null {
-  const paneNum = paneId.replace('%', '');
+// returning the parsed hook plus its resolved path (for the trace's source
+// column) and owning dir (so events are read from the SAME agent's stream, not
+// a first-match scan that could hit another agent's on a pane-id collision).
+function findHook(paneId: string, statusDirs: string[]): { status: HookStatus; file: string; dir: string } | null {
   for (const dir of statusDirs) {
-    const file = join(dir, `${paneNum}.status`);
+    const file = statusFilePath(dir, paneId);
     if (!existsSync(file)) continue;
     try {
       const status = parseStatusFile(readFileSync(file, 'utf-8'));
-      if (status && status.pane === paneId) return { status, file };
+      if (status && status.pane === paneId) return { status, file, dir };
     } catch {
       // Unreadable — try the next dir
     }
   }
   return null;
-}
-
-// Last 12 events for the pane, mirroring refreshStates' scan of statusDirs.
-function readRecentEvents(paneId: string, statusDirs: string[]): EventEntry[] {
-  const paneNum = paneId.replace('%', '');
-  for (const dir of statusDirs) {
-    const recent = readLastEvents(join(dir, `${paneNum}.events.jsonl`), 12);
-    if (recent.length > 0) return recent;
-  }
-  return [];
 }
 
 function toBlock(
@@ -201,23 +181,26 @@ export function runExplain(session: string, states: AgentState[], statusDirs: st
     // not the cache the dashboard warmed on its last slow tick — and with the
     // pane's OWN agent manifest, so a discovered (hook-less) agent's trace shows
     // the rules that actually classify it, not claude's.
-    const detail = scrapePaneDetailed(state.paneId, loadDetectionManifest(state.agentType || 'claude'));
+    const manifest = loadDetectionManifest(state.agentType || 'claude');
+    const detail = scrapePaneDetailed(state.paneId, manifest);
     const hook = findHook(state.paneId, statusDirs);
     if (!hook) {
       out.push(renderExplain(shellBlock(state, detail, showSnapshot), showSnapshot));
       continue;
     }
-    const events = readRecentEvents(state.paneId, statusDirs);
+    const events = readLastEvents(eventsFilePath(hook.dir, state.paneId), 12);
     const eventStatus = events.length > 0 ? deriveStatusFromEvents(events) : null;
+    // Mirror the live wiring: a title-rule match takes the scrape slot (it's
+    // the fresher signal), the screen scrape covers the rest.
+    const title = state.paneTitle !== undefined ? detectFromTitle(state.paneTitle, manifest) : null;
+    const scrape = title?.status != null ? title : (detail?.result ?? null);
     const { status, decision } = fuseState({
       hookState: hook.status.state,
       hookTs: hook.status.ts,
       eventStatus,
       eventTs: events.at(-1)?.ts ?? null,
-      scrapeStatus: detail?.result.status ?? null,
-      scrapeRuleId: detail?.result.ruleId ?? null,
-      currentStatus: AgentStatus.IDLE, // mirror the live wiring exactly (index.ts:282-283)
-      currentTs: 0,
+      scrapeStatus: scrape?.status ?? null,
+      scrapeRuleId: scrape?.ruleId ?? null,
     });
     out.push(renderExplain(toBlock(state, hook.file, status, decision, detail, showSnapshot), showSnapshot));
   }

@@ -2,8 +2,8 @@ import { existsSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fleetPluginDir, linkPluginDir } from './install.ts';
-import { agentsJsonPath, removeAgentEntry, upsertAgentEntry, withTilde } from './install-codex.ts';
-import { loadAgentDirs, PI_STATUS_DIR } from '../agents/config.ts';
+import { agentsJsonPath, removeAgentEntry, seededAgentDirs, upsertAgentEntry, withTilde } from './install-codex.ts';
+import { PI_STATUS_DIR } from '../agents/config.ts';
 
 // pi (npm: @mariozechner/pi-coding-agent) has no shell-hook config; it loads
 // TypeScript extensions auto-discovered from ~/.pi/agent/extensions/*.ts (see
@@ -46,13 +46,8 @@ export function runInstallPi(): number {
   }
 
   // Snapshot agents present BEFORE the mkdir below so a fresh agents.json is
-  // seeded without dropping claude/codex; guarantee a claude entry even when its
-  // status dir doesn't exist yet (agents.json preempts the fallback once written,
-  // same reasoning as install-codex).
-  const seed = loadAgentDirs();
-  if (!seed.some((a) => a.name === 'claude')) {
-    seed.unshift({ name: 'claude', statusDir: '~/.cache/claude-status' });
-  }
+  // seeded without dropping claude/codex (see seededAgentDirs).
+  const seed = seededAgentDirs();
 
   mkdirSync(PI_EXTENSIONS_DIR, { recursive: true });
   linkPluginDir(extensionSrc, PI_EXTENSION_LINK); // rm + symlink; replaces a stale/dangling link

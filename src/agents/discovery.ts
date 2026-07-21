@@ -18,6 +18,7 @@
 import { WORKING_GLYPH_PATTERN } from '../state/detection.ts';
 import { fuseDiscoveredState } from '../state/engine.ts';
 import { AgentStatus } from '../state/types.ts';
+import { getTmuxOption } from '../tmux/ipc.ts';
 
 export interface DiscoveredAgent {
   paneId: string;
@@ -199,16 +200,12 @@ export function resolveDiscoveredStatus(
 ): AgentStatus {
   const base = fuseDiscoveredState(signals.glyphWorking, signals.title ?? signals.scrape, now);
 
-  if (base === AgentStatus.PERMIT || base === AgentStatus.QUESTION) {
+  // PERMIT/QUESTION hold wasBusy open (the turn is still in flight); BUSY arms
+  // the working→idle transition — the tracking mutation is identical.
+  if (base === AgentStatus.PERMIT || base === AgentStatus.QUESTION || base === AgentStatus.BUSY) {
     tracking.done.delete(paneId);
     tracking.wasBusy.add(paneId);
     return base;
-  }
-
-  if (base === AgentStatus.BUSY) {
-    tracking.wasBusy.add(paneId);
-    tracking.done.delete(paneId);
-    return AgentStatus.BUSY;
   }
 
   if (tracking.wasBusy.has(paneId)) {
@@ -287,54 +284,28 @@ export function parseDiscoveryConfig(raw: {
 
 // ---- I/O shell: spawn ps, call tmux, read config, delegate to the pure core ----
 
-function showOption(name: string): string | null {
-  try {
-    const p = Bun.spawnSync({ cmd: ['tmux', 'show', '-gqv', name], stdout: 'pipe', stderr: 'pipe' });
-    if (p.exitCode !== 0) return null;
-    const v = p.stdout.toString().trim();
-    return v.length > 0 ? v : null;
-  } catch {
-    return null;
-  }
-}
+// The @fleet_discover* options essentially never change mid-session, but a
+// cold read costs 3 tmux spawns — cache with a TTL so live option changes
+// still land within a minute.
+const CONFIG_TTL_MS = 60_000;
+let cachedConfig: { cfg: DiscoveryConfig; readAt: number } | null = null;
 
 export function readDiscoveryConfig(): DiscoveryConfig {
-  return parseDiscoveryConfig({
-    discover: showOption('@fleet_discover'),
-    agents: showOption('@fleet_discover_agents'),
-    idleSecs: showOption('@fleet_discover_idle_secs'),
+  const now = Date.now();
+  if (cachedConfig && now - cachedConfig.readAt < CONFIG_TTL_MS) return cachedConfig.cfg;
+  const cfg = parseDiscoveryConfig({
+    discover: getTmuxOption('@fleet_discover'),
+    agents: getTmuxOption('@fleet_discover_agents'),
+    idleSecs: getTmuxOption('@fleet_discover_idle_secs'),
   });
-}
-
-// Build the pane_pid -> paneId map from one `tmux list-panes` call (pattern:
-// ports.ts:8-22). Empty on any tmux failure.
-function readPanePids(): Map<number, string> {
-  const panePids = new Map<number, string>();
-  try {
-    const p = Bun.spawnSync({
-      cmd: ['tmux', 'list-panes', '-a', '-F', '#{pane_id}:#{pane_pid}'],
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    if (p.exitCode !== 0) return panePids;
-    for (const line of p.stdout.toString().split('\n')) {
-      if (line.length === 0) continue;
-      const [paneId, pidStr] = line.split(':');
-      if (paneId && pidStr) {
-        const pid = parseInt(pidStr, 10);
-        if (!Number.isNaN(pid)) panePids.set(pid, paneId);
-      }
-    }
-  } catch {
-    return panePids;
-  }
-  return panePids;
+  cachedConfig = { cfg, readAt: now };
+  return cfg;
 }
 
 // One `ps` pass over the whole process table. Empty on any failure (exotic
 // platform / different flags) so discovery degrades to no-op and fleet behaves as
 // pre-Phase-3 (the pane stays SHELL).
-function readPsTable(): string[] {
+export function readPsTable(): string[] {
   try {
     const p = Bun.spawnSync({ cmd: ['ps', '-eo', 'pid=,ppid=,comm='], stdout: 'pipe', stderr: 'pipe' });
     if (p.exitCode !== 0) return [];
@@ -345,21 +316,21 @@ function readPsTable(): string[] {
 }
 
 // Thin I/O wrapper the slow loop calls. `captures` are the per-pane lines already
-// taken for the scrape cache this tick (paneId -> captured lines), threaded in so
-// discovery adds ZERO extra capture-pane calls — only one `ps` and one
-// `list-panes`. `lastWorking` is carried across ticks by the caller. Returns the
-// discovered agents plus the pruned lastWorking to persist for the next tick.
+// taken for the scrape cache this tick (paneId -> captured lines), and `panePids`
+// + `psTable` come from the caller's single list-panes + ps pass, so discovery
+// adds ZERO extra subprocess spawns. `lastWorking` is carried across ticks by the
+// caller. Returns the discovered agents plus the pruned lastWorking to persist
+// for the next tick.
 export function scanDiscovered(
   captures: Map<string, string[]>,
+  panePids: Map<number, string>,
+  psTable: string[],
   lastWorking: Map<string, number>,
   now: number,
   config?: DiscoveryConfig,
 ): { agents: DiscoveredAgent[]; lastWorking: Map<string, number> } {
   const cfg = config ?? readDiscoveryConfig();
   if (!cfg.enabled) return { agents: [], lastWorking: new Map() };
-
-  const panePids = readPanePids();
-  const psTable = readPsTable();
 
   // Reduce each pane's captured lines to the bottom-of-pane window as one string
   // for the glyph check.

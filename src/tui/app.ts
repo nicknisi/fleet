@@ -54,10 +54,21 @@ export class TuiApp {
   pulsePhase: boolean = false;
   private lastClickPaneId: string | null = null;
   private lastClickTs: number = 0;
+  // visibleStates()/dashboardRows() are pure over (states, filter) but consumed
+  // several times per frame (render, selection, hit-testing) — memoized here
+  // and invalidated by the only mutations that change them.
+  private visibleCache: AgentState[] | null = null;
+  private rowsCache: DashboardRow[] | null = null;
+
+  private invalidateViews(): void {
+    this.visibleCache = null;
+    this.rowsCache = null;
+  }
 
   updateStates(newStates: AgentState[]): void {
     const selectedPaneId = this.selectedState()?.paneId ?? null;
     this.states = newStates;
+    this.invalidateViews();
 
     if (this.hoverPaneId && !newStates.some((s) => s.paneId === this.hoverPaneId)) {
       this.hoverPaneId = null;
@@ -88,6 +99,7 @@ export class TuiApp {
   // group, rows sort by urgency then window name. dashboardRows() derives from
   // this, so selection indices stay valid against this list.
   visibleStates(): AgentState[] {
+    if (this.visibleCache) return this.visibleCache;
     const sorted = this.sortedStates();
     const noShell = sorted.filter((s) => s.status !== AgentStatus.SHELL && s.status !== AgentStatus.DOWN);
     const filtered = this.applyFilter(noShell);
@@ -108,10 +120,12 @@ export class TuiApp {
       });
       out.push(...members);
     }
+    this.visibleCache = out;
     return out;
   }
 
   dashboardRows(): DashboardRow[] {
+    if (this.rowsCache) return this.rowsCache;
     const states = this.visibleStates();
     const rows: DashboardRow[] = [];
     let i = 0;
@@ -134,6 +148,7 @@ export class TuiApp {
       }
       i = j;
     }
+    this.rowsCache = rows;
     return rows;
   }
 
@@ -173,6 +188,7 @@ export class TuiApp {
     this.filter = text;
     this.filtering = true;
     this.selectedIndex = 0;
+    this.invalidateViews();
   }
 
   getFilter(): string {
@@ -187,6 +203,7 @@ export class TuiApp {
     this.filter = '';
     this.filtering = false;
     this.selectedIndex = 0;
+    this.invalidateViews();
   }
 
   enterSend(): void {

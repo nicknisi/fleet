@@ -1,24 +1,14 @@
-import { tmux } from './ipc.ts';
+import { walkToPane } from '../agents/discovery.ts';
 
 export interface PanePort {
   paneId: string;
   port: number;
 }
 
-export function detectPorts(): PanePort[] {
-  const paneResult = tmux(['list-panes', '-a', '-F', '#{pane_id}:#{pane_pid}']);
-  if (paneResult.exitCode !== 0) return [];
-
-  const panePids = new Map<number, string>();
-  for (const line of paneResult.stdout.split('\n')) {
-    if (line.length === 0) continue;
-    const [paneId, pidStr] = line.split(':');
-    if (paneId && pidStr) {
-      const pid = parseInt(pidStr, 10);
-      if (!Number.isNaN(pid)) panePids.set(pid, paneId);
-    }
-  }
-
+// Map listening TCP ports to the tmux pane hosting the listener. `panePids`
+// (pane_pid -> paneId) and `ppidByPid` come from the caller's single
+// list-panes + ps pass, so this adds only the one `lsof` spawn.
+export function detectPorts(panePids: Map<number, string>, ppidByPid: Map<number, number>): PanePort[] {
   if (panePids.size === 0) return [];
 
   const proc = Bun.spawnSync({
@@ -39,7 +29,7 @@ export function detectPorts(): PanePort[] {
       if (match) {
         const port = parseInt(match[1]!, 10);
         if (port >= 1024) {
-          const paneId = findPaneForPid(currentPid, panePids);
+          const paneId = walkToPane(currentPid, ppidByPid, panePids);
           if (paneId) {
             results.push({ paneId, port });
           }
@@ -49,24 +39,4 @@ export function detectPorts(): PanePort[] {
   }
 
   return results;
-}
-
-function findPaneForPid(pid: number, panePids: Map<number, string>): string | null {
-  let checkPid = pid;
-  const visited = new Set<number>();
-  while (checkPid > 1 && !visited.has(checkPid)) {
-    visited.add(checkPid);
-    const paneId = panePids.get(checkPid);
-    if (paneId) return paneId;
-    const proc = Bun.spawnSync({
-      cmd: ['ps', '-o', 'ppid=', '-p', String(checkPid)],
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    if (proc.exitCode !== 0) break;
-    const ppid = parseInt(proc.stdout.toString().trim(), 10);
-    if (Number.isNaN(ppid) || ppid <= 1) break;
-    checkPid = ppid;
-  }
-  return null;
 }

@@ -1,4 +1,6 @@
 // src/terminal/theme.ts
+import { getTmuxOption } from '../tmux/ipc.ts';
+
 export type ThemeMode = 'light' | 'dark';
 
 export interface Rgb {
@@ -77,14 +79,7 @@ export function shouldQueryOsc(env: { TMUX?: string; FLEET_THEME?: string }, tmu
 // ---- I/O section: reads env/tmux/OS and performs the OSC 11 round-trip ----
 
 export function readTmuxThemeOption(): string | null {
-  try {
-    const p = Bun.spawnSync({ cmd: ['tmux', 'show', '-gqv', '@fleet-theme'], stdout: 'pipe', stderr: 'pipe' });
-    if (p.exitCode !== 0) return null;
-    const v = p.stdout.toString().trim();
-    return v.length > 0 ? v : null;
-  } catch {
-    return null;
-  }
+  return getTmuxOption('@fleet-theme');
 }
 
 export function readMacAppearance(): 'Dark' | 'Light' | null {

@@ -4,7 +4,7 @@ import { disableColors } from '../terminal/colors.ts';
 disableColors();
 
 import { computeColumnWidths, paneTitle, renderHeader, renderSessionList, stateAtLine } from './dashboard.ts';
-import { TuiApp, type Summary } from './app.ts';
+import { TuiApp } from './app.ts';
 import { stripAnsi, visibleLength } from '../terminal/ansi.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 
@@ -270,24 +270,15 @@ describe('header summary strip', () => {
 });
 
 describe('paneTitle', () => {
-  const summary = (extra: Partial<Summary> = {}): Summary => ({
-    total: 0,
-    permit: 0,
-    question: 0,
-    done: 0,
-    busy: 0,
-    ...extra,
-  });
-
-  test('identifies the app when the fleet is quiet', () => {
-    expect(paneTitle(summary(), 0)).toBe('fleet');
+  test('identifies the app', () => {
+    expect(paneTitle()).toBe('fleet');
   });
 
   test('never starts with the Claude title marker', () => {
     // extractClaudeName treats a leading ✳ as "this pane is a Claude agent";
     // fleet's own title must never be mistaken for one.
-    const busy = paneTitle(summary({ total: 5, busy: 2, permit: 1, question: 1, done: 1 }), 0);
-    expect(busy.startsWith('✳')).toBe(false);
-    expect(busy.length).toBeGreaterThan(0);
+    const title = paneTitle();
+    expect(title.startsWith('✳')).toBe(false);
+    expect(title.length).toBeGreaterThan(0);
   });
 });

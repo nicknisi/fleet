@@ -8,53 +8,80 @@ export type KeyEvent =
   | { type: 'ctrl'; char: string }
   | { type: 'unknown' };
 
-export function parseKeyEvent(data: Buffer): KeyEvent {
-  if (data.length === 0) return { type: 'unknown' };
+// Parse one key event starting at `offset`, returning the event and the offset
+// just past its bytes — so a read that coalesced several keystrokes (fast
+// typing, SSH batching, paste) yields every key instead of only the first.
+function parseOneKey(data: Buffer, offset: number): { event: KeyEvent; next: number } {
+  const first = data[offset]!;
 
-  const first = data[0]!;
-
-  // Escape sequence (arrows, etc.)
+  // Escape sequence (arrows, other CSI)
   if (first === 0x1b) {
-    if (data.length === 1) return { type: 'escape' };
-    if (data.length >= 3 && data[1] === 0x5b /* '[' */) {
-      const final = data[2];
-      switch (final) {
-        case 0x41 /* A */:
-          return { type: 'arrow', direction: 'up' };
-        case 0x42 /* B */:
-          return { type: 'arrow', direction: 'down' };
-        case 0x43 /* C */:
-          return { type: 'arrow', direction: 'right' };
-        case 0x44 /* D */:
-          return { type: 'arrow', direction: 'left' };
-        default:
-          return { type: 'unknown' };
+    if (data[offset + 1] === 0x5b /* '[' */) {
+      // Consume the full CSI sequence: parameters, then a final byte @-~.
+      let i = offset + 2;
+      while (i < data.length) {
+        const b = data[i]!;
+        i++;
+        if (b >= 0x40 && b <= 0x7e) {
+          if (i - offset === 3) {
+            switch (b) {
+              case 0x41 /* A */:
+                return { event: { type: 'arrow', direction: 'up' }, next: i };
+              case 0x42 /* B */:
+                return { event: { type: 'arrow', direction: 'down' }, next: i };
+              case 0x43 /* C */:
+                return { event: { type: 'arrow', direction: 'right' }, next: i };
+              case 0x44 /* D */:
+                return { event: { type: 'arrow', direction: 'left' }, next: i };
+            }
+          }
+          return { event: { type: 'unknown' }, next: i };
+        }
       }
+      // Incomplete CSI at end of buffer — treat as escape, drop the tail.
+      return { event: { type: 'escape' }, next: data.length };
     }
-    return { type: 'escape' };
+    return { event: { type: 'escape' }, next: offset + 1 };
   }
 
   // Enter (CR only — 0x0A/LF is Ctrl-J, handled below)
-  if (first === 0x0d) return { type: 'enter' };
+  if (first === 0x0d) return { event: { type: 'enter' }, next: offset + 1 };
   // Backspace (DEL only — 0x08/BS is Ctrl-H, handled below)
-  if (first === 0x7f) return { type: 'backspace' };
-  if (first === 0x09) return { type: 'tab' };
+  if (first === 0x7f) return { event: { type: 'backspace' }, next: offset + 1 };
+  if (first === 0x09) return { event: { type: 'tab' }, next: offset + 1 };
 
-  // Control characters (Ctrl-A..Ctrl-Z except CR/LF/Tab/BS handled above)
+  // Control characters (Ctrl-A..Ctrl-Z except CR/Tab handled above)
   if (first >= 0x01 && first <= 0x1a) {
-    const char = String.fromCharCode(first + 0x60);
-    return { type: 'ctrl', char };
+    return { event: { type: 'ctrl', char: String.fromCharCode(first + 0x60) }, next: offset + 1 };
   }
 
-  // Printable ASCII + extended (multi-byte UTF-8 first byte)
+  // Printable ASCII
   if (first >= 0x20 && first <= 0x7e) {
-    return { type: 'char', char: String.fromCharCode(first) };
+    return { event: { type: 'char', char: String.fromCharCode(first) }, next: offset + 1 };
   }
 
-  // UTF-8 multi-byte
+  // UTF-8 multi-byte lead — length from the lead byte, clamped to the buffer.
   if (first >= 0xc0) {
-    return { type: 'char', char: data.toString('utf8') };
+    const len = first >= 0xf0 ? 4 : first >= 0xe0 ? 3 : 2;
+    const end = Math.min(offset + len, data.length);
+    return { event: { type: 'char', char: data.subarray(offset, end).toString('utf8') }, next: end };
   }
 
-  return { type: 'unknown' };
+  return { event: { type: 'unknown' }, next: offset + 1 };
+}
+
+export function parseKeyEvents(data: Buffer): KeyEvent[] {
+  const events: KeyEvent[] = [];
+  let offset = 0;
+  while (offset < data.length) {
+    const { event, next } = parseOneKey(data, offset);
+    events.push(event);
+    offset = next;
+  }
+  return events;
+}
+
+export function parseKeyEvent(data: Buffer): KeyEvent {
+  if (data.length === 0) return { type: 'unknown' };
+  return parseOneKey(data, 0).event;
 }

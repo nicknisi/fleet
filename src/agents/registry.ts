@@ -14,8 +14,4 @@ export class AgentRegistry {
   statusDirs(): string[] {
     return this.dirs.map((d) => d.statusDir);
   }
-
-  reload(): void {
-    this.dirs = loadAgentDirs();
-  }
 }

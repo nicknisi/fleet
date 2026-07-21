@@ -1,6 +1,18 @@
 import { C } from '../../terminal/colors.ts';
-import { AgentStatus, STATUS_DISPLAY, sessionDisplay, windowLabel, type AgentState } from '../../state/types.ts';
+import {
+  AgentStatus,
+  STATUS_DISPLAY,
+  formatAgeDelta,
+  sessionDisplay,
+  windowLabel,
+  type AgentState,
+} from '../../state/types.ts';
 import type { DashboardRow } from '../app.ts';
+
+// Bracketed key hint (e.g. `[q]`), shared by the footer and preview chrome.
+export function chip(key: string): string {
+  return `${C.dim}[${C.reset}${C.bold}${key}${C.reset}${C.dim}]${C.reset}`;
+}
 
 // One entry per rendered line: states[i] is the agent on lines[i], or null for
 // chrome lines (headers, separators, indicators). Render and hit-testing both
@@ -57,12 +69,7 @@ export function getAgeColor(ts: number): string {
 }
 
 export function formatAge(ts: number): string {
-  const secs = Math.max(0, Math.floor(Date.now() / 1000) - ts);
-  if (secs < 5) return 'now';
-  if (secs < 60) return `${secs}s`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
-  return `${Math.floor(secs / 86400)}d`;
+  return formatAgeDelta(Math.floor(Date.now() / 1000) - ts);
 }
 
 export function calculateScroll(selected: number, viewHeight: number, total: number): number {

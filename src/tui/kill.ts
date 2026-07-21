@@ -1,5 +1,5 @@
 import { C } from '../terminal/colors.ts';
-import { AgentStatus, windowLabel, type AgentState } from '../state/types.ts';
+import { AgentStatus, whereLabel, type AgentState } from '../state/types.ts';
 
 // Killing is destructive, so it gets the same state gating as send: refuse the
 // states where the agent is mid-thought or blocked on you. You can still reap
@@ -23,8 +23,7 @@ export function canKillSession(state: AgentState): { ok: boolean; reason: string
 export function renderKillConfirm(state: AgentState): string[] {
   const lines: string[] = [];
   const check = canKillSession(state);
-  const windowName = windowLabel(state);
-  const where = windowName === state.session ? state.session : `${windowName} [${state.session}]`;
+  const where = whereLabel(state);
   const label = state.claudeName ? `${where} (${state.claudeName})` : where;
 
   lines.push(`${C.bold}Kill ${label}?${C.reset}`);

@@ -6,11 +6,9 @@ export interface FuseInput {
   hookState: string;
   hookTs: number;
   eventStatus: AgentStatus | null;
-  eventTs?: number | null; // NEW (optional): last event ts, for the trace only
+  eventTs?: number | null; // last event ts — anchors BUSY decay and the trace
   scrapeStatus: AgentStatus | null;
-  scrapeRuleId?: string | null; // NEW (optional): matched scraper rule, for the trace only
-  currentStatus: AgentStatus;
-  currentTs: number;
+  scrapeRuleId?: string | null; // matched scraper rule, for the trace only
 }
 
 export interface FuseResult {
@@ -36,6 +34,24 @@ function mapHookState(state: string): AgentStatus {
   }
 }
 
+// Inverse of mapHookState for the write path (verifyPaneState persists a
+// scraped correction as a hook state). Kept next to its twin so the wire
+// vocabulary can't drift between the read and write sides.
+export function hookStateForStatus(status: AgentStatus): string {
+  switch (status) {
+    case AgentStatus.PERMIT:
+      return 'permit';
+    case AgentStatus.QUESTION:
+      return 'question';
+    case AgentStatus.DONE:
+      return 'done';
+    case AgentStatus.BUSY:
+      return 'working';
+    default:
+      return 'idle';
+  }
+}
+
 // Status for a hook-less discovered agent — the same fusion as the hook path
 // with the hook layer silenced. The scraper's positive reads (an on-screen
 // permission prompt, question dialog, or live token counter) outrank the
@@ -48,8 +64,6 @@ export function fuseDiscoveredState(working: boolean, scrapeStatus: AgentStatus 
     hookTs: now, // anchors the BUSY decay window at "fresh" so it can't fire here
     eventStatus: working ? AgentStatus.BUSY : null,
     scrapeStatus,
-    currentStatus: AgentStatus.IDLE,
-    currentTs: 0,
   }).status;
 }
 
@@ -65,7 +79,6 @@ export function fuseState(input: FuseInput): FuseResult {
     winner: 'hook',
     reason: '',
     workingTimeoutFired: false,
-    freshnessEvaluated: false,
     scrapeRuleId: input.scrapeRuleId ?? null,
   };
   const finish = (status: AgentStatus, winner: StateDecision['winner'], reason: string): FuseResult => {
@@ -74,28 +87,6 @@ export function fuseState(input: FuseInput): FuseResult {
     decision.reason = reason;
     return { status, decision };
   };
-
-  // Freshness invariant: a newer in-memory state beats a staler hook write.
-  // DEAD in live — index.ts passes currentTs=0, currentStatus=IDLE, so the second
-  // clause is always false and this branch never fires outside engine.test.ts.
-  if (input.hookTs <= input.currentTs && input.currentStatus !== AgentStatus.IDLE) {
-    decision.freshnessEvaluated = true;
-    const age = now - input.currentTs;
-    // A stuck "working" eventually retires — a crashed turn shouldn't spin
-    // forever. But DONE never auto-decays: a finished turn is waiting on you and
-    // stays "ready" until you actually act on it (switch to it, send, or it
-    // starts working again). Timing out a pending hand-off into "idle" is what
-    // made questions silently disappear.
-    if (input.currentStatus === AgentStatus.BUSY && age >= WORKING_TIMEOUT_SECS) {
-      decision.workingTimeoutFired = true;
-      return finish(AgentStatus.IDLE, 'default', `stale in-memory BUSY aged ${age}s ≥ ${WORKING_TIMEOUT_SECS}s`);
-    }
-    return finish(
-      input.currentStatus,
-      'default',
-      'freshness invariant: newer in-memory state kept over a staler hook write',
-    );
-  }
 
   // The scraper reliably reads permission prompts ([y/n], "Do you want to…") and
   // question dialogs ("Enter to select") — fixed on-screen strings the hook layer
@@ -110,10 +101,12 @@ export function fuseState(input: FuseInput): FuseResult {
 
   // Derive the hook/event activity status — the reliable BUSY/DONE signal.
   // PreToolUse fires the instant a tool runs; Stop fires when a turn ends.
+  // Decay anchors to the freshest activity signal (hook write OR event), so a
+  // fresh event-derived BUSY can't be retired by a stale hook ts.
   let derived = input.eventStatus ?? hookCandidate;
   const fromEvent = input.eventStatus !== null;
-  const hookAge = now - input.hookTs;
-  if (derived === AgentStatus.BUSY && hookAge >= WORKING_TIMEOUT_SECS) {
+  const activityAge = now - Math.max(input.hookTs, input.eventTs ?? 0);
+  if (derived === AgentStatus.BUSY && activityAge >= WORKING_TIMEOUT_SECS) {
     derived = AgentStatus.IDLE;
     decision.workingTimeoutFired = true;
   }
@@ -137,7 +130,7 @@ export function fuseState(input: FuseInput): FuseResult {
   // scrape null falls here too).
   const winner: StateDecision['winner'] = decision.workingTimeoutFired ? 'default' : fromEvent ? 'event' : 'hook';
   const reason = decision.workingTimeoutFired
-    ? `hook BUSY aged ${hookAge}s ≥ ${WORKING_TIMEOUT_SECS}s — decayed to idle`
+    ? `BUSY aged ${activityAge}s ≥ ${WORKING_TIMEOUT_SECS}s — decayed to idle`
     : fromEvent
       ? 'derived from the latest JSONL event'
       : 'derived from the hook status file';

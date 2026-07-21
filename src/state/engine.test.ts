@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { fuseDiscoveredState, fuseState } from './engine.ts';
+import { fuseDiscoveredState, fuseState, hookStateForStatus } from './engine.ts';
 import { AgentStatus } from './types.ts';
 
 describe('fuseDiscoveredState', () => {
@@ -31,6 +31,18 @@ describe('fuseDiscoveredState', () => {
   });
 });
 
+describe('hookStateForStatus', () => {
+  test('round-trips every status the write path persists', () => {
+    // The inverse of mapHookState for the states verifyPaneState writes.
+    expect(hookStateForStatus(AgentStatus.PERMIT)).toBe('permit');
+    expect(hookStateForStatus(AgentStatus.QUESTION)).toBe('question');
+    expect(hookStateForStatus(AgentStatus.DONE)).toBe('done');
+    expect(hookStateForStatus(AgentStatus.BUSY)).toBe('working');
+    expect(hookStateForStatus(AgentStatus.IDLE)).toBe('idle');
+    expect(hookStateForStatus(AgentStatus.SHELL)).toBe('idle');
+  });
+});
+
 describe('fuseState', () => {
   const now = Math.floor(Date.now() / 1000);
 
@@ -40,26 +52,9 @@ describe('fuseState', () => {
       hookTs: now,
       eventStatus: null,
       scrapeStatus: null,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: now - 10,
     });
     expect(result.status).toBe(AgentStatus.BUSY);
     expect(result.decision.winner).toBe('hook');
-  });
-
-  test('freshness invariant rejects stale hook data', () => {
-    const result = fuseState({
-      hookState: 'working',
-      hookTs: now - 100,
-      eventStatus: null,
-      scrapeStatus: null,
-      currentStatus: AgentStatus.DONE,
-      currentTs: now - 5,
-    });
-    expect(result.status).toBe(AgentStatus.DONE);
-    // Only the stale-hook shape reaches the freshness branch.
-    expect(result.decision.freshnessEvaluated).toBe(true);
-    expect(result.decision.winner).toBe('default');
   });
 
   test('event layer overrides hook when more specific', () => {
@@ -68,8 +63,6 @@ describe('fuseState', () => {
       hookTs: now,
       eventStatus: AgentStatus.BUSY,
       scrapeStatus: null,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: now - 10,
     });
     expect(result.status).toBe(AgentStatus.BUSY);
     expect(result.decision.winner).toBe('event');
@@ -82,8 +75,6 @@ describe('fuseState', () => {
       eventStatus: AgentStatus.BUSY,
       scrapeStatus: AgentStatus.PERMIT,
       scrapeRuleId: 'permit.yn',
-      currentStatus: AgentStatus.BUSY,
-      currentTs: now - 5,
     });
     expect(result.status).toBe(AgentStatus.PERMIT);
     expect(result.decision.winner).toBe('scrape');
@@ -97,8 +88,6 @@ describe('fuseState', () => {
       hookTs: now,
       eventStatus: null,
       scrapeStatus: AgentStatus.PERMIT,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: now - 10,
     });
     expect(result.status).toBe(AgentStatus.PERMIT);
     expect(result.decision.winner).toBe('scrape');
@@ -112,13 +101,8 @@ describe('fuseState', () => {
       hookTs: now - 3600,
       eventStatus: null,
       scrapeStatus: null,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: 0,
     });
     expect(result.status).toBe(AgentStatus.DONE);
-    // Live wiring (currentStatus: IDLE, currentTs: 0) never reaches the freshness
-    // branch — this is the invariant fleet explain reports as "not evaluated".
-    expect(result.decision.freshnessEvaluated).toBe(false);
   });
 
   test('maps waiting to PERMIT', () => {
@@ -127,8 +111,6 @@ describe('fuseState', () => {
       hookTs: now,
       eventStatus: null,
       scrapeStatus: null,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: now - 10,
     });
     expect(result.status).toBe(AgentStatus.PERMIT);
   });
@@ -141,8 +123,6 @@ describe('fuseState', () => {
       hookTs: now,
       eventStatus: null,
       scrapeStatus: AgentStatus.IDLE,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: 0,
     });
     expect(result.status).toBe(AgentStatus.BUSY);
   });
@@ -155,8 +135,6 @@ describe('fuseState', () => {
       hookTs: now - 5,
       eventStatus: null,
       scrapeStatus: AgentStatus.IDLE,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: 0,
     });
     expect(result.status).toBe(AgentStatus.IDLE);
     expect(result.decision.winner).toBe('scrape');
@@ -168,8 +146,6 @@ describe('fuseState', () => {
       hookTs: now,
       eventStatus: null,
       scrapeStatus: AgentStatus.BUSY,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: 0,
     });
     expect(result.status).toBe(AgentStatus.BUSY);
     expect(result.decision.winner).toBe('scrape');
@@ -185,8 +161,6 @@ describe('fuseState', () => {
       hookTs: now,
       eventStatus: null,
       scrapeStatus: AgentStatus.IDLE,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: 0,
     });
     expect(result.status).toBe(AgentStatus.DONE);
   });
@@ -197,11 +171,35 @@ describe('fuseState', () => {
       hookTs: now - 200,
       eventStatus: null,
       scrapeStatus: null,
-      currentStatus: AgentStatus.IDLE,
-      currentTs: 0,
     });
     expect(result.status).toBe(AgentStatus.IDLE);
     expect(result.decision.workingTimeoutFired).toBe(true);
     expect(result.decision.winner).toBe('default');
+  });
+
+  test('a fresh event BUSY is not decayed by a stale hook ts', () => {
+    // Decay anchors to the freshest activity signal: a long single tool run
+    // keeps the event ts fresh even when the status file has gone stale.
+    const result = fuseState({
+      hookState: 'working',
+      hookTs: now - 200,
+      eventStatus: AgentStatus.BUSY,
+      eventTs: now - 10,
+      scrapeStatus: null,
+    });
+    expect(result.status).toBe(AgentStatus.BUSY);
+    expect(result.decision.workingTimeoutFired).toBe(false);
+  });
+
+  test('event BUSY with a stale event ts still decays', () => {
+    const result = fuseState({
+      hookState: 'working',
+      hookTs: now - 300,
+      eventStatus: AgentStatus.BUSY,
+      eventTs: now - 200,
+      scrapeStatus: null,
+    });
+    expect(result.status).toBe(AgentStatus.IDLE);
+    expect(result.decision.workingTimeoutFired).toBe(true);
   });
 });
