@@ -36,6 +36,31 @@ export function compareStatus(a: AgentStatus, b: AgentStatus): number {
   return PRIORITY[a] - PRIORITY[b];
 }
 
+// Statuses where it's the user's turn to act: blocked on a permission prompt,
+// asking a question, or finished and waiting on the next move. The single
+// source of truth for "needs you" — the status line, window tints, and
+// `fleet next` all consume this set.
+export const ATTENTION_STATES: ReadonlySet<AgentStatus> = new Set([
+  AgentStatus.PERMIT,
+  AgentStatus.QUESTION,
+  AgentStatus.DONE,
+]);
+
+export function needsAttention(status: AgentStatus): boolean {
+  return ATTENTION_STATES.has(status);
+}
+
+// Compact age string shared by the TUI, status line, and explain trace.
+// Takes a delta (not a ts) so callers under test stay deterministic.
+export function formatAgeDelta(deltaSecs: number): string {
+  const d = Math.max(0, deltaSecs);
+  if (d < 5) return 'now';
+  if (d < 60) return `${d}s`;
+  if (d < 3600) return `${Math.floor(d / 60)}m`;
+  if (d < 86400) return `${Math.floor(d / 3600)}h`;
+  return `${Math.floor(d / 86400)}d`;
+}
+
 // `color` is a tmux color name (not a hex value): it is consumed only by the
 // tmux status line via `#[fg=...]`, where named colors resolve against the
 // terminal's own palette so they stay readable on light and dark themes alike.
@@ -66,6 +91,9 @@ export interface AgentState {
   ports: number[];
   ts: number;
   agentType: string;
+  // Raw #{pane_title} (optional — populated by refreshStates so explain can
+  // trace the same title rules the live fusion used).
+  paneTitle?: string;
 }
 
 export function extractClaudeName(paneTitle: string): string | null {
@@ -86,6 +114,13 @@ export const FLEET_PANE_TITLE = 'fleet';
 export function sessionLabel(state: AgentState): string {
   const label = windowLabel(state);
   return label === state.session ? state.session : `${state.session}:${label}`;
+}
+
+// Bracketed variant for modal headers (preview, kill confirm): the window
+// label with the session in brackets when they differ.
+export function whereLabel(state: AgentState): string {
+  const label = windowLabel(state);
+  return label === state.session ? state.session : `${label} [${state.session}]`;
 }
 
 // Window-first label: the window name is what distinguishes agents; the
@@ -161,6 +196,5 @@ export interface StateDecision {
   winner: 'hook' | 'event' | 'scrape' | 'default';
   reason: string; // human-readable why
   workingTimeoutFired: boolean;
-  freshnessEvaluated: boolean; // MUST be false under live wiring — see engine notes
   scrapeRuleId: string | null;
 }

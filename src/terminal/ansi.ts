@@ -1,5 +1,7 @@
+// CSI sequences, plus OSC strings (hyperlinks, titles) terminated by BEL/ST —
+// an unterminated OSC (truncated capture) strips to end of string.
 // oxlint-disable-next-line no-control-regex
-const ANSI_PATTERN = /\x1b\[[0-9;:]*[@-~]/g;
+const ANSI_PATTERN = /\x1b(?:\[[0-9;:]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?)/g;
 
 export function stripAnsi(value: string): string {
   return value.replace(ANSI_PATTERN, '');
@@ -17,11 +19,20 @@ export function oscTitle(title: string): string {
 
 function charWidth(codePoint: number): number {
   if (codePoint < 0x20 || codePoint === 0x7f) return 0;
-  // Zero-width joiners, variation selectors.
+  // Zero-width: joiners, variation selectors (incl. the supplement plane),
+  // and combining marks (diacriticals, kana voicing, half marks) — these
+  // attach to the previous glyph and occupy no column of their own.
   if (
     codePoint === 0xfe0f ||
     (codePoint >= 0x200d && codePoint <= 0x200f) ||
-    (codePoint >= 0xfe00 && codePoint <= 0xfe0e)
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0e) ||
+    (codePoint >= 0x0300 && codePoint <= 0x036f) ||
+    (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+    (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+    (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
+    (codePoint >= 0x3099 && codePoint <= 0x309a) ||
+    (codePoint >= 0xfe20 && codePoint <= 0xfe2f) ||
+    (codePoint >= 0xe0100 && codePoint <= 0xe01ef)
   )
     return 0;
   // Wide: CJK, emoji, fullwidth forms.
@@ -34,8 +45,7 @@ function charWidth(codePoint: number): number {
     (codePoint >= 0xff01 && codePoint <= 0xff60) ||
     (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
     (codePoint >= 0x1f000 && codePoint <= 0x1fbff) ||
-    (codePoint >= 0x20000 && codePoint <= 0x3ffff) ||
-    (codePoint >= 0xe0100 && codePoint <= 0xe01ef)
+    (codePoint >= 0x20000 && codePoint <= 0x3ffff)
   )
     return 2;
   return 1;
@@ -93,6 +103,25 @@ export function truncateAnsi(value: string, maxWidth: number): string {
         i += 1;
         const code = next.charCodeAt(0);
         if (code >= 0x40 && code <= 0x7e) {
+          break;
+        }
+      }
+      continue;
+    }
+    // OSC string (hyperlink, title): copy through to BEL / ST so truncation
+    // can't split it mid-sequence; its bytes are zero-width.
+    if (ch === '\x1b' && value[i + 1] === ']') {
+      output += ch;
+      output += value[i + 1]!;
+      i += 2;
+      while (i < value.length) {
+        const next = value[i]!;
+        output += next;
+        i += 1;
+        if (next === '\x07') break;
+        if (next === '\x1b' && value[i] === '\\') {
+          output += value[i]!;
+          i += 1;
           break;
         }
       }

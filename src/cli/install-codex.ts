@@ -199,6 +199,18 @@ export function removeAgentEntry(path: string, name: string): void {
   writeFileSync(path, JSON.stringify({ agents: kept }, null, 2) + '\n');
 }
 
+// Agents present before an install, guaranteed to include a claude entry even
+// when ~/.cache/claude-status doesn't exist yet: agents.json PREEMPTS the
+// fallback once written, so an agent-first user who later runs Claude would
+// otherwise find it hidden. Shared by the codex and pi installers.
+export function seededAgentDirs(): AgentDir[] {
+  const seed = loadAgentDirs();
+  if (!seed.some((a) => a.name === 'claude')) {
+    seed.unshift({ name: 'claude', statusDir: '~/.cache/claude-status' });
+  }
+  return seed;
+}
+
 // --- top-level commands --------------------------------------------------------
 export function runInstallCodex(): number {
   const fleetDir = fleetPluginDir();
@@ -213,13 +225,8 @@ export function runInstallCodex(): number {
 
   // Snapshot the agents that exist BEFORE this install (so the mkdir below doesn't
   // pull a half-formed codex into the fallback) — this seeds a fresh agents.json
-  // without dropping them. Guarantee a claude entry even when ~/.cache/claude-status
-  // doesn't exist yet: agents.json PREEMPTS the fallback once written, so a
-  // Codex-first user who later runs Claude would otherwise find it hidden.
-  const seed = loadAgentDirs();
-  if (!seed.some((a) => a.name === 'claude')) {
-    seed.unshift({ name: 'claude', statusDir: '~/.cache/claude-status' });
-  }
+  // without dropping them.
+  const seed = seededAgentDirs();
 
   // Stable, upgrade-safe path for Codex to reference (no $CLAUDE_PLUGIN_ROOT, and
   // a Homebrew keg path changes on upgrade). Re-pointed on every install.

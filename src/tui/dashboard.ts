@@ -1,11 +1,11 @@
 import { C } from '../terminal/colors.ts';
 import { truncateAnsi } from '../terminal/ansi.ts';
 import { AgentStatus, FLEET_PANE_TITLE, type AgentState } from '../state/types.ts';
-import { TuiMode, type TuiApp, type Summary } from './app.ts';
+import { TuiMode, type TuiApp } from './app.ts';
 import { buildTableLines } from './layouts/table.ts';
 import { buildCardLines } from './layouts/cards.ts';
 import { pickLayout } from './layouts/index.ts';
-import { windowLines, type LayoutLines } from './layouts/shared.ts';
+import { chip, windowLines, type LayoutLines } from './layouts/shared.ts';
 
 const BOX_H = '─';
 
@@ -38,11 +38,10 @@ function logo(): string {
 // which extractClaudeName treats as a Claude agent marker.
 //
 // TODO(nicknisi): decide what the window name says in each state — e.g.
-// all quiet vs. "fleet ◉2" (busy) vs. "fleet ⚠1" (needs you). Inputs:
-// s.busy / s.permit / s.question / s.done, and shellCount to derive the
-// agent count like renderHeader does. Keep it short — it lives in the
-// tmux status bar next to your other window names.
-export function paneTitle(_s: Summary, _shellCount: number): string {
+// all quiet vs. "fleet ◉2" (busy) vs. "fleet ⚠1" (needs you). Inputs would
+// be app.summary() / app.shellCount() (add parameters back then). Keep it
+// short — it lives in the tmux status bar next to your other window names.
+export function paneTitle(): string {
   return FLEET_PANE_TITLE;
 }
 
@@ -67,11 +66,11 @@ function buildLines(app: TuiApp, cols: number): LayoutLines {
   return pickLayout(cols) === 'cards' ? buildCardLines(app, cols) : buildTableLines(app, cols);
 }
 
-// Line index (chrome lines included) of the selected agent within built lines.
-function selectedLineIndex(app: TuiApp, cols: number): number {
+// Line index (chrome lines included) of the selected agent within `built` —
+// takes the already-built lines so callers never build the layout twice.
+function selectedLineIndex(app: TuiApp, built: LayoutLines): number {
   const selected = app.selectedState();
   if (!selected) return 0;
-  const built = buildLines(app, cols);
   return Math.max(
     0,
     built.states.findIndex((s) => s?.paneId === selected.paneId),
@@ -106,14 +105,16 @@ export function renderSessionList(app: TuiApp, maxRows: number, cols: number): s
     return lines;
   }
 
-  return windowLines(buildLines(app, cols), selectedLineIndex(app, cols), maxRows).lines;
+  const built = buildLines(app, cols);
+  return windowLines(built, selectedLineIndex(app, built), maxRows).lines;
 }
 
 // Map a clicked session-list line (0 = first rendered line) back to the agent
 // on that line, accounting for scroll, header rows, and scroll indicators.
 // Chrome lines (headers, indicators) map to null.
 export function stateAtLine(app: TuiApp, lineIdx: number, maxRows: number, cols: number): AgentState | null {
-  const windowed = windowLines(buildLines(app, cols), selectedLineIndex(app, cols), maxRows);
+  const built = buildLines(app, cols);
+  const windowed = windowLines(built, selectedLineIndex(app, built), maxRows);
   return windowed.states[lineIdx] ?? null;
 }
 
@@ -180,10 +181,6 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
   }
 
   return lines;
-}
-
-function chip(key: string): string {
-  return `${C.dim}[${C.reset}${C.bold}${key}${C.reset}${C.dim}]${C.reset}`;
 }
 
 export { computeColumnWidths, type ColumnWidths } from './layouts/table.ts';

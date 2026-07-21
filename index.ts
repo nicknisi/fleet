@@ -4,7 +4,7 @@ import { render } from './src/tui/render.ts';
 import { paneTitle, renderFooter, renderHeader, stateAtLine } from './src/tui/dashboard.ts';
 import { canSendTo } from './src/tui/send.ts';
 import { canKillSession } from './src/tui/kill.ts';
-import { parseKeyEvent } from './src/terminal/input.ts';
+import { parseKeyEvent, parseKeyEvents } from './src/terminal/input.ts';
 import { isMouseSequence, parseMouseEvent } from './src/terminal/mouse.ts';
 import {
   enterAlternateScreen,
@@ -17,26 +17,50 @@ import {
 } from './src/terminal/terminal.ts';
 import { setThemeMode, C } from './src/terminal/colors.ts';
 import { detectThemeMode } from './src/terminal/theme.ts';
-import { fuseState } from './src/state/engine.ts';
-import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
+import { fuseState, hookStateForStatus } from './src/state/engine.ts';
+import {
+  readAllStatusDirs,
+  watchStatusDirs,
+  statusFilePath,
+  eventsFilePath,
+  writeFileAtomic,
+} from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
 import { acknowledgePlan } from './src/state/acknowledge.ts';
-import { detectFromPaneContent, detectFromTitle, scrapePane, scrapePaneCapture } from './src/state/scraper.ts';
+import { detectFromPaneContent, detectFromTitle, scrapePane, capturePaneLines } from './src/state/scraper.ts';
 import { loadDetectionManifest } from './src/state/detection.ts';
 import { loadRenames, saveRename } from './src/state/rename.ts';
-import { AgentStatus, ACK_ALL_RANGE, STATUS_DISPLAY, extractClaudeName, type AgentState } from './src/state/types.ts';
+import {
+  AgentStatus,
+  ACK_ALL_RANGE,
+  STATUS_DISPLAY,
+  extractClaudeName,
+  type AgentState,
+  type ResolvedHookStatus,
+} from './src/state/types.ts';
 import { decideNotifications, applySuppression } from './src/notify/transitions.ts';
 import { deliverDesktop } from './src/notify/deliver.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import type { AgentDir } from './src/agents/config.ts';
 import {
+  parsePsTable,
   pruneDoneTracking,
+  readPsTable,
   resolveDiscoveredStatus,
   scanDiscovered,
   type DiscoveredAgent,
   type DoneTracking,
 } from './src/agents/discovery.ts';
-import { listPanesResult, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
+import {
+  listPanesResult,
+  switchClient,
+  killPane,
+  gitBranch,
+  currentPaneId,
+  type ListPanesResult,
+  type PaneInfo,
+} from './src/tmux/sessions.ts';
+import { tmux, tmuxOrNull } from './src/tmux/ipc.ts';
 import { detectPorts } from './src/tmux/ports.ts';
 import { sendKeys, sendRawKey } from './src/tmux/send.ts';
 import { runStatus } from './src/cli/status.ts';
@@ -50,8 +74,7 @@ import { runReconcile } from './src/cli/reconcile.ts';
 import { runExplain } from './src/cli/explain.ts';
 import { runStatusLineInject, runStatusLineRemove, emitWindowColors, rollupEnabled } from './src/cli/statusline.ts';
 import { runWait } from './src/cli/wait.ts';
-import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 
 const VERSION: string = packageJson.version;
 const FAST_REFRESH_MS = 500;
@@ -110,28 +133,12 @@ function verifyPaneState(state: AgentState, statusDirs: string[]): void {
   if (scraped === null) return;
   if (scraped === state.status) return;
 
-  const paneNum = state.paneId.replace('%', '');
   const now = Math.floor(Date.now() / 1000);
-  const tmuxPid = (() => {
-    try {
-      const result = Bun.spawnSync({ cmd: ['tmux', 'display-message', '-p', '#{pid}'], stdout: 'pipe' });
-      return parseInt(result.stdout.toString().trim(), 10) || 0;
-    } catch {
-      return 0;
-    }
-  })();
-
-  const hookStateMap: Record<string, string> = {
-    PERMIT: 'permit',
-    QUESTION: 'question',
-    DONE: 'done',
-    BUSY: 'working',
-    IDLE: 'idle',
-  };
-  const newHookState = hookStateMap[scraped] ?? 'idle';
+  const tmuxPid = parseInt(tmuxOrNull(['display-message', '-p', '#{pid}']) ?? '', 10) || 0;
+  const newHookState = hookStateForStatus(scraped);
 
   for (const dir of statusDirs) {
-    const file = join(dir, `${paneNum}.status`);
+    const file = statusFilePath(dir, state.paneId);
     try {
       const content = readFileSync(file, 'utf-8');
       const existing = JSON.parse(content);
@@ -151,7 +158,7 @@ function verifyPaneState(state: AgentState, statusDirs: string[]): void {
           ts: now,
           tmux_pid: tmuxPid,
         });
-        writeFileSync(file, updated + '\n');
+        writeFileAtomic(file, updated + '\n');
         scrapeCache.set(state.paneId, scraped);
         return;
       }
@@ -167,10 +174,9 @@ function verifyPaneState(state: AgentState, statusDirs: string[]): void {
 // idle). Either signal alone is enough to clear the agent. Self-gating: a
 // working/waiting/asking agent derives neither, so it's left untouched.
 function acknowledgePane(paneId: string, statusDirs: string[]): void {
-  const paneNum = paneId.replace('%', '');
   const now = Math.floor(Date.now() / 1000);
   for (const dir of statusDirs) {
-    const statusFile = join(dir, `${paneNum}.status`);
+    const statusFile = statusFilePath(dir, paneId);
     let current: Record<string, unknown>;
     try {
       current = JSON.parse(readFileSync(statusFile, 'utf-8')) as Record<string, unknown>;
@@ -179,13 +185,13 @@ function acknowledgePane(paneId: string, statusDirs: string[]): void {
     }
     if (current.pane !== paneId) continue;
 
-    const eventsFile = join(dir, `${paneNum}.events.jsonl`);
+    const eventsFile = eventsFilePath(dir, paneId);
     const recent = existsSync(eventsFile) ? readLastEvents(eventsFile, 12) : [];
     const plan = acknowledgePlan(current, recent, now);
 
     if (plan.status) {
       try {
-        writeFileSync(statusFile, JSON.stringify(plan.status) + '\n');
+        writeFileAtomic(statusFile, JSON.stringify(plan.status) + '\n');
       } catch {
         // Best effort — acknowledgement is non-critical
       }
@@ -212,27 +218,10 @@ function acknowledgeAllReady(dirs: AgentDir[]): void {
 }
 
 // Force the tmux status bar to redraw now. Without this, an ack-in-place click
-// wouldn't visibly clear until the next status-interval (~15s). Best-effort.
+// wouldn't visibly clear until the next status-interval (~15s). Best-effort:
+// tmux() swallows "not in tmux" into a non-zero exit.
 function refreshTmuxStatus(): void {
-  try {
-    Bun.spawnSync({ cmd: ['tmux', 'refresh-client', '-S'] });
-  } catch {
-    // Not in tmux, or refresh failed — non-critical
-  }
-}
-
-// The pane the user is currently focused on (active pane of the attached client's
-// current window). Returns null when tmux can't answer, which disables the
-// notifier's per-pane suppression — better a redundant toast than a missed one.
-function resolveActivePane(): string | null {
-  try {
-    const p = Bun.spawnSync({ cmd: ['tmux', 'display-message', '-p', '#{pane_id}'], stdout: 'pipe', stderr: 'pipe' });
-    if (p.exitCode !== 0) return null;
-    const v = p.stdout.toString().trim();
-    return v.length > 0 ? v : null;
-  } catch {
-    return null;
-  }
+  tmux(['refresh-client', '-S']);
 }
 
 function shortenPath(path: string): string {
@@ -247,6 +236,10 @@ function shortenPath(path: string): string {
 const branchCache = new Map<string, string | null>();
 let portCache = new Map<string, number[]>();
 const scrapeCache = new Map<string, AgentStatus | null>();
+// When the scrape cache was last rebuilt (epoch seconds). A hook/event write
+// newer than this means the screen has changed since the snapshot — the cached
+// read is stale and must not mask the fresher signal.
+let scrapeCacheTs = 0;
 // Hook-less discovery (Phase 3): paneId -> synthetic agent, rebuilt on the slow
 // tick and read on every fast tick — same lifecycle as scrapeCache/portCache.
 // discoveryLastWorking carries the spinner-debounce timestamps across slow ticks
@@ -268,7 +261,7 @@ function reloadRenameCache(): void {
   renameCache = loadRenames();
 }
 
-function refreshSlowCaches(panes: { paneId: string; currentPath: string }[], dirs: AgentDir[]): void {
+function refreshSlowCaches(panes: PaneInfo[], hookStatuses: ResolvedHookStatus[]): void {
   const paths = new Set<string>();
   for (const p of panes) paths.add(p.currentPath);
   branchCache.clear();
@@ -276,9 +269,18 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[], dir
     branchCache.set(path, gitBranch(path));
   }
 
+  // One pane_pid map (from the caller's list-panes) and one ps pass, shared by
+  // port detection and hook-less discovery — no extra tmux/ps spawns.
+  const panePids = new Map<number, string>();
+  for (const p of panes) {
+    if (!Number.isNaN(p.panePid)) panePids.set(p.panePid, p.paneId);
+  }
+  const psTable = readPsTable();
+  const { ppidByPid } = parsePsTable(psTable);
+
   const newPorts = new Map<string, number[]>();
   try {
-    for (const pp of detectPorts()) {
+    for (const pp of detectPorts(panePids, ppidByPid)) {
       const existing = newPorts.get(pp.paneId) ?? [];
       existing.push(pp.port);
       newPorts.set(pp.paneId, existing);
@@ -287,66 +289,69 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[], dir
   portCache = newPorts;
 
   // Which agent owns each pane, so the scraper picks that agent's detection
-  // manifest. Scraping runs before refreshStates derives agentType, so learn it
-  // up front from the status files. Freshness-wins on a pane-id collision across
-  // dirs — same rule as refreshStates' hookByPane.
+  // manifest. Freshness-wins on a pane-id collision across dirs — same rule as
+  // refreshStates' hookByPane.
   const paneAgent = new Map<string, { agent: string; ts: number }>();
-  for (const h of readAllStatusDirs(dirs)) {
+  for (const h of hookStatuses) {
     const prev = paneAgent.get(h.pane);
     if (!prev || h.ts > prev.ts) paneAgent.set(h.pane, { agent: h.agent, ts: h.ts });
   }
 
-  // Layer 3: pane scraping (~50ms per pane) — slow cycle only. Capture each pane
-  // ONCE and keep its lines so hook-less discovery can reuse them for the spinner
-  // check (zero extra capture-pane calls).
-  const seen = new Set<string>();
+  // Layer 3: pane scraping (~50ms per pane) — slow cycle only. Capture each
+  // pane ONCE, without classifying yet: classification needs the pane's agent
+  // identity, and hook-less panes are only named by discovery below.
   const captureCache = new Map<string, string[]>();
   for (const p of panes) {
-    seen.add(p.paneId);
-    const { status, lines } = scrapePaneCapture(p.paneId, paneAgent.get(p.paneId)?.agent ?? 'claude');
-    scrapeCache.set(p.paneId, status);
+    const lines = capturePaneLines(p.paneId);
     if (lines.length > 0) captureCache.set(p.paneId, lines);
-  }
-  for (const paneId of scrapeCache.keys()) {
-    if (!seen.has(paneId)) scrapeCache.delete(paneId);
   }
 
   // Hook-less agent discovery: map allowlisted processes with no .status file to
   // their host pane and classify working from the spinner glyph, reusing the
-  // captures above (only one ps + one list-panes call is added). A synthetic
+  // captures + pane/ps tables above (zero extra subprocess spawns). A synthetic
   // agent here fills refreshStates' no-hook branch, so a hooked agent's status
   // always wins its pane and discovery never shadows it. Failure -> empty, and
   // the pane falls back to SHELL exactly as before Phase 3.
   try {
     const now = Math.floor(Date.now() / 1000);
-    const discovered = scanDiscovered(captureCache, discoveryLastWorking, now);
+    const discovered = scanDiscovered(captureCache, panePids, psTable, discoveryLastWorking, now);
     discoveryCache = new Map(discovered.agents.map((a) => [a.paneId, a]));
     discoveryLastWorking = discovered.lastWorking;
   } catch {
     discoveryCache = new Map();
   }
 
-  // The scrape above ran before discovery could name each hook-less pane's
-  // agent, so those panes were classified with the 'claude' fallback manifest —
-  // a hook-less opencode's "△ Permission required" matched against the wrong
-  // rules and read as nothing. Re-classify each discovered pane's cached capture
-  // against its OWN agent's manifest (pure re-run over lines already captured;
-  // zero extra capture-pane calls). Hooked panes already scraped with the right
-  // manifest via paneAgent and are skipped.
-  for (const [paneId, disc] of discoveryCache) {
-    if (paneAgent.has(paneId)) continue;
-    const lines = captureCache.get(paneId);
-    if (!lines) continue;
-    scrapeCache.set(paneId, detectFromPaneContent(lines, loadDetectionManifest(disc.agentType)).status);
+  // Every pane's agent identity is now known (winning hook first, discovery
+  // second, claude as the fallback) — classify each capture exactly once
+  // against the right manifest.
+  const seen = new Set<string>();
+  for (const p of panes) {
+    seen.add(p.paneId);
+    const lines = captureCache.get(p.paneId);
+    if (!lines) {
+      scrapeCache.set(p.paneId, null);
+      continue;
+    }
+    const agent = paneAgent.get(p.paneId)?.agent ?? discoveryCache.get(p.paneId)?.agentType ?? 'claude';
+    scrapeCache.set(p.paneId, detectFromPaneContent(lines, loadDetectionManifest(agent)).status);
   }
+  for (const paneId of scrapeCache.keys()) {
+    if (!seen.has(paneId)) scrapeCache.delete(paneId);
+  }
+  scrapeCacheTs = Math.floor(Date.now() / 1000);
 
   pruneDoneTracking(discoveryDone, new Set(discoveryCache.keys()));
 }
 
-// Fast refresh: ONE tmux call + status file reads + last-line JSONL reads. No git, no lsof.
-function refreshStates(dirs: AgentDir[]): AgentState[] {
-  const hookStatuses = readAllStatusDirs(dirs);
-  const { ok: tmuxOk, panes } = listPanesResult();
+// Fast refresh: ONE tmux call + status file reads + last-line JSONL reads. No
+// git, no lsof. The full (slow) path threads its own pane list + hook statuses
+// through `pre` so they're read once per tick, not once per phase.
+function refreshStates(
+  dirs: AgentDir[],
+  pre?: { panesResult: ListPanesResult; hookStatuses: ResolvedHookStatus[] },
+): AgentState[] {
+  const hookStatuses = pre?.hookStatuses ?? readAllStatusDirs(dirs);
+  const { ok: tmuxOk, panes } = pre?.panesResult ?? listPanesResult();
   lastTmuxOk = tmuxOk;
 
   // tmux pane ids (%N) are server-global, so the same pane number can have a
@@ -372,9 +377,10 @@ function refreshStates(dirs: AgentDir[]): AgentState[] {
     if (hook) {
       // Read events from the WINNING hook's own dir (not a first-match scan
       // across all dirs, which could read the wrong agent's stream on collision).
-      const eventsFile = join(hook.statusDir, `${pane.paneNum}.events.jsonl`);
+      const eventsFile = eventsFilePath(hook.statusDir, pane.paneId);
       const recent = readLastEvents(eventsFile, 12);
       const eventStatus = recent.length > 0 ? deriveStatusFromEvents(recent) : null;
+      const eventTs = recent.at(-1)?.ts ?? null;
 
       tool = hook.tool || null;
       ts = hook.ts;
@@ -387,13 +393,19 @@ function refreshStates(dirs: AgentDir[]): AgentState[] {
       // silent.
       const titleStatus = detectFromTitle(pane.paneTitle, loadDetectionManifest(hook.agent)).status;
 
+      // The cached scrape is a snapshot from the last slow tick. A hook/event
+      // write since then means the screen has changed (a prompt was answered, a
+      // turn ended) — drop the snapshot rather than let a stale PERMIT/QUESTION
+      // mask the fresher signal until the next slow tick.
+      const scrapeFresh = Math.max(hook.ts, eventTs ?? 0) <= scrapeCacheTs;
+      const cachedScrape = scrapeFresh ? (scrapeCache.get(pane.paneId) ?? null) : null;
+
       status = fuseState({
         hookState: hook.state,
         hookTs: hook.ts,
         eventStatus,
-        scrapeStatus: titleStatus ?? scrapeCache.get(pane.paneId) ?? null,
-        currentStatus: AgentStatus.IDLE,
-        currentTs: 0,
+        eventTs,
+        scrapeStatus: titleStatus ?? cachedScrape,
       }).status;
     } else {
       // No winning hook. Before falling to SHELL, check hook-less discovery: an
@@ -437,17 +449,20 @@ function refreshStates(dirs: AgentDir[]): AgentState[] {
       ports: portCache.get(pane.paneId) ?? [],
       ts,
       agentType,
+      paneTitle: pane.paneTitle,
     });
   }
 
   return states;
 }
 
-// Full refresh: runs slow caches then fast refresh
+// Full refresh: one list-panes + one status-dir read feed both the slow caches
+// and the fast refresh.
 function fullRefreshStates(dirs: AgentDir[]): AgentState[] {
-  const panes = listPanesResult().panes;
-  refreshSlowCaches(panes, dirs);
-  return refreshStates(dirs);
+  const panesResult = listPanesResult();
+  const hookStatuses = readAllStatusDirs(dirs);
+  refreshSlowCaches(panesResult.panes, hookStatuses);
+  return refreshStates(dirs, { panesResult, hookStatuses });
 }
 
 async function handleCli(args: string[]): Promise<number | null> {
@@ -744,7 +759,7 @@ async function launchTui(): Promise<number> {
     process.stdout.write(render(app, size));
     // Advertise status in the pane title (deduped inside setPaneTitle);
     // restore() clears it on exit so automatic-rename falls back cleanly.
-    setPaneTitle(paneTitle(app.summary(), app.shellCount()));
+    setPaneTitle(paneTitle());
   };
 
   // The pane fleet itself runs in — used to suppress every toast while you're
@@ -761,7 +776,9 @@ async function launchTui(): Promise<number> {
     const { candidates, previous } = decideNotifications(states, notifyPrev);
     notifyPrev = previous;
     if (candidates.length === 0) return; // resolve the active pane only when something fires
-    const activePaneId = resolveActivePane();
+    // null when tmux can't answer, which disables per-pane suppression —
+    // better a redundant toast than a missed one.
+    const activePaneId = currentPaneId();
     for (const n of applySuppression(candidates, activePaneId, fleetPaneId)) {
       deliverDesktop(`${STATUS_DISPLAY[n.status].label}: ${n.label}`, n.agentType);
     }
@@ -794,10 +811,17 @@ async function launchTui(): Promise<number> {
 
   return await new Promise<number>((resolve) => {
     let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    // Declared (not just assigned) before finish() can run: the leftover-key
+    // replay below fires synchronously before the timers are armed, and a
+    // quit key there would otherwise hit the const in its temporal dead zone.
+    let slowTimer: ReturnType<typeof setInterval> | null = null;
+    let finished = false;
 
     const finish = (code: number) => {
+      if (finished) return;
+      finished = true;
       if (refreshTimer !== null) clearInterval(refreshTimer);
-      clearInterval(slowTimer);
+      if (slowTimer !== null) clearInterval(slowTimer);
       if (watcherTimeout !== null) clearTimeout(watcherTimeout);
       stopWatching();
       process.stdin.removeAllListeners('data');
@@ -912,8 +936,15 @@ async function launchTui(): Promise<number> {
         return;
       }
 
-      const key = parseKeyEvent(buf);
+      // One read can coalesce several keystrokes (fast typing, SSH batching,
+      // paste) — dispatch every parsed key, stopping if a key quit the app.
+      for (const key of parseKeyEvents(buf)) {
+        if (finished || app.shouldQuit) break;
+        handleKey(key);
+      }
+    };
 
+    const handleKey = (key: ReturnType<typeof parseKeyEvent>) => {
       if (key.type === 'ctrl' && key.char === 'c') {
         app.shouldQuit = true;
         return;
@@ -1090,7 +1121,7 @@ async function launchTui(): Promise<number> {
     }, FAST_REFRESH_MS);
 
     // Slow timer: skip if user is actively typing
-    const slowTimer = setInterval(() => {
+    slowTimer = setInterval(() => {
       if (isTyping()) return;
       doFullRefresh();
       tick();

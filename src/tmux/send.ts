@@ -7,7 +7,9 @@ export function sendKeys(paneId: string, text: string): void {
     if (i > 0) {
       tmuxOrThrow(['send-keys', '-t', paneId, 'M-Enter'], 'send-keys M-Enter failed');
     }
-    tmuxOrThrow(['send-keys', '-t', paneId, '-l', line], 'send-keys failed');
+    // `--` ends option parsing: a line starting with `-` (markdown bullet,
+    // CLI flag) would otherwise be read as a send-keys option and fail.
+    tmuxOrThrow(['send-keys', '-t', paneId, '-l', '--', line], 'send-keys failed');
   }
   tmuxOrThrow(['send-keys', '-t', paneId, 'Enter'], 'send-keys Enter failed');
 }
@@ -49,5 +51,5 @@ export function sendRawKey(paneId: string, data: Buffer): void {
     return;
   }
 
-  tmuxOrThrow(['send-keys', '-t', paneId, '-l', data.toString('utf8')], 'send-keys literal failed');
+  tmuxOrThrow(['send-keys', '-t', paneId, '-l', '--', data.toString('utf8')], 'send-keys literal failed');
 }

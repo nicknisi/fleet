@@ -13,7 +13,6 @@ const makeDecision = (o: Partial<StateDecision> = {}): StateDecision => ({
   winner: 'event',
   reason: 'derived from the latest JSONL event',
   workingTimeoutFired: false,
-  freshnessEvaluated: false,
   scrapeRuleId: 'idle.prompt',
   ...o,
 });
@@ -70,18 +69,6 @@ describe('renderExplain', () => {
   test('annotates that DONE never comes from the scraper', () => {
     const out = renderExplain(makeBlock(), false);
     expect(out).toContain('DONE never comes from scrape');
-  });
-
-  test('reports the dead freshness branch as not evaluated (success criterion)', () => {
-    const out = renderExplain(makeBlock({ decision: makeDecision({ freshnessEvaluated: false }) }), false);
-    expect(out).toContain('not evaluated');
-    expect(out).toContain('live refresh is stateless');
-  });
-
-  test('reports freshness evaluated when the branch actually fired', () => {
-    const out = renderExplain(makeBlock({ decision: makeDecision({ freshnessEvaluated: true }) }), false);
-    expect(out).toContain('kept in-memory state');
-    expect(out).not.toContain('not evaluated');
   });
 
   test('renders the working-timeout line (not fired)', () => {

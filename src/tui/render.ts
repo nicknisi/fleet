@@ -28,8 +28,27 @@ export function render(app: TuiApp, size: TerminalSize): string {
   }
 
   const footerLines = renderFooter(app, cols);
-  const contentRows = rows - headerLines.length - footerLines.length - 1;
+  // Every row between header and footer — all of them are written each frame
+  // (the fill loop below), so no row can carry a stale previous frame.
+  const contentRows = rows - headerLines.length - footerLines.length;
   let linesWritten = 0;
+
+  // SEND/RENAME/CONFIRM_KILL share one modal shape: a spacer, then the modal's
+  // lines. null = not a modal mode (or nothing selected — fill loop blanks it).
+  const modalLines = ((): string[] | null => {
+    const selected = app.selectedState();
+    if (!selected) return null;
+    switch (app.mode) {
+      case TuiMode.SEND:
+        return renderSendMode(selected, app.sendBuffer, cols);
+      case TuiMode.RENAME:
+        return renderRenameMode(selected, app.renameBuffer, cols);
+      case TuiMode.CONFIRM_KILL:
+        return renderKillConfirm(selected);
+      default:
+        return null;
+    }
+  })();
 
   if (app.mode === TuiMode.HELP) {
     const helpLines = renderHelp();
@@ -37,38 +56,12 @@ export function render(app: TuiApp, size: TerminalSize): string {
       out.push((helpLines[i] ?? '') + '\x1b[K\r\n');
       linesWritten++;
     }
-  } else if (app.mode === TuiMode.SEND) {
-    const selected = app.selectedState();
-    if (selected) {
-      out.push('\x1b[K\r\n');
+  } else if (modalLines) {
+    out.push('\x1b[K\r\n');
+    linesWritten++;
+    for (let i = 0; i < contentRows - 1 && i < modalLines.length; i++) {
+      out.push(modalLines[i]! + '\x1b[K\r\n');
       linesWritten++;
-      const sendLines = renderSendMode(selected, app.sendBuffer, cols);
-      for (let i = 0; i < contentRows - 1 && i < sendLines.length; i++) {
-        out.push(sendLines[i]! + '\x1b[K\r\n');
-        linesWritten++;
-      }
-    }
-  } else if (app.mode === TuiMode.RENAME) {
-    const selected = app.selectedState();
-    if (selected) {
-      out.push('\x1b[K\r\n');
-      linesWritten++;
-      const renameLines = renderRenameMode(selected, app.renameBuffer, cols);
-      for (let i = 0; i < contentRows - 1 && i < renameLines.length; i++) {
-        out.push(renameLines[i]! + '\x1b[K\r\n');
-        linesWritten++;
-      }
-    }
-  } else if (app.mode === TuiMode.CONFIRM_KILL) {
-    const selected = app.selectedState();
-    if (selected) {
-      out.push('\x1b[K\r\n');
-      linesWritten++;
-      const killLines = renderKillConfirm(selected);
-      for (let i = 0; i < contentRows - 1 && i < killLines.length; i++) {
-        out.push(killLines[i]! + '\x1b[K\r\n');
-        linesWritten++;
-      }
     }
   } else if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
     const selected = app.selectedState();
@@ -78,8 +71,9 @@ export function render(app: TuiApp, size: TerminalSize): string {
 
     out.push('\x1b[K\r\n');
     linesWritten++;
-    const sessionLines = renderSessionList(app, contentRows, listWidth);
-    const previewLines = selected ? renderPreview(selected, previewWidth, contentRows, isPassthrough) : [];
+    // contentRows - 1: the spacer above consumed one content row.
+    const sessionLines = renderSessionList(app, contentRows - 1, listWidth);
+    const previewLines = selected ? renderPreview(selected, previewWidth, contentRows - 1, isPassthrough) : [];
 
     for (let row = 0; row < contentRows - 1; row++) {
       const sessionLine = sessionLines[row] ?? '';
@@ -102,10 +96,10 @@ export function render(app: TuiApp, size: TerminalSize): string {
       linesWritten++;
     }
   } else {
-    // Dashboard mode
+    // Dashboard mode — contentRows - 1 list rows after the spacer.
     out.push('\x1b[K\r\n');
     linesWritten++;
-    const sessionLines = renderSessionList(app, contentRows, cols);
+    const sessionLines = renderSessionList(app, contentRows - 1, cols);
     for (const line of sessionLines) {
       out.push(line + '\x1b[K\r\n');
       linesWritten++;

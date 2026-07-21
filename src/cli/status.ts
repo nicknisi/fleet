@@ -2,19 +2,15 @@ import {
   AgentStatus,
   ACK_ALL_RANGE,
   compareStatus,
+  formatAgeDelta,
+  needsAttention,
   STATUS_DISPLAY,
   windowLabel,
   type AgentState,
 } from '../state/types.ts';
 
 export function formatAge(ts: number): string {
-  const now = Math.floor(Date.now() / 1000);
-  const delta = Math.max(0, now - ts);
-  if (delta < 5) return 'now';
-  if (delta < 60) return `${delta}s`;
-  if (delta < 3600) return `${Math.floor(delta / 60)}m`;
-  if (delta < 86400) return `${Math.floor(delta / 3600)}h`;
-  return `${Math.floor(delta / 86400)}d`;
+  return formatAgeDelta(Math.floor(Date.now() / 1000) - ts);
 }
 
 export function formatStatusLine(states: AgentState[]): string {
@@ -22,15 +18,17 @@ export function formatStatusLine(states: AgentState[]): string {
   // a permission prompt (PERMIT), asking a question (QUESTION), or finished and
   // waiting on your next move (DONE/ready). Working and idle agents don't need
   // you, so they stay out of the bar.
-  const visible: AgentStatus[] = [AgentStatus.PERMIT, AgentStatus.QUESTION, AgentStatus.DONE];
-  const filtered = states.filter((s) => visible.includes(s.status));
+  const filtered = states.filter((s) => needsAttention(s.status));
   if (filtered.length === 0) return '';
 
   filtered.sort((a, b) => compareStatus(a.status, b.status));
 
   const entries = filtered.map((s) => {
     const display = STATUS_DISPLAY[s.status];
-    return `#[range=user|${s.paneId}]#[fg=${display.color}]${display.icon} #[bold]${windowLabel(s)}#[nobold] ${formatAge(s.ts)}#[norange]`;
+    // tmux re-expands format directives in #() output, so a window/session
+    // name containing '#' must be escaped ('##') or it corrupts the row.
+    const label = windowLabel(s).replace(/#/g, '##');
+    return `#[range=user|${s.paneId}]#[fg=${display.color}]${display.icon} #[bold]${label}#[nobold] ${formatAge(s.ts)}#[norange]`;
   });
 
   // A "clear all" chip dismisses every ready agent at once. Only ready (DONE)
@@ -48,9 +46,7 @@ export function formatPlainStatus(states: AgentState[], session: string): string
 
   sessionStates.sort((a, b) => compareStatus(a.status, b.status));
   const mostUrgent = sessionStates[0]!.status;
-  const needsYouCount = sessionStates.filter(
-    (s) => s.status === AgentStatus.PERMIT || s.status === AgentStatus.QUESTION || s.status === AgentStatus.DONE,
-  ).length;
+  const needsYouCount = sessionStates.filter((s) => needsAttention(s.status)).length;
 
   return `${mostUrgent} ${needsYouCount}`;
 }
@@ -62,8 +58,7 @@ export function formatTmuxStatus(states: AgentState[], session: string): string 
   sessionStates.sort((a, b) => compareStatus(a.status, b.status));
   const mostUrgent = sessionStates[0]!.status;
 
-  const needsAttention: AgentStatus[] = [AgentStatus.PERMIT, AgentStatus.QUESTION, AgentStatus.DONE];
-  if (!needsAttention.includes(mostUrgent)) return '';
+  if (!needsAttention(mostUrgent)) return '';
 
   const display = STATUS_DISPLAY[mostUrgent];
   return `#[fg=${display.color}] ${display.icon} `;
@@ -83,12 +78,11 @@ export function windowColorArgs(states: AgentState[]): string[][] {
     byWindow.set(s.windowId, list);
   }
 
-  const attention: AgentStatus[] = [AgentStatus.PERMIT, AgentStatus.QUESTION, AgentStatus.DONE];
   const args: string[][] = [];
   for (const [windowId, group] of byWindow) {
     group.sort((a, b) => compareStatus(a.status, b.status));
     const worst = group[0]!.status;
-    if (attention.includes(worst)) {
+    if (needsAttention(worst)) {
       args.push(['set', '-w', '-t', windowId, '@fleet_state', STATUS_DISPLAY[worst].color]);
     } else {
       // Data shadow: a window whose agent just went idle/working MUST be unset

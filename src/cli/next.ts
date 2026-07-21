@@ -1,13 +1,9 @@
-import { AgentStatus, compareStatus, type AgentState } from '../state/types.ts';
+import { compareStatus, needsAttention, type AgentState } from '../state/types.ts';
 import { switchClient, displayMessage, currentPaneId } from '../tmux/sessions.ts';
 
 export function runNext(states: AgentState[]): number {
   const currentPane = currentPaneId();
-  const waiting = states
-    .filter(
-      (s) => s.status === AgentStatus.PERMIT || s.status === AgentStatus.QUESTION || s.status === AgentStatus.DONE,
-    )
-    .sort((a, b) => compareStatus(a.status, b.status));
+  const waiting = states.filter((s) => needsAttention(s.status)).sort((a, b) => compareStatus(a.status, b.status));
 
   if (waiting.length === 0) {
     displayMessage('No waiting agents');

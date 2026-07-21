@@ -32,12 +32,24 @@ export function loadAgentDirs(): AgentDir[] {
   const newConfig = join(configDir, 'fleet', 'agents.json');
   if (existsSync(newConfig)) {
     try {
-      const data = JSON.parse(readFileSync(newConfig, 'utf-8')) as { agents?: AgentDir[] };
+      const data = JSON.parse(readFileSync(newConfig, 'utf-8')) as { agents?: unknown[] };
       if (data.agents && Array.isArray(data.agents)) {
-        return data.agents.map((a) => ({
-          name: a.name,
-          statusDir: a.statusDir.replace(/^~/, HOME),
-        }));
+        if (data.agents.length === 0) return []; // deliberately empty — no fallback
+        // Per-entry validation: one malformed entry must not discard the whole
+        // file (the catch below would silently drop every valid agent).
+        const valid = data.agents
+          .filter(
+            (a): a is AgentDir =>
+              typeof a === 'object' &&
+              a !== null &&
+              typeof (a as AgentDir).name === 'string' &&
+              typeof (a as AgentDir).statusDir === 'string',
+          )
+          .map((a) => ({
+            name: a.name,
+            statusDir: a.statusDir.replace(/^~/, HOME),
+          }));
+        if (valid.length > 0) return valid;
       }
     } catch {
       // Fall through to legacy

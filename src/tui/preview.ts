@@ -1,7 +1,8 @@
 import { C } from '../terminal/colors.ts';
 import { truncateAnsi } from '../terminal/ansi.ts';
-import { AgentStatus, STATUS_DISPLAY, windowLabel, type AgentState } from '../state/types.ts';
+import { AgentStatus, STATUS_DISPLAY, whereLabel, type AgentState } from '../state/types.ts';
 import { capturePane } from '../tmux/sessions.ts';
+import { chip } from './layouts/shared.ts';
 
 export function previewActions(state: AgentState): string {
   switch (state.status) {
@@ -19,10 +20,6 @@ export function previewActions(state: AgentState): string {
   }
 }
 
-function chip(key: string): string {
-  return `${C.dim}[${C.reset}${C.bold}${key}${C.reset}${C.dim}]${C.reset}`;
-}
-
 export function renderPreview(
   state: AgentState,
   width: number,
@@ -34,9 +31,7 @@ export function renderPreview(
 
   const modeTag = passthrough ? ` ${C.cyan}● LIVE${C.reset}` : '';
   const claudeInfo = state.claudeName ? ` · ${state.claudeName}` : '';
-  const label = windowLabel(state);
-  const where = label === state.session ? state.session : `${label} [${state.session}]`;
-  const title = `${display.icon} ${where} · ${display.label.toUpperCase()}${claudeInfo}${modeTag}`;
+  const title = `${display.icon} ${whereLabel(state)} · ${display.label.toUpperCase()}${claudeInfo}${modeTag}`;
   const toolInfo = state.tool ? ` · ${state.tool}` : '';
   const portInfo = state.ports.length > 0 ? ` · ⌁${state.ports.join(',')}` : '';
   lines.push(truncateAnsi(`${C.bold}${title}${C.reset}${C.gray}${toolInfo}${portInfo}${C.reset}`, width));

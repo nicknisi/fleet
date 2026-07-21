@@ -7,6 +7,7 @@
  */
 
 import { windowColorArgs } from './status.ts';
+import { getTmuxOption, tmux } from '../tmux/ipc.ts';
 import type { AgentState } from '../state/types.ts';
 
 // Fire only on row 1 (the fleet row) and only when the click landed on a named
@@ -114,20 +115,16 @@ function runCommands(commands: string[][]): number {
   return 0;
 }
 
-// Gate: only emit window colors when the user opted in. Mirrors the
-// `tmux show -gqv @fleet-theme` read in src/terminal/theme.ts. Cheap (~2ms) and
+// Gate: only emit window colors when the user opted in. Cheap (~2ms) and
 // only paid by users who have the statusline installed at all.
 export function rollupEnabled(): boolean {
-  try {
-    const p = Bun.spawnSync({ cmd: ['tmux', 'show', '-gqv', '@fleet_rollup'], stdout: 'pipe', stderr: 'pipe' });
-    return p.stdout.toString().trim() === '1';
-  } catch {
-    return false;
-  }
+  return getTmuxOption('@fleet_rollup') === '1';
 }
 
 // One batched tmux call for all windows: `tmux set ... ; set -w -u ... ; ...`.
 // tmux treats a lone ";" arg as a command separator, so N windows = 1 spawn.
+// Failures (not in tmux, window closed mid-batch) are non-critical — the next
+// redraw retries.
 export function emitWindowColors(states: AgentState[]): void {
   const groups = windowColorArgs(states);
   if (groups.length === 0) return;
@@ -136,34 +133,22 @@ export function emitWindowColors(states: AgentState[]): void {
     if (i > 0) flat.push(';');
     flat.push(...groups[i]!);
   }
-  try {
-    Bun.spawnSync({ cmd: ['tmux', ...flat], stdout: 'ignore', stderr: 'ignore' });
-  } catch {
-    // Not in tmux, or a window closed mid-batch — non-critical, next redraw retries.
-  }
+  tmux(flat);
 }
 
 // Sweep every window's @fleet_state so no stale tint lingers after uninstall —
 // including windows that have no fleet pane. Dynamic (lists live windows), so it
 // lives outside the static buildRemoveCommands array.
 export function clearAllWindowStates(): void {
-  try {
-    const p = Bun.spawnSync({
-      cmd: ['tmux', 'list-windows', '-a', '-F', '#{window_id}'],
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    if (p.exitCode !== 0) return;
-    const flat: string[] = [];
-    for (const id of p.stdout.toString().split('\n')) {
-      if (id.length === 0) continue;
-      if (flat.length > 0) flat.push(';');
-      flat.push('set', '-w', '-u', '-t', id, '@fleet_state');
-    }
-    if (flat.length > 0) Bun.spawnSync({ cmd: ['tmux', ...flat], stdout: 'ignore', stderr: 'ignore' });
-  } catch {
-    // Not in tmux — nothing to sweep.
+  const p = tmux(['list-windows', '-a', '-F', '#{window_id}']);
+  if (p.exitCode !== 0) return;
+  const flat: string[] = [];
+  for (const id of p.stdout.split('\n')) {
+    if (id.length === 0) continue;
+    if (flat.length > 0) flat.push(';');
+    flat.push('set', '-w', '-u', '-t', id, '@fleet_state');
   }
+  if (flat.length > 0) tmux(flat);
 }
 
 export function runStatusLineInject(): number {
