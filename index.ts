@@ -17,18 +17,25 @@ import {
 } from './src/terminal/terminal.ts';
 import { setThemeMode, C } from './src/terminal/colors.ts';
 import { detectThemeMode } from './src/terminal/theme.ts';
-import { fuseDiscoveredState, fuseState } from './src/state/engine.ts';
+import { fuseState } from './src/state/engine.ts';
 import { readAllStatusDirs, watchStatusDirs } from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
 import { acknowledgePlan } from './src/state/acknowledge.ts';
-import { scrapePane, scrapePaneCapture } from './src/state/scraper.ts';
+import { detectFromPaneContent, detectFromTitle, scrapePane, scrapePaneCapture } from './src/state/scraper.ts';
+import { loadDetectionManifest } from './src/state/detection.ts';
 import { loadRenames, saveRename } from './src/state/rename.ts';
 import { AgentStatus, ACK_ALL_RANGE, STATUS_DISPLAY, extractClaudeName, type AgentState } from './src/state/types.ts';
 import { decideNotifications, applySuppression } from './src/notify/transitions.ts';
 import { deliverDesktop } from './src/notify/deliver.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import type { AgentDir } from './src/agents/config.ts';
-import { scanDiscovered, type DiscoveredAgent } from './src/agents/discovery.ts';
+import {
+  pruneDoneTracking,
+  resolveDiscoveredStatus,
+  scanDiscovered,
+  type DiscoveredAgent,
+  type DoneTracking,
+} from './src/agents/discovery.ts';
 import { listPanesResult, switchClient, killPane, gitBranch } from './src/tmux/sessions.ts';
 import { detectPorts } from './src/tmux/ports.ts';
 import { sendKeys, sendRawKey } from './src/tmux/send.ts';
@@ -246,6 +253,11 @@ const scrapeCache = new Map<string, AgentStatus | null>();
 // (pruned inside discoverAgents to only currently-discovered panes).
 let discoveryCache = new Map<string, DiscoveredAgent>();
 let discoveryLastWorking = new Map<string, number>();
+// Working→idle transition memory for discovered agents ("finished while you
+// were elsewhere" DONE). Mutated by resolveDiscoveredStatus on every fast tick,
+// pruned to live discovered panes on the slow tick. In-memory only, so one-shot
+// CLI runs (fleet status) never synthesize DONE — the TUI and fleet wait do.
+const discoveryDone: DoneTracking = { wasBusy: new Set(), done: new Set() };
 let lastTmuxOk = true;
 
 // User renames (session name → custom label), loaded once per entry point and
@@ -313,6 +325,22 @@ function refreshSlowCaches(panes: { paneId: string; currentPath: string }[], dir
   } catch {
     discoveryCache = new Map();
   }
+
+  // The scrape above ran before discovery could name each hook-less pane's
+  // agent, so those panes were classified with the 'claude' fallback manifest —
+  // a hook-less opencode's "△ Permission required" matched against the wrong
+  // rules and read as nothing. Re-classify each discovered pane's cached capture
+  // against its OWN agent's manifest (pure re-run over lines already captured;
+  // zero extra capture-pane calls). Hooked panes already scraped with the right
+  // manifest via paneAgent and are skipped.
+  for (const [paneId, disc] of discoveryCache) {
+    if (paneAgent.has(paneId)) continue;
+    const lines = captureCache.get(paneId);
+    if (!lines) continue;
+    scrapeCache.set(paneId, detectFromPaneContent(lines, loadDetectionManifest(disc.agentType)).status);
+  }
+
+  pruneDoneTracking(discoveryDone, new Set(discoveryCache.keys()));
 }
 
 // Fast refresh: ONE tmux call + status file reads + last-line JSONL reads. No git, no lsof.
@@ -352,24 +380,42 @@ function refreshStates(dirs: AgentDir[]): AgentState[] {
       ts = hook.ts;
       agentType = hook.agent;
 
+      // The pane title is re-read every fast tick, so a title-rule match (codex's
+      // "Action Required", a braille working spinner) is both fresher and cheaper
+      // than the ~5s-stale scrape cache — when it fires, it takes the scrape slot
+      // in the fusion; the screen scrape covers the ticks where the title is
+      // silent.
+      const titleStatus = detectFromTitle(pane.paneTitle, loadDetectionManifest(hook.agent)).status;
+
       status = fuseState({
         hookState: hook.state,
         hookTs: hook.ts,
         eventStatus,
-        scrapeStatus: scrapeCache.get(pane.paneId) ?? null,
+        scrapeStatus: titleStatus ?? scrapeCache.get(pane.paneId) ?? null,
         currentStatus: AgentStatus.IDLE,
         currentTs: 0,
       }).status;
     } else {
       // No winning hook. Before falling to SHELL, check hook-less discovery: an
-      // allowlisted process in this pane surfaces as a synthetic agent. Its
-      // status fuses the spinner-glyph heuristic with the pane scrape that
-      // already ran this tick — an on-screen permission prompt, question
-      // dialog, or live token counter must not read as idle just because no
-      // hook is writing (e.g. the plugin's hooks were silently unloaded).
+      // allowlisted process in this pane surfaces as a synthetic agent, fusing
+      // the spinner glyph with its own manifest's screen scrape and title rules
+      // (via the same engine fusion as the hook path) — so a discovered agent
+      // can show PERMIT/QUESTION/DONE, not just BUSY/IDLE, even when no hook is
+      // writing (e.g. the plugin's hooks were silently unloaded).
       const disc = discoveryCache.get(pane.paneId);
       if (disc) {
-        status = fuseDiscoveredState(disc.working, scrapeCache.get(pane.paneId) ?? null, ts);
+        const manifest = loadDetectionManifest(disc.agentType);
+        status = resolveDiscoveredStatus(
+          pane.paneId,
+          {
+            glyphWorking: disc.working,
+            scrape: scrapeCache.get(pane.paneId) ?? null,
+            title: detectFromTitle(pane.paneTitle, manifest).status,
+            focused: pane.focused,
+          },
+          discoveryDone,
+          ts,
+        );
         agentType = disc.agentType;
       } else {
         status = AgentStatus.SHELL;

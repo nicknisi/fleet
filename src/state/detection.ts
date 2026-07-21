@@ -18,6 +18,13 @@ export interface DetectionManifest {
   linesFromBottom: number; // rule-match window; default 15 (matches the old scraper window)
   promptMarker: string; // if NO rule matches, present => IDLE, absent => null
   rules: DetectionRule[]; // ORDERED; first match wins
+  // Rules matched against #{pane_title} instead of the screen. The title comes
+  // free with the fast tick's one list-panes call, so title-sourced state lands
+  // on the FAST cycle — no capture-pane, and immune to transcript-text spoofing
+  // (a pane can print "esc to interrupt"; it can't retitle itself mid-turn
+  // without the harness doing it). ORDERED; first match wins. Optional: absent
+  // means the agent has no title signal.
+  titleRules?: DetectionRule[];
 }
 
 const DEFAULT_LINES_FROM_BOTTOM = 15;
@@ -55,13 +62,9 @@ export function getCompiledRegex(rule: DetectionRule): RegExp | null {
 // --- override validation (schema only; JSON.parse already ran) ---
 const VALID_STATES: ReadonlySet<string> = new Set(['PERMIT', 'QUESTION', 'BUSY', 'IDLE']);
 
-function validateManifest(raw: unknown, agent: string): DetectionManifest {
-  if (typeof raw !== 'object' || raw === null) throw new Error('manifest is not an object');
-  const m = raw as Record<string, unknown>;
-  if (!Array.isArray(m.rules)) throw new Error('manifest.rules must be an array');
-
+function validateRules(raw: unknown[]): DetectionRule[] {
   const rules: DetectionRule[] = [];
-  for (const r of m.rules) {
+  for (const r of raw) {
     if (typeof r !== 'object' || r === null) continue;
     const rule = r as Record<string, unknown>;
     if (typeof rule.id !== 'string' || typeof rule.pattern !== 'string') continue;
@@ -77,13 +80,22 @@ function validateManifest(raw: unknown, agent: string): DetectionManifest {
     if (getCompiledRegex(candidate) === null) continue;
     rules.push(candidate);
   }
+  return rules;
+}
+
+function validateManifest(raw: unknown, agent: string): DetectionManifest {
+  if (typeof raw !== 'object' || raw === null) throw new Error('manifest is not an object');
+  const m = raw as Record<string, unknown>;
+  if (!Array.isArray(m.rules)) throw new Error('manifest.rules must be an array');
 
   return {
     agent,
     linesFromBottom:
       typeof m.linesFromBottom === 'number' && m.linesFromBottom > 0 ? m.linesFromBottom : DEFAULT_LINES_FROM_BOTTOM,
     promptMarker: typeof m.promptMarker === 'string' ? m.promptMarker : '',
-    rules,
+    rules: validateRules(m.rules),
+    // titleRules is optional; a non-array value is treated as absent, not an error.
+    ...(Array.isArray(m.titleRules) ? { titleRules: validateRules(m.titleRules) } : {}),
   };
 }
 
@@ -96,28 +108,49 @@ function validateManifest(raw: unknown, agent: string): DetectionManifest {
 // (agent-radar scripts/agent-radar-poller, docs/adr/detection-mechanism.md).
 export const WORKING_GLYPH_PATTERN = '[\\u2800-\\u28FF]';
 
-// --- the embedded built-in `claude` manifest (byte-for-byte reproduction) ---
+// A leading braille frame + space in #{pane_title} — the one-character spinner a
+// harness prepends to its title only while a turn is actively running (real
+// captured titles: claude "⠂ fix flaky tests", codex "⠇ refactor auth module").
+// Anchored so a braille char deeper in a title can't false-positive. Shared by
+// the claude and codex title rules.
+const WORKING_TITLE_PATTERN = `^${WORKING_GLYPH_PATTERN} `;
+
+// --- the embedded built-in `claude` manifest ---
 // Each rule id, pattern, flag, and state is a direct translation of the literal
-// regexes the scraper used before Phase 2, in the same statement order. First
-// match wins, so PERMIT/QUESTION rules precede the BUSY rules exactly as the old
-// control flow did. Compiled into the binary (bun build --compile ships no
-// source tree), so this is a TS object literal, never a runtime file read.
+// regexes the scraper used before Phase 2. Ordering (first match wins) is
+// deliberate and in three tiers:
+//   1. Live-only BUSY rules first (token counter, esc-to-interrupt). These render
+//      ONLY while a turn is actively running and vanish when a dialog is up, so
+//      they safely outrank PERMIT/QUESTION: an ANSWERED "Do you want to proceed?"
+//      lingering in the bottom window while the counter ticks must read BUSY —
+//      the engine trusts scrape PERMIT absolutely (engine.ts), so permit-first
+//      ordering turned every lingering prompt into a false "waiting". (Same
+//      working-beats-blocked priority herdr/agent-radar ships for claude.)
+//   2. PERMIT/QUESTION prompt rules. A genuine dialog suspends the counter and
+//      the esc-to-interrupt hint (see the claude-blocked fixture), so tier 1
+//      never shadows a real prompt.
+//   3. busy.spinner-glyph LAST: a braille char is a weaker signal (it can appear
+//      quoted in transcript text), so a pane showing both a glyph and a [y/n]
+//      prompt still reads PERMIT.
+// Compiled into the binary (bun build --compile ships no source tree), so this
+// is a TS object literal, never a runtime file read.
 export const CLAUDE_MANIFEST: DetectionManifest = {
   agent: 'claude',
   linesFromBottom: 15,
   promptMarker: '❯',
   rules: [
-    { id: 'permit.yn', pattern: '\\[y/n\\]|\\[Y/n\\]', flags: 'i', state: 'PERMIT' },
-    { id: 'permit.do-you-want', pattern: 'Do you want to (proceed|allow)', state: 'PERMIT' },
-    { id: 'question.enter-select', pattern: 'Enter to select.*[↑↓]|Esc to cancel', state: 'QUESTION' },
     { id: 'busy.token-counter-min', pattern: '\\(\\d+m\\s+\\d+s\\s+·.*tokens?\\)', state: 'BUSY' },
     { id: 'busy.token-counter-sec', pattern: '\\(\\d+s\\s+·.*tokens?\\)', state: 'BUSY' },
     { id: 'busy.esc-interrupt', pattern: 'esc to interrupt', flags: 'i', state: 'BUSY' },
-    // Last within the BUSY group so PERMIT/QUESTION rules and the richer
-    // token-counter / esc-interrupt rules still win first (first-match-wins): a
-    // pane showing both a spinner and a [y/n] prompt must still read PERMIT.
+    { id: 'permit.yn', pattern: '\\[y/n\\]|\\[Y/n\\]', flags: 'i', state: 'PERMIT' },
+    { id: 'permit.do-you-want', pattern: 'Do you want to (proceed|allow)', state: 'PERMIT' },
+    { id: 'question.enter-select', pattern: 'Enter to select.*[↑↓]|Esc to cancel', state: 'QUESTION' },
     { id: 'busy.spinner-glyph', pattern: WORKING_GLYPH_PATTERN, state: 'BUSY' },
   ],
+  // Claude paints dingbat spinners (✳✢✶✻✽) on SCREEN but a braille frame in the
+  // TITLE while working — so the title, not the glyph rule above, is the reliable
+  // fast-cycle working signal for a hook-less claude.
+  titleRules: [{ id: 'busy.title-spinner', pattern: WORKING_TITLE_PATTERN, state: 'BUSY' }],
 };
 
 // --- the embedded built-in `codex` manifest (Phase 3) ---
@@ -138,6 +171,46 @@ export const CODEX_MANIFEST: DetectionManifest = {
     { id: 'permit.confirm', pattern: 'press enter to confirm or esc to cancel', flags: 'i', state: 'PERMIT' },
     { id: 'permit.yn', pattern: '\\[y/n\\]', flags: 'i', state: 'PERMIT' },
     { id: 'permit.do-you-want', pattern: 'do you want to', flags: 'i', state: 'PERMIT' },
+  ],
+  // Codex retitles its pane "Action Required" while blocked on approval — the
+  // signal its missing Notification hook never provides — and prefixes a braille
+  // frame while working. Blocked-title outranks working-title (herdr priorities:
+  // 1100 > 1050).
+  titleRules: [
+    { id: 'permit.title-action-required', pattern: 'Action Required', state: 'PERMIT' },
+    { id: 'busy.title-spinner', pattern: WORKING_TITLE_PATTERN, state: 'BUSY' },
+  ],
+};
+
+// --- the embedded built-in `opencode` manifest ---
+// Ported from herdr/agent-radar's opencode manifest and verified against real
+// captured opencode frames. Fleet has no opencode hook integration, so every
+// state here is scrape-sourced: opencode was previously only discoverable as
+// BUSY/IDLE via the process scan and could never show a permission prompt.
+// PERMIT rules precede BUSY (upstream priority is blocked-before-working for
+// opencode). No promptMarker: opencode's composer has no stable idle marker we
+// have a fixture for, so an unmatched screen stays null rather than guessing
+// IDLE.
+export const OPENCODE_MANIFEST: DetectionManifest = {
+  agent: 'opencode',
+  linesFromBottom: 15,
+  promptMarker: '',
+  rules: [
+    { id: 'permit.required', pattern: '△ Permission required', state: 'PERMIT' },
+    {
+      id: 'permit.dismiss-confirm',
+      pattern:
+        'esc dismiss.*(enter confirm|enter submit|enter toggle)|(enter confirm|enter submit|enter toggle).*esc dismiss',
+      state: 'PERMIT',
+    },
+    {
+      id: 'busy.esc-interrupt',
+      pattern: 'esc to interrupt|ctrl\\+c to interrupt|press esc to interrupt|esc again to interrupt',
+      state: 'BUSY',
+    },
+    // The block-character progress bar (■■■■■■⬝⬝⬝⬝⬝⬝) opencode animates while
+    // working; ≥4 in a row so a stray box-drawing char can't false-positive.
+    { id: 'busy.progress-bar', pattern: '(■|⬝){4,}', state: 'BUSY' },
   ],
 };
 
@@ -161,7 +234,12 @@ export const PI_MANIFEST: DetectionManifest = {
 };
 
 // --- loader: built-in, replaced wholesale by a valid override ---
-const BUILTINS: Record<string, DetectionManifest> = { claude: CLAUDE_MANIFEST, codex: CODEX_MANIFEST, pi: PI_MANIFEST };
+const BUILTINS: Record<string, DetectionManifest> = {
+  claude: CLAUDE_MANIFEST,
+  codex: CODEX_MANIFEST,
+  pi: PI_MANIFEST,
+  opencode: OPENCODE_MANIFEST,
+};
 const manifestCache = new Map<string, DetectionManifest>();
 
 export function loadDetectionManifest(agent: string): DetectionManifest {

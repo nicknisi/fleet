@@ -47,6 +47,22 @@ export function detectFromPaneContent(lines: string[], manifest: DetectionManife
   return { status: null, ruleId: null };
 }
 
+// Classify a pane's #{pane_title} against the manifest's titleRules (first match
+// wins). No prompt-marker fallback — a title that matches nothing is null, never
+// IDLE. The title rides the fast tick's one list-panes call, so this is the only
+// detection input available every FAST cycle: a codex "Action Required" title or
+// a claude braille-spinner title lands in ~500ms instead of waiting for the ~5s
+// scrape cycle.
+export function detectFromTitle(title: string, manifest: DetectionManifest): DetectResult {
+  for (const rule of manifest.titleRules ?? []) {
+    const re = getCompiledRegex(rule);
+    if (re && re.test(title)) {
+      return { status: RULE_STATE_TO_STATUS[rule.state], ruleId: rule.id };
+    }
+  }
+  return { status: null, ruleId: null };
+}
+
 // Capture a pane ONCE and return both its classified status and the raw captured
 // lines. A caller that also needs the capture (hook-less discovery's spinner-glyph
 // check) reuses these lines instead of capturing the same pane a second time.

@@ -9,14 +9,18 @@ export interface PaneInfo {
   windowIndex: number; // e.g. 2 — per-session position; captured for debugging, NOT a key
   currentPath: string;
   panePid: number;
+  // The user is looking at this pane right now: it is the active pane of the
+  // active window of a session with at least one attached client. Drives the
+  // "finished while you were elsewhere" logic — a DONE synthesized for a
+  // discovered agent is suppressed/cleared when its pane is focused.
+  focused: boolean;
   paneTitle: string;
 }
 
-// window_id / window_index inserted after window_name so pane_title stays LAST:
-// a stray tab in a pane title then lands in trailing (ignored) parts instead of
-// shifting a window field.
+// Fields are inserted BEFORE pane_title so it stays LAST: a stray tab in a pane
+// title then lands in trailing (ignored) parts instead of shifting a field.
 const PANE_FORMAT =
-  '#{pane_id}\t#{session_name}\t#{window_name}\t#{window_id}\t#{window_index}\t#{pane_current_path}\t#{pane_pid}\t#{pane_title}';
+  '#{pane_id}\t#{session_name}\t#{window_name}\t#{window_id}\t#{window_index}\t#{pane_current_path}\t#{pane_pid}\t#{pane_active}\t#{window_active}\t#{session_attached}\t#{pane_title}';
 
 export interface ListPanesResult {
   ok: boolean;
@@ -29,7 +33,7 @@ export function parsePanesOutput(stdout: string): PaneInfo[] {
   for (const line of stdout.split('\n')) {
     if (line.length === 0) continue;
     const parts = line.split('\t');
-    if (parts.length < 8) continue;
+    if (parts.length < 11) continue;
     const paneId = parts[0]!;
     panes.push({
       paneId,
@@ -40,7 +44,9 @@ export function parsePanesOutput(stdout: string): PaneInfo[] {
       windowIndex: parseInt(parts[4]!, 10),
       currentPath: parts[5]!,
       panePid: parseInt(parts[6]!, 10),
-      paneTitle: parts[7]!,
+      // pane_active/window_active are 1/0; session_attached counts clients.
+      focused: parts[7] === '1' && parts[8] === '1' && parseInt(parts[9]!, 10) > 0,
+      paneTitle: parts[10]!,
     });
   }
   return panes;

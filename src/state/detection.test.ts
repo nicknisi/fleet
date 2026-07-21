@@ -2,8 +2,14 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { detectFromPaneContent } from './scraper.ts';
-import { __resetManifestCache, CLAUDE_MANIFEST, loadDetectionManifest, type DetectionManifest } from './detection.ts';
+import { detectFromPaneContent, detectFromTitle } from './scraper.ts';
+import {
+  __resetManifestCache,
+  CLAUDE_MANIFEST,
+  OPENCODE_MANIFEST,
+  loadDetectionManifest,
+  type DetectionManifest,
+} from './detection.ts';
 import { AgentStatus } from './types.ts';
 
 const originalXdg = process.env.XDG_CONFIG_HOME;
@@ -35,9 +41,12 @@ afterEach(() => {
 });
 
 // 1. Built-in reproduction — an independent guard that CLAUDE_MANIFEST matches the
-//    pre-Phase-2 scraper, so a manifest edit that diverges is caught even if the
-//    frozen scraper.test.ts somehow didn't. Marker cases assert 'idle.prompt' (the
-//    id the regression lock asserts), not null.
+//    pre-Phase-2 scraper on every single-signal frame, so a manifest edit that
+//    diverges is caught even if the frozen scraper.test.ts somehow didn't. (Rule
+//    ORDER intentionally departs from pre-Phase-2: live BUSY indicators now
+//    precede prompt rules — see the lingering-prompt suite below — but each case
+//    here shows exactly one signal, so outcomes are order-independent.) Marker
+//    cases assert 'idle.prompt' (the id the regression lock asserts), not null.
 describe('CLAUDE_MANIFEST reproduces the pre-Phase-2 scraper', () => {
   const cases: Array<{ name: string; lines: string[]; status: AgentStatus | null; ruleId: string | null }> = [
     { name: 'permit [y/n]', lines: ['Allow Edit?', '[y/n]'], status: AgentStatus.PERMIT, ruleId: 'permit.yn' },
@@ -310,7 +319,168 @@ test('prompt-marker fallback: present => IDLE, absent => null, above-window stil
   expect(detectFromPaneContent(deep, m)).toEqual({ status: AgentStatus.IDLE, ruleId: 'idle.prompt' });
 });
 
-// 8. Unknown agent (no built-in, no override) -> empty manifest, safe null result.
+// 8. Lingering-prompt fix: the live-only BUSY rules (token counter,
+//    esc-to-interrupt) precede PERMIT/QUESTION, so an ANSWERED prompt still
+//    visible in the bottom window while a turn runs reads BUSY — not a false
+//    "waiting" that the engine's trust-scrape-PERMIT-absolutely rule would
+//    surface over the hook's BUSY. A GENUINE dialog suspends the counter and the
+//    esc hint (see the claude-blocked fixture shape below), so real prompts are
+//    unaffected. Matches herdr/agent-radar's working-beats-blocked priority for
+//    claude.
+describe('claude: live working indicators outrank a lingering answered prompt', () => {
+  test('answered "Do you want to proceed?" + ticking token counter reads BUSY', () => {
+    // Frame shape from a real captured claude working screen, with the
+    // answered dialog text still inside the bottom-15 window.
+    const lines = ['│ Do you want to proceed?', '│ ❯ 1. Yes', '', '✽ Processing… (20m 29s · ↓ 45.4k tokens)', '', '❯'];
+    expect(detectFromPaneContent(lines, CLAUDE_MANIFEST)).toEqual({
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.token-counter-min',
+    });
+  });
+
+  test('lingering [y/n] + esc-to-interrupt hint reads BUSY', () => {
+    const lines = ['Allow Edit to /path/file.ts?', '[y/n]', '', '✻ Cranking… (esc to interrupt)', '❯'];
+    expect(detectFromPaneContent(lines, CLAUDE_MANIFEST)).toEqual({
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.esc-interrupt',
+    });
+  });
+
+  test('a genuine open dialog (counter and esc hint suspended) still reads PERMIT', () => {
+    // Bottom of the real claude-blocked fixture: the dialog replaces the status
+    // line, so no BUSY rule can shadow it.
+    const lines = [
+      '⏺ Bash(rm -rf node_modules && npm install)',
+      '  ⎿  Running…',
+      '',
+      '│ Do you want to proceed?',
+      '│ ❯ 1. Yes',
+      '│   2. No, and tell Claude what to do differently (esc)',
+    ];
+    expect(detectFromPaneContent(lines, CLAUDE_MANIFEST)).toEqual({
+      status: AgentStatus.PERMIT,
+      ruleId: 'permit.do-you-want',
+    });
+  });
+
+  test('a genuine question dialog still reads QUESTION', () => {
+    const lines = ['1. Option A', '2. Option B', 'Enter to select · ↑/↓ to navigate · Esc to cancel'];
+    expect(detectFromPaneContent(lines, CLAUDE_MANIFEST)).toEqual({
+      status: AgentStatus.QUESTION,
+      ruleId: 'question.enter-select',
+    });
+  });
+});
+
+// 9. The opencode built-in, verified against real captured opencode frames
+//    (herdr/agent-radar-derived patterns). Previously a hook-less opencode could
+//    only ever read BUSY/IDLE from the glyph scan.
+describe('OPENCODE_MANIFEST classifies real opencode frames', () => {
+  test('permission dialog reads PERMIT via the △ marker (first match)', () => {
+    const lines = [
+      '│  Write src/index.ts',
+      '',
+      '△ Permission required',
+      '',
+      '  Allow opencode to write to src/index.ts?',
+      '',
+      '  ↑↓ select · enter confirm · esc dismiss',
+    ];
+    expect(detectFromPaneContent(lines, OPENCODE_MANIFEST)).toEqual({
+      status: AgentStatus.PERMIT,
+      ruleId: 'permit.required',
+    });
+  });
+
+  test('confirm/dismiss hint line alone reads PERMIT (dialog scrolled past the △)', () => {
+    const lines = ['  ↑↓ select · enter confirm · esc dismiss'];
+    expect(detectFromPaneContent(lines, OPENCODE_MANIFEST)).toEqual({
+      status: AgentStatus.PERMIT,
+      ruleId: 'permit.dismiss-confirm',
+    });
+  });
+
+  test('working frame reads BUSY via the interrupt hint', () => {
+    const lines = ['│ Analyzing the codebase structure', '', '■■■■■■⬝⬝⬝⬝⬝⬝', '', 'working · esc to interrupt'];
+    expect(detectFromPaneContent(lines, OPENCODE_MANIFEST)).toEqual({
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.esc-interrupt',
+    });
+  });
+
+  test('the animated progress bar alone reads BUSY', () => {
+    expect(detectFromPaneContent(['■■■■■■⬝⬝⬝⬝⬝⬝'], OPENCODE_MANIFEST)).toEqual({
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.progress-bar',
+    });
+  });
+
+  test('fewer than four bar characters is not a progress bar', () => {
+    expect(detectFromPaneContent(['■■■ partial'], OPENCODE_MANIFEST).status).toBeNull();
+  });
+
+  test('permission dialog outranks a co-present working hint (upstream blocked-before-working order)', () => {
+    const lines = ['△ Permission required', 'working · esc to interrupt'];
+    expect(detectFromPaneContent(lines, OPENCODE_MANIFEST).status).toBe(AgentStatus.PERMIT);
+  });
+
+  test('no promptMarker: an unrecognized frame stays null, never guesses IDLE', () => {
+    expect(detectFromPaneContent(['$ ls', 'src  README.md'], OPENCODE_MANIFEST)).toEqual({
+      status: null,
+      ruleId: null,
+    });
+  });
+
+  test("loadDetectionManifest('opencode') resolves the built-in", () => {
+    expect(loadDetectionManifest('opencode')).toBe(OPENCODE_MANIFEST);
+  });
+});
+
+// 10. titleRules ride the same override/validation path as screen rules: an
+//     override may add them, bad-regex title rules are dropped at load, and a
+//     manifest without them simply never title-matches.
+describe('titleRules in overrides', () => {
+  test('an override can supply titleRules; a bad-regex title rule is dropped, siblings survive', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({
+        agent: 'claude',
+        linesFromBottom: 15,
+        promptMarker: '❯',
+        rules: [],
+        titleRules: [
+          { id: 'bad', pattern: '(', state: 'BUSY' },
+          { id: 'permit.title-custom', pattern: '^WAITING:', state: 'PERMIT' },
+        ],
+      }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    expect((m.titleRules ?? []).map((r) => r.id)).toEqual(['permit.title-custom']);
+    expect(detectFromTitle('WAITING: approve the deploy', m)).toEqual({
+      status: AgentStatus.PERMIT,
+      ruleId: 'permit.title-custom',
+    });
+    expect(detectFromTitle('all quiet', m)).toEqual({ status: null, ruleId: null });
+  });
+
+  test('an override without titleRules leaves them absent (title never matches)', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({ agent: 'claude', linesFromBottom: 15, promptMarker: '❯', rules: [] }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    expect(m.titleRules).toBeUndefined();
+    expect(detectFromTitle('⠂ working away', m).status).toBeNull();
+  });
+});
+
+// 11. Unknown agent (no built-in, no override) -> empty manifest, safe null result.
 test('an unknown agent with no override yields an empty manifest and warns', () => {
   const cfg = mkdtempSync(join(tmpdir(), 'fleet-detect-empty-'));
   tempDirs.push(cfg);
