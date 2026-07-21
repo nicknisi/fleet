@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/nicknisi/fleet/compare/v0.15.1...v0.16.0) (2026-07-21)
+
+
+### Features
+
+* full scrape-tier state for hook-less agents — title rules, opencode manifest, scrape-derived ready ([#36](https://github.com/nicknisi/fleet/issues/36)) ([62e5620](https://github.com/nicknisi/fleet/commit/62e5620bdbe3b45a4fce053aea50008e424121e7))
+
 ## [0.15.1](https://github.com/nicknisi/fleet/compare/v0.15.0...v0.15.1) (2026-07-08)
 
 
