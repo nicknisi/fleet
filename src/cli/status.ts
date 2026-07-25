@@ -19,14 +19,16 @@ export function formatAge(ts: number): string {
 // that moves is a click target you miss — and it doubles as the only visible
 // signal that the row is clickable at all.
 //
-// The leading space sits INSIDE the range, so it's both the gutter that keeps ☰
-// off the terminal edge and a second clickable column. A bare glyph is a 1-cell
-// target; two cells is meaningfully easier to hit.
+// The button is prepended rather than joined, so no `│` separates it from the
+// first agent chip: the divider is for telling agents apart, and the glyph is
+// already visually distinct from them. Its trailing space sits INSIDE the range
+// so it doubles as click area — a bare glyph is a 1-cell target, and two cells
+// is meaningfully easier to hit.
 //
 // Deliberately static: showing sidebar open/closed state would mean a list-panes
 // call on every status redraw, and one fleet process per redraw is the budget
 // this whole path is built around.
-const SIDEBAR_BUTTON = `#[range=user|${SIDEBAR_RANGE}]#[fg=cyan] ☰#[norange]`;
+const SIDEBAR_BUTTON = `#[range=user|${SIDEBAR_RANGE}]#[fg=cyan]☰ #[norange]`;
 
 // These chips must keep reaching tmux as #() job output, never inlined into
 // status-format as a literal: tmux strftime-expands the format string itself, so
@@ -40,7 +42,7 @@ export function formatStatusLine(states: AgentState[]): string {
   const filtered = states.filter((s) => needsAttention(s.status));
   filtered.sort((a, b) => compareStatus(a.status, b.status));
 
-  const entries = [SIDEBAR_BUTTON];
+  const entries: string[] = [];
 
   for (const s of filtered) {
     const display = STATUS_DISPLAY[s.status];
@@ -58,7 +60,7 @@ export function formatStatusLine(states: AgentState[]): string {
     entries.push(`#[range=user|${ACK_ALL_RANGE}]#[fg=brightblack]✕ clear#[norange]`);
   }
 
-  return entries.join(' #[fg=brightblack]│ ');
+  return SIDEBAR_BUTTON + entries.join(' #[fg=brightblack]│ ');
 }
 
 export function formatPlainStatus(states: AgentState[], session: string): string {
