@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { formatTmuxStatus, formatPlainStatus, formatStatusLine, formatAge, windowColorArgs } from './status.ts';
-import { AgentStatus, ACK_ALL_RANGE, type AgentState } from '../state/types.ts';
+import { AgentStatus, ACK_ALL_RANGE, SIDEBAR_RANGE, type AgentState } from '../state/types.ts';
 
 const makeState = (overrides: Partial<AgentState>): AgentState => ({
   paneId: '%42',
@@ -77,17 +77,35 @@ describe('formatAge', () => {
 });
 
 describe('formatStatusLine', () => {
-  test('returns empty string when all idle/shell/down', () => {
+  test('renders only the sidebar button when all idle/shell/down', () => {
     const states = [
       makeState({ status: AgentStatus.IDLE, session: 'a' }),
       makeState({ status: AgentStatus.SHELL, session: 'b', paneId: '%2' }),
       makeState({ status: AgentStatus.DOWN, session: 'c', paneId: '%3' }),
     ];
-    expect(formatStatusLine(states)).toBe('');
+    const result = formatStatusLine(states);
+    expect(result).toContain(SIDEBAR_RANGE);
+    // No agent chips, so no divider — the button stands alone.
+    expect(result).not.toContain('│');
   });
 
-  test('returns empty string for no states', () => {
-    expect(formatStatusLine([])).toBe('');
+  test('renders the sidebar button for no states', () => {
+    expect(formatStatusLine([])).toBe(`#[range=user|${SIDEBAR_RANGE}]#[fg=cyan]☰ fleet#[norange]`);
+  });
+
+  test('anchors the sidebar button leftmost, ahead of every agent chip', () => {
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, window: 'permit-w' }),
+      makeState({ status: AgentStatus.DONE, window: 'done-w', paneId: '%2' }),
+    ];
+    const result = formatStatusLine(states);
+    expect(result.indexOf(SIDEBAR_RANGE)).toBe(0 + '#[range=user|'.length);
+    expect(result.indexOf(SIDEBAR_RANGE)).toBeLessThan(result.indexOf('permit-w'));
+    expect(result.indexOf(SIDEBAR_RANGE)).toBeLessThan(result.indexOf(ACK_ALL_RANGE));
+  });
+
+  test('sidebar sentinel fits tmux’s 15-byte range=user limit', () => {
+    expect(Buffer.byteLength(SIDEBAR_RANGE)).toBeLessThanOrEqual(15);
   });
 
   test('includes PERMIT/QUESTION/DONE, excludes BUSY/IDLE/SHELL/DOWN', () => {
@@ -164,9 +182,9 @@ describe('formatStatusLine', () => {
     expect(result).toContain('#[range=user|%42]');
     expect(result).toContain('#[range=user|%7]');
     expect(result).toContain('#[norange]');
-    // Two entries -> two range openings and two norange closings
-    expect(result.match(/#\[range=user\|/g)?.length).toBe(2);
-    expect(result.match(/#\[norange\]/g)?.length).toBe(2);
+    // Two entries plus the always-present sidebar button -> three ranges
+    expect(result.match(/#\[range=user\|/g)?.length).toBe(3);
+    expect(result.match(/#\[norange\]/g)?.length).toBe(3);
   });
 
   test('joins multiple entries with the dim separator', () => {

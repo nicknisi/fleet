@@ -7,10 +7,12 @@ import {
   WINDOW_STATUS_FORMAT,
   WINDOW_STATUS_CURRENT_FORMAT,
 } from './statusline.ts';
+import { SIDEBAR_WIDTH } from './sidebar.ts';
 
 const FLEET_MANAGED_MARKER = '# fleet-managed';
 const FLEET_TMUX_LINE = `run-shell "fleet statusline --inject" ${FLEET_MANAGED_MARKER}`;
-const FLEET_KEYBIND_SIDEBAR = `bind-key f split-window -hbf -l 34 fleet ${FLEET_MANAGED_MARKER}`;
+// Same width the ☰ fleet button's toggle uses, from one constant.
+const FLEET_KEYBIND_SIDEBAR = `bind-key f split-window -hbf -l ${SIDEBAR_WIDTH} fleet ${FLEET_MANAGED_MARKER}`;
 const FLEET_KEYBIND_POPUP = `bind-key F display-popup -E -w 80% -h 60% fleet ${FLEET_MANAGED_MARKER}`;
 
 // Window state rollup opt-in: gate option + both window-status format overrides,

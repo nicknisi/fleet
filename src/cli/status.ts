@@ -1,6 +1,7 @@
 import {
   AgentStatus,
   ACK_ALL_RANGE,
+  SIDEBAR_RANGE,
   compareStatus,
   formatAgeDelta,
   needsAttention,
@@ -13,23 +14,39 @@ export function formatAge(ts: number): string {
   return formatAgeDelta(Math.floor(Date.now() / 1000) - ts);
 }
 
+// Leftmost chip, always rendered: toggles the fleet sidebar. Anchoring it at the
+// left keeps it in one fixed spot as agent chips come and go — a click target
+// that moves is a click target you miss — and it doubles as the only visible
+// signal that the row is clickable at all.
+//
+// Deliberately static: showing sidebar open/closed state would mean a list-panes
+// call on every status redraw, and one fleet process per redraw is the budget
+// this whole path is built around.
+const SIDEBAR_BUTTON = `#[range=user|${SIDEBAR_RANGE}]#[fg=cyan]☰ fleet#[norange]`;
+
+// These chips must keep reaching tmux as #() job output, never inlined into
+// status-format as a literal: tmux strftime-expands the format string itself, so
+// a literal `range=user|%42` registers as `42` (%4 is an unknown conversion) and
+// every click resolves to the wrong target. Job output skips that pass.
 export function formatStatusLine(states: AgentState[]): string {
   // The status line is for agents whose turn it is for you to act on: waiting on
   // a permission prompt (PERMIT), asking a question (QUESTION), or finished and
   // waiting on your next move (DONE/ready). Working and idle agents don't need
   // you, so they stay out of the bar.
   const filtered = states.filter((s) => needsAttention(s.status));
-  if (filtered.length === 0) return '';
-
   filtered.sort((a, b) => compareStatus(a.status, b.status));
 
-  const entries = filtered.map((s) => {
+  const entries = [SIDEBAR_BUTTON];
+
+  for (const s of filtered) {
     const display = STATUS_DISPLAY[s.status];
     // tmux re-expands format directives in #() output, so a window/session
     // name containing '#' must be escaped ('##') or it corrupts the row.
     const label = windowLabel(s).replace(/#/g, '##');
-    return `#[range=user|${s.paneId}]#[fg=${display.color}]${display.icon} #[bold]${label}#[nobold] ${formatAge(s.ts)}#[norange]`;
-  });
+    entries.push(
+      `#[range=user|${s.paneId}]#[fg=${display.color}]${display.icon} #[bold]${label}#[nobold] ${formatAge(s.ts)}#[norange]`,
+    );
+  }
 
   // A "clear all" chip dismisses every ready agent at once. Only ready (DONE)
   // agents are dismissible, so the chip only appears when one is present.
