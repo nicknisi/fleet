@@ -21,14 +21,17 @@ export function formatAge(ts: number): string {
 //
 // The button is prepended rather than joined, so no `│` separates it from the
 // first agent chip: the divider is for telling agents apart, and the glyph is
-// already visually distinct from them. Its trailing space sits INSIDE the range
-// so it doubles as click area — a bare glyph is a 1-cell target, and two cells
-// is meaningfully easier to hit.
+// already visually distinct from them.
+//
+// It's padded on BOTH sides — the leading space keeps ☰ off the terminal edge
+// (row 1 starts at column 0, so an unpadded glyph collides with the window
+// border), the trailing one separates it from the first chip. Both sit INSIDE
+// the range, so they double as click area: a bare glyph is a 1-cell target.
 //
 // Deliberately static: showing sidebar open/closed state would mean a list-panes
 // call on every status redraw, and one fleet process per redraw is the budget
 // this whole path is built around.
-const SIDEBAR_BUTTON = `#[range=user|${SIDEBAR_RANGE}]#[fg=cyan]☰ #[norange]`;
+const SIDEBAR_BUTTON = `#[range=user|${SIDEBAR_RANGE}]#[fg=cyan] ☰ #[norange]`;
 
 // These chips must keep reaching tmux as #() job output, never inlined into
 // status-format as a literal: tmux strftime-expands the format string itself, so
