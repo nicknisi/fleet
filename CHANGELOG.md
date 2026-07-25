@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/nicknisi/fleet/compare/v0.16.1...v0.17.0) (2026-07-25)
+
+
+### Features
+
+* ☰ fleet button on the status line toggles the sidebar ([#41](https://github.com/nicknisi/fleet/issues/41))  ([f68e15c](https://github.com/nicknisi/fleet/commit/f68e15c1e5f5d4573fe3469247941d6eed02ec84))
+
 ## [0.16.1](https://github.com/nicknisi/fleet/compare/v0.16.0...v0.16.1) (2026-07-21)
 
 
