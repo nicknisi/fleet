@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0](https://github.com/nicknisi/fleet/compare/v0.17.0...v0.18.0) (2026-07-25)
+
+
+### Features
+
+* shrink the status-line button to a bare ☰ with a leading gutter ([08ce36a](https://github.com/nicknisi/fleet/commit/08ce36a5be2ef9f9f19402be2d049810a120403b))
+
+
+### Bug Fixes
+
+* drop the divider after the ☰ button and move its space to the right ([#44](https://github.com/nicknisi/fleet/issues/44)) ([1370869](https://github.com/nicknisi/fleet/commit/13708699c73cf07c39659b2788dce3d698a55e96))
+
 ## [0.17.0](https://github.com/nicknisi/fleet/compare/v0.16.1...v0.17.0) (2026-07-25)
 
 
