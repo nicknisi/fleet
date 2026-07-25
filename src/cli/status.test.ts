@@ -90,7 +90,12 @@ describe('formatStatusLine', () => {
   });
 
   test('renders the sidebar button for no states', () => {
-    expect(formatStatusLine([])).toBe(`#[range=user|${SIDEBAR_RANGE}]#[fg=cyan]☰ fleet#[norange]`);
+    expect(formatStatusLine([])).toBe(`#[range=user|${SIDEBAR_RANGE}]#[fg=cyan] ☰#[norange]`);
+  });
+
+  test('keeps the button’s leading space inside the clickable range', () => {
+    // The gutter doubles as click area — a bare ☰ is a 1-cell target.
+    expect(formatStatusLine([])).toContain(`${SIDEBAR_RANGE}]#[fg=cyan] ☰`);
   });
 
   test('anchors the sidebar button leftmost, ahead of every agent chip', () => {

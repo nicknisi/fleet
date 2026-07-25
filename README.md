@@ -276,9 +276,9 @@ fleet statusline --inject
 
 Each entry is clickable (tmux 3.2+). **Left-click** an agent name to switch to that session; **right-click** to mark it read in place without switching. When any agent is ready, a `✕ clear` chip appears at the end of the row — click it to dismiss every ready agent at once. Only agents whose turn it is for you appear: PERMIT (tool approval), QUESTION (a question to answer), and DONE/ready (finished, waiting on your next move). Working and idle sessions stay out of the bar — they don't need you to act, so they'd just be noise. Watch those in the dashboard instead.
 
-**The `☰ fleet` button** sits at the far left of the row and is always there, even when no agent needs you. Click it (either mouse button) to open the dashboard in a 34-column sidebar split; click again to close it. It toggles the window you're looking at, so it does the right thing with several clients attached to different windows. Same thing as `prefix+f`, minus the keyboard — and the same as `fleet sidebar`, which you can bind however you like.
+**The `☰` button** sits at the far left of the row and is always there, even when no agent needs you. Click it (either mouse button) to open the dashboard in a 34-column sidebar split; click again to close it. It toggles the window you're looking at, so it does the right thing with several clients attached to different windows. Same thing as `prefix+f`, minus the keyboard — and the same as `fleet sidebar`, which you can bind however you like.
 
-(After upgrading Fleet, re-run `fleet statusline --inject` to pick up the right-click binding, clear chip, focus-to-clear hook, and `☰ fleet` button.)
+(After upgrading Fleet, re-run `fleet statusline --inject` to pick up the right-click binding, clear chip, focus-to-clear hook, and `☰` button.)
 
 **Status-right icon (lightweight):** A single icon in your existing status bar:
 

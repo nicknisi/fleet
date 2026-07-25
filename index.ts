@@ -105,7 +105,7 @@ function printHelp(): number {
       `    ${C.idle}fleet status${C.reset} [--tmux] <session>  ${C.gray}Query agent state${C.reset}`,
       `    ${C.idle}fleet status${C.reset} --statusline        ${C.gray}Render multi-agent tmux status line${C.reset}`,
       `    ${C.idle}fleet next${C.reset}                       ${C.gray}Jump to next waiting agent${C.reset}`,
-      `    ${C.idle}fleet sidebar${C.reset}                    ${C.gray}Toggle the ☰ fleet sidebar split${C.reset}`,
+      `    ${C.idle}fleet sidebar${C.reset}                    ${C.gray}Toggle the ☰ sidebar split${C.reset}`,
       `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
       `    ${C.idle}fleet wait${C.reset} <session> --state <s> ${C.gray}Block until agent reaches state${C.reset}`,
       `    ${C.idle}fleet explain${C.reset} <session>          ${C.gray}Trace how a session's state was decided${C.reset}`,
@@ -520,7 +520,7 @@ async function handleCli(args: string[]): Promise<number | null> {
     case 'switch': {
       // Invoked by the statusline left-click binding. The ACK_ALL_RANGE sentinel
       // (the "clear all" chip) clears every ready agent without switching, and
-      // SIDEBAR_RANGE (the "☰ fleet" button) toggles the sidebar. Otherwise
+      // SIDEBAR_RANGE (the "☰" button) toggles the sidebar. Otherwise
       // acknowledge the target (so a click counts the same as Enter in the
       // dashboard) and switch to it.
       const target = args[1];

@@ -19,10 +19,14 @@ export function formatAge(ts: number): string {
 // that moves is a click target you miss — and it doubles as the only visible
 // signal that the row is clickable at all.
 //
+// The leading space sits INSIDE the range, so it's both the gutter that keeps ☰
+// off the terminal edge and a second clickable column. A bare glyph is a 1-cell
+// target; two cells is meaningfully easier to hit.
+//
 // Deliberately static: showing sidebar open/closed state would mean a list-panes
 // call on every status redraw, and one fleet process per redraw is the budget
 // this whole path is built around.
-const SIDEBAR_BUTTON = `#[range=user|${SIDEBAR_RANGE}]#[fg=cyan]☰ fleet#[norange]`;
+const SIDEBAR_BUTTON = `#[range=user|${SIDEBAR_RANGE}]#[fg=cyan] ☰#[norange]`;
 
 // These chips must keep reaching tmux as #() job output, never inlined into
 // status-format as a literal: tmux strftime-expands the format string itself, so

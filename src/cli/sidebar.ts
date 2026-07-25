@@ -1,5 +1,5 @@
 /**
- * The `☰ fleet` button on the status line: toggle a fleet sidebar split in the
+ * The `☰` button on the status line: toggle a fleet sidebar split in the
  * window the click came from.
  *
  * The sidebar pane is identified by a pane-scoped marker option, not by matching

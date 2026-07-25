@@ -48,7 +48,7 @@ export function buildInjectCommands(): string[][] {
     ['tmux', 'set', '-g', 'status', '2'],
     ['tmux', 'set', '-g', 'status-format[1]', '#[align=left]#(fleet status --statusline)'],
     // Left-click: switch to the agent (acknowledging it on the way), clear all
-    // ready agents on the ✕ chip, or toggle the sidebar on the ☰ fleet button.
+    // ready agents on the ✕ chip, or toggle the sidebar on the ☰ button.
     [
       'tmux',
       'bind',
