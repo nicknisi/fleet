@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/nicknisi/fleet/compare/v0.18.0...v0.18.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* pad the ☰ button's left side so it clears the terminal edge ([4bd7d2e](https://github.com/nicknisi/fleet/commit/4bd7d2e9dcf3a9c0006ea447f2cd974c0c4c617c))
+
 ## [0.18.0](https://github.com/nicknisi/fleet/compare/v0.17.0...v0.18.0) (2026-07-25)
 
 
