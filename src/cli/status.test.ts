@@ -90,12 +90,20 @@ describe('formatStatusLine', () => {
   });
 
   test('renders the sidebar button for no states', () => {
-    expect(formatStatusLine([])).toBe(`#[range=user|${SIDEBAR_RANGE}]#[fg=cyan] ☰#[norange]`);
+    expect(formatStatusLine([])).toBe(`#[range=user|${SIDEBAR_RANGE}]#[fg=cyan]☰ #[norange]`);
   });
 
-  test('keeps the button’s leading space inside the clickable range', () => {
-    // The gutter doubles as click area — a bare ☰ is a 1-cell target.
-    expect(formatStatusLine([])).toContain(`${SIDEBAR_RANGE}]#[fg=cyan] ☰`);
+  test('keeps the button’s trailing space inside the clickable range', () => {
+    // The space doubles as click area — a bare ☰ is a 1-cell target.
+    expect(formatStatusLine([])).toContain(`${SIDEBAR_RANGE}]#[fg=cyan]☰ #[norange]`);
+  });
+
+  test('runs the button straight into the first chip, with no divider', () => {
+    const states = [makeState({ status: AgentStatus.PERMIT, window: 'permit-w' })];
+    const result = formatStatusLine(states);
+    expect(result.startsWith(`#[range=user|${SIDEBAR_RANGE}]#[fg=cyan]☰ #[norange]#[range=user|`)).toBe(true);
+    // The divider is for telling agents apart, so a single agent means none.
+    expect(result).not.toContain('│');
   });
 
   test('anchors the sidebar button leftmost, ahead of every agent chip', () => {
