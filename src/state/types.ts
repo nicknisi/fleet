@@ -10,10 +10,14 @@ export const AgentStatus = {
 
 export type AgentStatus = (typeof AgentStatus)[keyof typeof AgentStatus];
 
-// Sentinel range name for the status-line "clear all" chip. Not a pane id — the
-// CLI router (fleet switch / fleet ack) detects it and acknowledges every ready
-// agent instead of acting on a single pane.
+// Sentinel range names for the status-line chips that aren't agents. Not pane
+// ids — the CLI router (fleet switch / fleet ack) detects them and runs a bar
+// action instead of acting on a single pane.
+//
+// tmux caps a `range=user|X` argument at 15 bytes and silently truncates past
+// that, so every sentinel here must stay short.
 export const ACK_ALL_RANGE = '__ack_all__';
+export const SIDEBAR_RANGE = '__sidebar__';
 
 // Dashboard sort order, most-urgent first: a blocked tool (PERMIT) and a
 // question (QUESTION) need you now; working agents come next so live work stays

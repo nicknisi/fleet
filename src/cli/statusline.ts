@@ -15,6 +15,15 @@ import type { AgentState } from '../state/types.ts';
 // through fleet, which decides what to do based on the range value.
 const ROW1_RANGE_GUARD = '#{&&:#{==:#{mouse_status_line},1},#{!=:#{mouse_status_range},}}';
 
+// Which window the click came from. A status-line click carries no pane target
+// of its own, so `#{pane_id}` here resolves to the active pane of the clicking
+// client's current window — exactly what the sidebar toggle needs to split the
+// right window when two clients are attached to different ones. ($TMUX_PANE is
+// NOT a substitute: in a run-shell child it carries the tmux server's inherited
+// environment, which points at whatever pane happened to start the server.)
+// Only the sidebar sentinel reads it; switch/ack on an agent chip ignore it.
+const FROM_PANE_ARG = '--from \\"#{pane_id}\\"';
+
 // Clearing a notification by *reaching* the pane, not just by clicking its Fleet
 // chip. A pane-focus-in hook acks whatever pane just gained focus, so switching
 // to a ready agent by any route (prefix keys, clicking the pane, choose-tree)
@@ -38,8 +47,8 @@ export function buildInjectCommands(): string[][] {
   return [
     ['tmux', 'set', '-g', 'status', '2'],
     ['tmux', 'set', '-g', 'status-format[1]', '#[align=left]#(fleet status --statusline)'],
-    // Left-click: switch to the agent (acknowledging it on the way), or clear all
-    // ready agents when the sentinel chip is clicked.
+    // Left-click: switch to the agent (acknowledging it on the way), clear all
+    // ready agents on the ✕ chip, or toggle the sidebar on the ☰ fleet button.
     [
       'tmux',
       'bind',
@@ -49,7 +58,7 @@ export function buildInjectCommands(): string[][] {
       'if-shell',
       '-F',
       ROW1_RANGE_GUARD,
-      'run-shell "fleet switch \\"#{mouse_status_range}\\""',
+      `run-shell "fleet switch \\"#{mouse_status_range}\\" ${FROM_PANE_ARG}"`,
       'select-window -t=',
     ],
     // Right-click: acknowledge in place without switching (or clear all on the chip).
@@ -62,7 +71,7 @@ export function buildInjectCommands(): string[][] {
       'if-shell',
       '-F',
       ROW1_RANGE_GUARD,
-      'run-shell "fleet ack \\"#{mouse_status_range}\\""',
+      `run-shell "fleet ack \\"#{mouse_status_range}\\" ${FROM_PANE_ARG}"`,
     ],
     // pane-focus-in requires focus-events; switching to a pane then acks it.
     ['tmux', 'set', '-g', 'focus-events', 'on'],

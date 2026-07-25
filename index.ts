@@ -33,6 +33,7 @@ import { loadRenames, saveRename } from './src/state/rename.ts';
 import {
   AgentStatus,
   ACK_ALL_RANGE,
+  SIDEBAR_RANGE,
   STATUS_DISPLAY,
   extractClaudeName,
   type AgentState,
@@ -64,6 +65,7 @@ import { tmux, tmuxOrNull } from './src/tmux/ipc.ts';
 import { detectPorts } from './src/tmux/ports.ts';
 import { sendKeys, sendRawKey } from './src/tmux/send.ts';
 import { runStatus } from './src/cli/status.ts';
+import { runSidebar } from './src/cli/sidebar.ts';
 import { runNext } from './src/cli/next.ts';
 import { runSend } from './src/cli/send.ts';
 import { runInstall, runUninstall } from './src/cli/install.ts';
@@ -103,6 +105,7 @@ function printHelp(): number {
       `    ${C.idle}fleet status${C.reset} [--tmux] <session>  ${C.gray}Query agent state${C.reset}`,
       `    ${C.idle}fleet status${C.reset} --statusline        ${C.gray}Render multi-agent tmux status line${C.reset}`,
       `    ${C.idle}fleet next${C.reset}                       ${C.gray}Jump to next waiting agent${C.reset}`,
+      `    ${C.idle}fleet sidebar${C.reset}                    ${C.gray}Toggle the ☰ fleet sidebar split${C.reset}`,
       `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
       `    ${C.idle}fleet wait${C.reset} <session> --state <s> ${C.gray}Block until agent reaches state${C.reset}`,
       `    ${C.idle}fleet explain${C.reset} <session>          ${C.gray}Trace how a session's state was decided${C.reset}`,
@@ -495,11 +498,16 @@ async function handleCli(args: string[]): Promise<number | null> {
     case 'ack': {
       // Acknowledge a ready agent without switching to it (clears it from the
       // attention tier in place). Bound to right-click on the status line, and
-      // handy for scripting. The ACK_ALL_RANGE sentinel clears every ready agent.
+      // handy for scripting. The ACK_ALL_RANGE sentinel clears every ready agent;
+      // the SIDEBAR_RANGE button toggles either way it's clicked, so a stray
+      // right-click on it isn't a dead spot.
       const target = args[1];
       if (!target) {
         process.stderr.write('Usage: fleet ack <pane-id>\n');
         return 1;
+      }
+      if (target === SIDEBAR_RANGE) {
+        return runSidebar(args.slice(2));
       }
       if (target === ACK_ALL_RANGE) {
         acknowledgeAllReady(dirs);
@@ -511,13 +519,17 @@ async function handleCli(args: string[]): Promise<number | null> {
     }
     case 'switch': {
       // Invoked by the statusline left-click binding. The ACK_ALL_RANGE sentinel
-      // (the "clear all" chip) clears every ready agent without switching.
-      // Otherwise acknowledge the target (so a click counts the same as Enter in
-      // the dashboard) and switch to it.
+      // (the "clear all" chip) clears every ready agent without switching, and
+      // SIDEBAR_RANGE (the "☰ fleet" button) toggles the sidebar. Otherwise
+      // acknowledge the target (so a click counts the same as Enter in the
+      // dashboard) and switch to it.
       const target = args[1];
       if (!target) {
         process.stderr.write('Usage: fleet switch <pane-id>\n');
         return 1;
+      }
+      if (target === SIDEBAR_RANGE) {
+        return runSidebar(args.slice(2));
       }
       if (target === ACK_ALL_RANGE) {
         acknowledgeAllReady(dirs);
@@ -531,6 +543,11 @@ async function handleCli(args: string[]): Promise<number | null> {
         // Pane may have closed
       }
       return 0;
+    }
+    case 'sidebar': {
+      // Open the fleet sidebar split, or close it if it's already up. Same entry
+      // point the status-line button routes to.
+      return runSidebar(args.slice(1));
     }
     case 'send': {
       const session = args[1];
