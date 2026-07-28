@@ -3,9 +3,20 @@ import {
   buildInjectCommands,
   buildRemoveCommands,
   buildRollupEnableCommands,
+  STATUS_ROW1_FORMAT,
   WINDOW_STATUS_FORMAT,
   WINDOW_STATUS_CURRENT_FORMAT,
 } from './statusline.ts';
+
+describe('STATUS_ROW1_FORMAT', () => {
+  // isStatusLineInjected compares a live `show -gqv status-format[1]` against
+  // this constant, so the value inject writes has to come from the same place.
+  test('is the exact value buildInjectCommands writes to status-format[1]', () => {
+    const row1 = buildInjectCommands().find((c) => c[3] === 'status-format[1]');
+    expect(row1).toBeDefined();
+    expect(row1![4]).toBe(STATUS_ROW1_FORMAT);
+  });
+});
 
 describe('buildInjectCommands', () => {
   test('returns status-2, status-format[1], both mouse binds, and the focus hook', () => {
