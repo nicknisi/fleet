@@ -122,6 +122,7 @@ function printHelp(): number {
       '',
       `  ${C.bold}Tmux${C.reset}`,
       `    ${C.idle}fleet statusline${C.reset} --inject        ${C.gray}Add fleet status to tmux row 2${C.reset}`,
+      `    ${C.idle}fleet statusline${C.reset} --inject --force ${C.gray}Re-apply even if already injected${C.reset}`,
       `    ${C.idle}fleet statusline${C.reset} --remove        ${C.gray}Remove fleet status from tmux${C.reset}`,
       '',
       `  ${C.permit}⚠ waiting${C.reset}  ${C.question}? asking${C.reset}  ${C.done}✓ done${C.reset}  ${C.busy}◉ working${C.reset}  ${C.idle}● idle${C.reset}`,
@@ -590,12 +591,14 @@ async function handleCli(args: string[]): Promise<number | null> {
     }
     case 'statusline': {
       if (args.includes('--inject') || args.includes('--install')) {
-        return runStatusLineInject();
+        // Silent no-op when already applied — the conf line re-runs this on
+        // every tmux source-file. --force re-applies regardless.
+        return runStatusLineInject(args.includes('--force'));
       }
       if (args.includes('--remove') || args.includes('--uninstall')) {
         return runStatusLineRemove();
       }
-      process.stderr.write('Usage: fleet statusline --inject | --remove\n');
+      process.stderr.write('Usage: fleet statusline --inject [--force] | --remove\n');
       return 1;
     }
     case 'wait': {

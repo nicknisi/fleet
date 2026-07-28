@@ -11,8 +11,12 @@ import { SIDEBAR_WIDTH } from './sidebar.ts';
 
 const FLEET_MANAGED_MARKER = '# fleet-managed';
 const FLEET_TMUX_LINE = `run-shell "fleet statusline --inject" ${FLEET_MANAGED_MARKER}`;
-// Same width the ☰ button's toggle uses, from one constant.
-const FLEET_KEYBIND_SIDEBAR = `bind-key f split-window -hbf -l ${SIDEBAR_WIDTH} fleet ${FLEET_MANAGED_MARKER}`;
+// Routes through `fleet sidebar` so the key toggles instead of stacking another
+// split on every press. `--from` is load-bearing, not decorative: a run-shell
+// child inherits the tmux *server's* TMUX_PANE, so with no explicit target the
+// toggle lands in whichever window happened to start the server. `#{pane_id}`
+// expands against the invoking client, same as the ☰ button's binding.
+const FLEET_KEYBIND_SIDEBAR = `bind-key f run-shell "fleet sidebar --from '#{pane_id}'" ${FLEET_MANAGED_MARKER}`;
 const FLEET_KEYBIND_POPUP = `bind-key F display-popup -E -w 80% -h 60% fleet ${FLEET_MANAGED_MARKER}`;
 
 // Window state rollup opt-in: gate option + both window-status format overrides,
@@ -94,14 +98,28 @@ export function removeTmuxConfLine(path: string = tmuxConfPath()): boolean {
 // Offer the sidebar/popup bindings one at a time. `ask` is injected so tests
 // don't touch a TTY. Declined bindings are printed for manual adoption.
 // Uninstall needs no changes: removeTmuxConfLine strips every marker line.
+// Rewrite a fleet-managed prefix+f line that isn't the current one. Versions
+// before the toggle bound it straight to `split-window`; appending the new line
+// beside it would leave two conflicting binds, so replace in place. Scoped to
+// our own marker — a hand-rolled prefix+f binding is left alone.
+export function migrateSidebarKeybind(contents: string): string {
+  return contents
+    .split('\n')
+    .map((line) =>
+      line.includes(FLEET_MANAGED_MARKER) && line.startsWith('bind-key f ') ? FLEET_KEYBIND_SIDEBAR : line,
+    )
+    .join('\n');
+}
+
 export function addTmuxKeybindLines(path: string, ask: (question: string) => boolean): string[] {
   if (!existsSync(path)) return [];
-  let contents = readFileSync(path, 'utf8');
+  const original = readFileSync(path, 'utf8');
+  let contents = migrateSidebarKeybind(original);
   const added: string[] = [];
   const candidates = [
     {
       line: FLEET_KEYBIND_SIDEBAR,
-      question: 'Add tmux binding — prefix+f: fleet in a 34-col sidebar split? [y/N] ',
+      question: `Add tmux binding — prefix+f: toggle fleet in a ${SIDEBAR_WIDTH}-col sidebar split? [y/N] `,
     },
     {
       line: FLEET_KEYBIND_POPUP,
@@ -117,7 +135,7 @@ export function addTmuxKeybindLines(path: string, ask: (question: string) => boo
       process.stdout.write(`  skipped — add it yourself anytime:\n    ${cand.line}\n`);
     }
   }
-  if (added.length > 0) writeFileSync(path, contents);
+  if (contents !== original) writeFileSync(path, contents);
   return added;
 }
 

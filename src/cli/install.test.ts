@@ -261,9 +261,26 @@ describe('addTmuxKeybindLines', () => {
     const added = addTmuxKeybindLines(path, () => true);
     expect(added).toHaveLength(2);
     const conf = readFileSync(path, 'utf8');
-    expect(conf).toContain('bind-key f split-window -hbf');
+    expect(conf).toContain('bind-key f run-shell "fleet sidebar --from \'#{pane_id}\'"');
     expect(conf).toContain('bind-key F display-popup');
     expect(conf.match(/# fleet-managed/g)?.length).toBe(2);
+  });
+
+  test('rewrites a pre-toggle split-window binding instead of duplicating it', () => {
+    const path = confWith('set -g mouse on\nbind-key f split-window -hbf -l 34 fleet # fleet-managed\n');
+    addTmuxKeybindLines(path, () => false);
+    const conf = readFileSync(path, 'utf8');
+    expect(conf).not.toContain('split-window');
+    expect(conf).toContain('bind-key f run-shell "fleet sidebar --from \'#{pane_id}\'"');
+    // One prefix+f bind, not the old and new fighting each other.
+    expect(conf.match(/^bind-key f /gm)?.length).toBe(1);
+  });
+
+  test('leaves a hand-rolled prefix+f binding alone', () => {
+    const own = 'bind-key f resize-pane -Z\n';
+    const path = confWith(own);
+    addTmuxKeybindLines(path, () => false);
+    expect(readFileSync(path, 'utf8')).toBe(own);
   });
 
   test('declining adds nothing and leaves the file untouched', () => {
