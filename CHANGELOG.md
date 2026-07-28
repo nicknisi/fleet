@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.2](https://github.com/nicknisi/fleet/compare/v0.18.1...v0.18.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* toggle the sidebar on prefix+f, and quiet a repeated statusline inject ([#46](https://github.com/nicknisi/fleet/issues/46)) ([488e036](https://github.com/nicknisi/fleet/commit/488e036da32a006054c1e3f0e2cf3b75c32d366a))
+
 ## [0.18.1](https://github.com/nicknisi/fleet/compare/v0.18.0...v0.18.1) (2026-07-25)
 
 
