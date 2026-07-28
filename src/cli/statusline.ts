@@ -43,10 +43,14 @@ const FOCUS_HOOK_ACTION = 'run-shell -b "fleet ack \\"#{pane_id}\\""';
 export const WINDOW_STATUS_FORMAT = '#{?#{@fleet_state},#[fg=#{@fleet_state}],}#I:#W#F';
 export const WINDOW_STATUS_CURRENT_FORMAT = '#{?#{@fleet_state},#[fg=#{@fleet_state}],}#[bold]#I:#W#F#[nobold]';
 
+// Row 1's content. Named so the idempotence check can compare against the exact
+// value inject writes, rather than a second copy that could drift.
+export const STATUS_ROW1_FORMAT = '#[align=left]#(fleet status --statusline)';
+
 export function buildInjectCommands(): string[][] {
   return [
     ['tmux', 'set', '-g', 'status', '2'],
-    ['tmux', 'set', '-g', 'status-format[1]', '#[align=left]#(fleet status --statusline)'],
+    ['tmux', 'set', '-g', 'status-format[1]', STATUS_ROW1_FORMAT],
     // Left-click: switch to the agent (acknowledging it on the way), clear all
     // ready agents on the ✕ chip, or toggle the sidebar on the ☰ button.
     [
@@ -160,7 +164,25 @@ export function clearAllWindowStates(): void {
   if (flat.length > 0) tmux(flat);
 }
 
-export function runStatusLineInject(): number {
+// Whether the live server already carries everything inject would set. Hooks are
+// options in tmux 3.x, so `show -gqv` reads all three the same way. Deliberately
+// compares values rather than just presence: a fleet upgrade that changes a
+// format must still re-apply over the stale one.
+export function isStatusLineInjected(): boolean {
+  return (
+    getTmuxOption('status') === '2' &&
+    getTmuxOption('status-format[1]') === STATUS_ROW1_FORMAT &&
+    getTmuxOption(FOCUS_HOOK_INDEX) === FOCUS_HOOK_ACTION
+  );
+}
+
+// install.ts persists a `run-shell "fleet statusline --inject"` line so a fresh
+// tmux server gets row 2 — which also means this runs on every `source-file`,
+// where it is nearly always a no-op that only announced itself. Skip the work
+// and the message when the server already matches; --force re-applies anyway.
+export function runStatusLineInject(force = false): number {
+  if (!force && isStatusLineInjected()) return 0;
+
   const code = runCommands(buildInjectCommands());
   if (code === 0) {
     process.stdout.write('Fleet status line injected. tmux will now render `fleet status --statusline` on row 2.\n');
