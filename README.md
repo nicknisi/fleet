@@ -69,7 +69,7 @@ fleet uninstall codex
 
 ### pi
 
-Fleet also tracks [pi](https://www.npmjs.com/package/@mariozechner/pi-coding-agent) sessions. pi has no shell hooks — it loads TypeScript extensions auto-discovered from `~/.pi/agent/extensions/` — so `fleet install pi` drops fleet's extension there:
+Fleet also tracks [pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) sessions. pi has no shell hooks, but it loads extensions from installed packages. `fleet install pi` registers fleet's `hooks/pi` directory as a local pi package:
 
 ```bash
 fleet install pi
@@ -77,11 +77,11 @@ fleet install pi
 
 This:
 
-1. Creates the pi status dir (`~/.cache/pi-status`)
-2. Symlinks the `fleet-pi` extension into `~/.pi/agent/extensions/` (your own pi extensions are untouched)
+1. Adds `hooks/pi` to `packages` in `~/.pi/agent/settings.json` (your own pi extensions and packages are untouched)
+2. Creates the pi status dir (`~/.cache/pi-status`)
 3. Registers `pi` in `~/.config/fleet/agents.json`
 
-The extension publishes fleet status from pi's `agent_start` / `tool_execution_start` / `agent_end` lifecycle events, so pi panes appear on the dashboard labeled `pi` (working / idle / done). pi auto-runs its tools, so there is no permission-prompt (PERMIT/QUESTION) state to surface — working/done is the full picture. Re-run after a `brew upgrade` to re-point the extension; in an already-running pi session, `/reload` picks it up. To reverse it (leaving your own pi extensions intact):
+The extension publishes fleet status from pi's lifecycle events, so pi panes appear on the dashboard labeled `pi` (working / idle / done). pi auto-runs its tools, so there is no permission-prompt state to surface. When `@juicesharp/rpiv-ask-user-question` is installed, its stable blocked event also surfaces the QUESTION state while it awaits input. Homebrew upgrades update the registered package in place; in an already-running pi session, `/reload` picks it up. To reverse it (leaving your own pi extensions and packages intact):
 
 ```bash
 fleet uninstall pi
@@ -257,7 +257,7 @@ Fleet also works as a non-interactive CLI for scripting and tmux integration.
 | `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.               |
 | `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.               |
 | `fleet install codex`                     | Wire fleet into Codex's `hooks.json` + `config.toml` (preserves your own hooks).   |
-| `fleet install pi`                        | Wire fleet into pi via an auto-discovered extension (preserves your own).          |
+| `fleet install pi`                        | Wire fleet into pi as a package extension (preserves your own packages).           |
 | `fleet uninstall`                         | Remove plugin registration + tmux status row.                                      |
 | `fleet uninstall codex`                   | Remove fleet's Codex hooks + config (leaves your own Codex hooks intact).          |
 | `fleet uninstall pi`                      | Remove fleet's pi extension + registration.                                        |
