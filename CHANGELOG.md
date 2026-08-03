@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/nicknisi/fleet/compare/v0.18.2...v0.19.0) (2026-08-03)
+
+
+### Features
+
+* track pi questions and install as a package ([#48](https://github.com/nicknisi/fleet/issues/48)) ([8a81f62](https://github.com/nicknisi/fleet/commit/8a81f62ae5155df856737642ec34d86abd7ae06f))
+
 ## [0.18.2](https://github.com/nicknisi/fleet/compare/v0.18.1...v0.18.2) (2026-07-28)
 
 
