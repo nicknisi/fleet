@@ -3,19 +3,22 @@
  * lifecycle events, so a pi session shows up on the fleet dashboard (working /
  * idle / done) alongside claude and codex.
  *
- * pi has no shell-hook config like Claude Code or Codex; it loads TypeScript
- * extensions auto-discovered from ~/.pi/agent/extensions/*.ts. `fleet install pi`
- * symlinks this file there. It subscribes to pi's lifecycle events and writes the
+ * pi has no shell-hook config like Claude Code or Codex; `fleet install pi`
+ * registers this directory as a local pi package (see package.json next to this
+ * file). It subscribes to pi's lifecycle events and writes the
  * same status-file schema fleet's shell hooks write (see hooks/lib.sh):
  *
- *   agent_start          -> { state: "working" }
- *   tool_execution_start -> { state: "working", tool: "Bash: …" | "Edit: …" }
- *   agent_end            -> { state: "done" }        (fleet ages done -> idle)
- *   session_shutdown     -> remove the status file   (pi exited; no stale state)
+ *   agent_start                    -> { state: "working" }
+ *   tool_execution_start           -> { state: "working", tool: "Bash: …" | "Edit: …" }
+ *   rpiv:ask-user:blocked (active)  -> { state: "question" }
+ *   rpiv:ask-user:blocked (cleared) -> { state: "working" }
+ *   agent_end                      -> { state: "done" }      (fleet ages done -> idle)
+ *   session_shutdown               -> remove the status file (pi exited; no stale state)
  *
- * pi auto-runs its tools (no interactive permission prompt), so there is no
- * PERMIT/QUESTION state to source — working/done is complete coverage. State
- * goes to $FLEET_PI_STATUS_DIR or ~/.cache/pi-status (must match config.ts's
+ * pi auto-runs its tools, so it has no interactive permission prompt. Question
+ * tools can still block on user input; @juicesharp/rpiv-ask-user-question
+ * publishes that interval on pi's shared event bus. State goes to
+ * $FLEET_PI_STATUS_DIR or ~/.cache/pi-status (must match config.ts's
  * PI_STATUS_DIR). It is a no-op outside tmux, since fleet keys every agent on a
  * tmux pane. Every write is wrapped so a status-file error can never break pi.
  *
@@ -42,6 +45,9 @@ interface PiToolExecutionStartEvent {
 interface PiExtensionAPI {
   on(event: 'session_start' | 'agent_start' | 'agent_end' | 'session_shutdown', handler: () => void): void;
   on(event: 'tool_execution_start', handler: (event: PiToolExecutionStartEvent) => void): void;
+  events?: {
+    on(event: 'rpiv:ask-user:blocked', handler: (payload: { active: boolean }) => void): void;
+  };
 }
 
 // --- pure helpers (exported for unit tests) -----------------------------------
@@ -124,6 +130,9 @@ export default function (pi: PiExtensionAPI): void {
   pi.on('tool_execution_start', (event) => {
     currentTool = fleetPiLabel(event.toolName, event.args);
     write('working', currentTool);
+  });
+  pi.events?.on('rpiv:ask-user:blocked', (payload) => {
+    write(payload.active ? 'question' : 'working', payload.active ? 'Ask User Question' : currentTool);
   });
   pi.on('agent_end', () => {
     currentTool = '';

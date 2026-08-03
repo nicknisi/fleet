@@ -114,7 +114,7 @@ function printHelp(): number {
       `  ${C.bold}Plugin${C.reset}`,
       `    ${C.idle}fleet install${C.reset}                    ${C.gray}Register as Claude Code plugin${C.reset}`,
       `    ${C.idle}fleet install codex${C.reset}              ${C.gray}Wire fleet into Codex's hooks + config${C.reset}`,
-      `    ${C.idle}fleet install pi${C.reset}                 ${C.gray}Wire fleet into pi via an extension${C.reset}`,
+      `    ${C.idle}fleet install pi${C.reset}                 ${C.gray}Wire fleet into pi as a package extension${C.reset}`,
       `    ${C.idle}fleet uninstall${C.reset}                  ${C.gray}Remove plugin registration${C.reset}`,
       `    ${C.idle}fleet uninstall codex${C.reset}            ${C.gray}Remove fleet's Codex hooks + config${C.reset}`,
       `    ${C.idle}fleet uninstall pi${C.reset}               ${C.gray}Remove fleet's pi extension${C.reset}`,

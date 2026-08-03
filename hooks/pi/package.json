@@ -1,0 +1,12 @@
+{
+  "name": "fleet-pi",
+  "private": true,
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./fleet-pi.ts"
+    ]
+  }
+}

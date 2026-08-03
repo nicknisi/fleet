@@ -87,6 +87,11 @@ describe('extension event wiring', () => {
       on(event: string, handler: (e?: unknown) => void): void {
         handlers[event] = handler;
       },
+      events: {
+        on(event: string, handler: (e?: unknown) => void): void {
+          handlers[event] = handler;
+        },
+      },
     };
     piDefault(mockPi as unknown as Parameters<typeof piDefault>[0]);
     return handlers;
@@ -110,6 +115,21 @@ describe('extension event wiring', () => {
     h.agent_end?.();
     s = readStatus('42');
     expect(s?.state).toBe('done');
+  });
+
+  test('rpiv ask-user blocked event writes question until the wait ends', () => {
+    const h = loadWithTmux('%8');
+    h.agent_start?.();
+    h.tool_execution_start?.({ toolName: 'ask_user_question', args: {} });
+
+    h['rpiv:ask-user:blocked']?.({ active: true });
+    let s = readStatus('8');
+    expect(s?.state).toBe('question');
+    expect(s?.tool).toBe('Ask User Question');
+
+    h['rpiv:ask-user:blocked']?.({ active: false });
+    s = readStatus('8');
+    expect(s?.state).toBe('working');
   });
 
   test('session_shutdown removes the status file', () => {

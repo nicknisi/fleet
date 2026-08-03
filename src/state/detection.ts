@@ -216,16 +216,14 @@ export const OPENCODE_MANIFEST: DetectionManifest = {
 
 // --- the embedded built-in `pi` manifest ---
 // pi (npm: @mariozechner/pi-coding-agent) is wired via a fleet extension, not
-// scraping:
-// the fleet-pi extension subscribes to pi's agent_start / tool_execution_start /
-// agent_end lifecycle events and writes working/done to ~/.cache/pi-status, so
-// BUSY/DONE/IDLE are hook-sourced and authoritative. pi auto-runs its tools —
-// there is no interactive "[y/n]" permission prompt or selection dialog on the
-// screen to match — so there are no PERMIT/QUESTION scrape rules (a documented
-// limitation, mirroring Codex's absent QUESTION). The manifest is intentionally
-// empty; it exists so `pi` resolves to a built-in (no "no manifest" warning) and
-// is a registered, known agent. A user can still drop a ~/.config/fleet/detection/
-// pi.json override to add scrape rules.
+// scraping. The fleet-pi extension subscribes to pi's lifecycle events for
+// BUSY/DONE/IDLE and to rpiv-ask-user-question's stable blocked event for
+// QUESTION, writing each state to ~/.cache/pi-status. pi auto-runs its tools, so
+// there is no interactive "[y/n]" permission prompt to scrape. The manifest is
+// intentionally empty; it exists so `pi` resolves to a built-in (no "no
+// manifest" warning) and is a registered, known agent. A user can still drop a
+// ~/.config/fleet/detection/pi.json override to add scrape rules for another
+// question UI that does not publish a blocked event.
 export const PI_MANIFEST: DetectionManifest = {
   agent: 'pi',
   linesFromBottom: 15,
