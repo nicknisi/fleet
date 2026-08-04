@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/nicknisi/fleet/compare/v0.20.0...v0.20.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* send agent-aware keys when approving/denying permission prompts ([#55](https://github.com/nicknisi/fleet/issues/55)) ([1c81e80](https://github.com/nicknisi/fleet/commit/1c81e80400246f2074def004082be8451df5b922)), closes [#40](https://github.com/nicknisi/fleet/issues/40)
+
 ## [0.20.0](https://github.com/nicknisi/fleet/compare/v0.19.1...v0.20.0) (2026-08-04)
 
 
