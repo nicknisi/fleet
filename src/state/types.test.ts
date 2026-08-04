@@ -125,6 +125,11 @@ describe('windowLabel', () => {
     expect(windowLabel({ ...base, window: 'fleet', project: null })).toBe('dotfiles');
   });
 
+  test('window renamed after fleet’s sidebar icon falls back to the project basename', () => {
+    expect(windowLabel({ ...base, window: '☰ nicknisi', project: '~/Developer/sessions' })).toBe('sessions');
+    expect(windowLabel({ ...base, window: '☰ nicknisi', project: null })).toBe('dotfiles');
+  });
+
   test('fleet-titled window in the fleet repo still reads fleet', () => {
     expect(windowLabel({ ...base, window: 'fleet', project: '~/Developer/fleet' })).toBe('fleet');
   });

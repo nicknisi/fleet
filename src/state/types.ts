@@ -129,13 +129,15 @@ export function whereLabel(state: AgentState): string {
 
 // Window-first label: the window name is what distinguishes agents; the
 // session is the fallback when the window adds no information. A window named
-// exactly after fleet's advertised pane title was named by a title-aware
-// renamer reading the fleet pane, not this agent — the agent's project
-// directory is the honest label there (and when the agent really is working
-// in a repo named fleet, the basename shows "fleet" anyway).
+// after fleet's advertised pane title or sidebar icon was named by a
+// title-aware renamer reading the fleet pane, not this agent — the agent's
+// project directory is the honest label there (and when the agent really is
+// working in a repo named fleet, the basename shows "fleet" anyway).
+const FLEET_WINDOW_RENAME_PATTERN = /^☰\s*/;
+
 export function windowLabel(state: AgentState): string {
   if (state.window.length === 0 || state.window === state.session) return state.session;
-  if (state.window === FLEET_PANE_TITLE) {
+  if (state.window === FLEET_PANE_TITLE || FLEET_WINDOW_RENAME_PATTERN.test(state.window)) {
     const project = state.project?.split('/').pop();
     return project && project.length > 0 ? project : state.session;
   }
