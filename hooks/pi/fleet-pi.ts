@@ -10,6 +10,8 @@
  *
  *   agent_start                    -> { state: "working" }
  *   tool_execution_start           -> { state: "working", tool: "Bash: …" | "Edit: …" }
+ *   tool_call (question tool)      -> { state: "question" }
+ *   tool_execution_end (question)  -> { state: "working" }
  *   rpiv:ask-user:blocked (active)  -> { state: "question" }
  *   rpiv:ask-user:blocked (cleared) -> { state: "working" }
  *   agent_end                      -> { state: "done" }      (fleet ages done -> idle)
@@ -17,7 +19,8 @@
  *
  * pi auto-runs its tools, so it has no interactive permission prompt. Question
  * tools can still block on user input; @juicesharp/rpiv-ask-user-question
- * publishes that interval on pi's shared event bus. State goes to
+ * publishes that interval on pi's shared event bus, and compatibility-shimmed
+ * AskUserQuestion tools are recognized from their tool_call lifecycle. State goes to
  * $FLEET_PI_STATUS_DIR or ~/.cache/pi-status (must match config.ts's
  * PI_STATUS_DIR). It is a no-op outside tmux, since fleet keys every agent on a
  * tmux pane. Every write is wrapped so a status-file error can never break pi.
@@ -42,9 +45,13 @@ interface PiToolExecutionStartEvent {
   toolName: string;
   args: unknown;
 }
+interface PiToolEvent {
+  toolName: string;
+}
 interface PiExtensionAPI {
   on(event: 'session_start' | 'agent_start' | 'agent_end' | 'session_shutdown', handler: () => void): void;
   on(event: 'tool_execution_start', handler: (event: PiToolExecutionStartEvent) => void): void;
+  on(event: 'tool_call' | 'tool_execution_end', handler: (event: PiToolEvent) => void): void;
   events?: {
     on(event: 'rpiv:ask-user:blocked', handler: (payload: { active: boolean }) => void): void;
   };
@@ -56,6 +63,16 @@ interface PiExtensionAPI {
 // convention: "Bash: <cmd>", "Edit: <file>". pi's built-in tool names are
 // lowercase (bash, edit, write, read, …) with `command` (bash) or `path`
 // (edit/write/read) inputs; anything else falls back to the capitalized name.
+const QUESTION_TOOL_LABEL = 'Ask User Question';
+
+// Claude Code compatibility shims expose `AskUserQuestion`; the native pi
+// package exposes `ask_user_question`. The RPIV package also emits a precise
+// blocked event, but this lifecycle fallback covers shims that emit nothing.
+export function isPiQuestionTool(toolName: string): boolean {
+  const normalized = toolName.toLowerCase();
+  return normalized === 'askuserquestion' || normalized === 'ask_user_question';
+}
+
 export function fleetPiLabel(toolName: string, args: unknown): string {
   const a = (args ?? {}) as Record<string, unknown>;
   const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -130,6 +147,14 @@ export default function (pi: PiExtensionAPI): void {
   pi.on('tool_execution_start', (event) => {
     currentTool = fleetPiLabel(event.toolName, event.args);
     write('working', currentTool);
+  });
+  pi.on('tool_call', (event) => {
+    // tool_call fires after every extension's tool_execution_start handler, so
+    // another status extension cannot overwrite this with its own working write.
+    if (isPiQuestionTool(event.toolName)) write('question', QUESTION_TOOL_LABEL);
+  });
+  pi.on('tool_execution_end', (event) => {
+    if (isPiQuestionTool(event.toolName)) write('working', currentTool);
   });
   pi.events?.on('rpiv:ask-user:blocked', (payload) => {
     write(payload.active ? 'question' : 'working', payload.active ? 'Ask User Question' : currentTool);
