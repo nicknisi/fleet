@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import piDefault, { buildPiStatusLine, fleetPiLabel } from './fleet-pi.ts';
+import piDefault, { buildPiStatusLine, fleetPiLabel, isPiQuestionTool } from './fleet-pi.ts';
 import { parseStatusFile } from '../../src/state/hooks.ts';
 
 describe('fleetPiLabel', () => {
@@ -32,6 +32,15 @@ describe('fleetPiLabel', () => {
     expect(fleetPiLabel('bash', undefined)).toBe('Bash');
     expect(fleetPiLabel('edit', null)).toBe('Edit');
     expect(fleetPiLabel('', {})).toBe('');
+  });
+});
+
+describe('isPiQuestionTool', () => {
+  test('recognizes native and compatibility-shim question tools case-insensitively', () => {
+    expect(isPiQuestionTool('AskUserQuestion')).toBe(true);
+    expect(isPiQuestionTool('ask_user_question')).toBe(true);
+    expect(isPiQuestionTool('ASK_USER_QUESTION')).toBe(true);
+    expect(isPiQuestionTool('bash')).toBe(false);
   });
 });
 
@@ -130,6 +139,24 @@ describe('extension event wiring', () => {
     h['rpiv:ask-user:blocked']?.({ active: false });
     s = readStatus('8');
     expect(s?.state).toBe('working');
+  });
+
+  test('compatibility AskUserQuestion writes question from tool_call until execution ends', () => {
+    const h = loadWithTmux('%9');
+    h.agent_start?.();
+    h.tool_execution_start?.({ toolName: 'AskUserQuestion', args: {} });
+
+    // Another extension may also write working on tool_execution_start; the
+    // question write deliberately happens on the later tool_call event.
+    h.tool_call?.({ toolName: 'AskUserQuestion' });
+    let s = readStatus('9');
+    expect(s?.state).toBe('question');
+    expect(s?.tool).toBe('Ask User Question');
+
+    h.tool_execution_end?.({ toolName: 'AskUserQuestion' });
+    s = readStatus('9');
+    expect(s?.state).toBe('working');
+    expect(s?.tool).toBe('AskUserQuestion');
   });
 
   test('session_shutdown removes the status file', () => {
