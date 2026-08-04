@@ -63,7 +63,8 @@ import {
 } from './src/tmux/sessions.ts';
 import { tmux, tmuxOrNull } from './src/tmux/ipc.ts';
 import { detectPorts } from './src/tmux/ports.ts';
-import { sendKeys, sendRawKey } from './src/tmux/send.ts';
+import { sendKeys, sendKeyNames, sendRawKey } from './src/tmux/send.ts';
+import { resolvePermitKeys } from './src/state/permit-keys.ts';
 import { runStatus } from './src/cli/status.ts';
 import { runSidebar } from './src/cli/sidebar.ts';
 import { runNext } from './src/cli/next.ts';
@@ -1031,8 +1032,11 @@ async function launchTui(): Promise<number> {
               if (app.mode === TuiMode.PREVIEW) {
                 const sel = app.selectedState();
                 if (sel && sel.status === AgentStatus.PERMIT) {
+                  // Agent-aware approval: claude wants '1' (numbered menu),
+                  // codex/opencode want Enter, a genuine [y/n] prompt wants a
+                  // literal 'y' — resolved per agent + on-screen dialog (#40).
                   try {
-                    sendRawKey(sel.paneId, Buffer.from('y'));
+                    sendKeyNames(sel.paneId, resolvePermitKeys(sel.paneId, sel.agentType, 'approve'));
                   } catch {}
                 }
               }
@@ -1042,7 +1046,7 @@ async function launchTui(): Promise<number> {
                 const sel = app.selectedState();
                 if (sel && sel.status === AgentStatus.PERMIT) {
                   try {
-                    sendRawKey(sel.paneId, Buffer.from('n'));
+                    sendKeyNames(sel.paneId, resolvePermitKeys(sel.paneId, sel.agentType, 'deny'));
                   } catch {}
                   break;
                 }

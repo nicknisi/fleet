@@ -14,6 +14,16 @@ export function sendKeys(paneId: string, text: string): void {
   tmuxOrThrow(['send-keys', '-t', paneId, 'Enter'], 'send-keys Enter failed');
 }
 
+// Send a sequence of tmux key NAMES (e.g. ['1'], ['Enter'], ['Escape']) — the
+// resolved answer to a permission dialog (see state/permit-keys.ts). No -l:
+// tmux translates named keys itself; single characters pass through as those
+// keys. `--` guards a hypothetical key spec starting with '-'.
+export function sendKeyNames(paneId: string, keys: string[]): void {
+  for (const key of keys) {
+    tmuxOrThrow(['send-keys', '-t', paneId, '--', key], 'send-keys named key failed');
+  }
+}
+
 const SPECIAL_KEY_MAP: Record<number, string> = {
   0x0d: 'Enter',
   0x7f: 'BSpace',

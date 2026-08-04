@@ -246,6 +246,29 @@ test('a valid user override replaces the built-in manifest entirely', () => {
   expect(detectFromPaneContent(['PICK ONE of these'], m)).toEqual({ status: AgentStatus.QUESTION, ruleId: 'q.only' });
 });
 
+// 3b. Answer keys (issue #40) ride the override path: valid rule- and
+//     manifest-level key arrays survive validation; junk entries are dropped and
+//     an all-junk array is treated as absent, never an error.
+test('an override carries approve/deny keys; junk key values are dropped', () => {
+  const cfg = writeOverride(
+    'claude',
+    JSON.stringify({
+      agent: 'claude',
+      rules: [{ id: 'permit.yn', pattern: '\\[y/n\\]', state: 'PERMIT', approveKeys: ['y', 7, ''], denyKeys: ['n'] }],
+      approveKeys: ['1'],
+      denyKeys: [42],
+    }),
+  );
+  process.env.XDG_CONFIG_HOME = cfg;
+  __resetManifestCache();
+
+  const m = loadDetectionManifest('claude');
+  expect(m.rules[0]!.approveKeys).toEqual(['y']); // non-strings dropped
+  expect(m.rules[0]!.denyKeys).toEqual(['n']);
+  expect(m.approveKeys).toEqual(['1']);
+  expect(m.denyKeys).toBeUndefined(); // all-junk array -> absent
+});
+
 // 4. Malformed override -> built-in + warn (must never throw). Two variants.
 test('a malformed-JSON override is ignored: built-in used, warning emitted, no throw', () => {
   const cfg = writeOverride('claude', '{ this is not valid json ]');

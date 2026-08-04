@@ -11,6 +11,12 @@ export interface DetectionRule {
   pattern: string; // JavaScript RegExp source (JSON-escaped on disk)
   flags?: string; // e.g. "i"
   state: RuleState;
+  // tmux send-keys key names (e.g. ["y"], ["1"], ["Enter"], ["Escape"]) that
+  // answer THIS prompt, for PERMIT rules whose dialog differs from the agent's
+  // default (a genuine [y/n] prompt on an agent whose menus want Enter).
+  // Optional: absent means the manifest-level keys apply.
+  approveKeys?: string[];
+  denyKeys?: string[];
 }
 
 export interface DetectionManifest {
@@ -25,6 +31,12 @@ export interface DetectionManifest {
   // without the harness doing it). ORDERED; first match wins. Optional: absent
   // means the agent has no title signal.
   titleRules?: DetectionRule[];
+  // Agent-level default answer keys for a PERMIT dialog (tmux send-keys key
+  // names). Used when the matched PERMIT rule names no keys of its own, and for
+  // hook/title-sourced PERMIT where no screen rule matched at all. Absent means
+  // fall back to literal y/n (the pre-agent-aware behavior).
+  approveKeys?: string[];
+  denyKeys?: string[];
 }
 
 const DEFAULT_LINES_FROM_BOTTOM = 15;
@@ -62,6 +74,15 @@ export function getCompiledRegex(rule: DetectionRule): RegExp | null {
 // --- override validation (schema only; JSON.parse already ran) ---
 const VALID_STATES: ReadonlySet<string> = new Set(['PERMIT', 'QUESTION', 'BUSY', 'IDLE']);
 
+// Answer-key arrays from overrides: keep only non-empty strings; an empty or
+// non-array value is treated as absent (fall through to the next default),
+// never an error.
+function validateKeys(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const keys = raw.filter((k): k is string => typeof k === 'string' && k.length > 0);
+  return keys.length > 0 ? keys : undefined;
+}
+
 function validateRules(raw: unknown[]): DetectionRule[] {
   const rules: DetectionRule[] = [];
   for (const r of raw) {
@@ -70,11 +91,15 @@ function validateRules(raw: unknown[]): DetectionRule[] {
     if (typeof rule.id !== 'string' || typeof rule.pattern !== 'string') continue;
     if (typeof rule.state !== 'string' || !VALID_STATES.has(rule.state)) continue;
     const flags = typeof rule.flags === 'string' ? rule.flags : undefined;
+    const approveKeys = validateKeys(rule.approveKeys);
+    const denyKeys = validateKeys(rule.denyKeys);
     const candidate: DetectionRule = {
       id: rule.id,
       pattern: rule.pattern,
       flags,
       state: rule.state as RuleState,
+      ...(approveKeys ? { approveKeys } : {}),
+      ...(denyKeys ? { denyKeys } : {}),
     };
     // Drop bad-regex rules at load with one warning (not once per scrape).
     if (getCompiledRegex(candidate) === null) continue;
@@ -96,6 +121,8 @@ function validateManifest(raw: unknown, agent: string): DetectionManifest {
     rules: validateRules(m.rules),
     // titleRules is optional; a non-array value is treated as absent, not an error.
     ...(Array.isArray(m.titleRules) ? { titleRules: validateRules(m.titleRules) } : {}),
+    ...(validateKeys(m.approveKeys) ? { approveKeys: validateKeys(m.approveKeys) } : {}),
+    ...(validateKeys(m.denyKeys) ? { denyKeys: validateKeys(m.denyKeys) } : {}),
   };
 }
 
@@ -142,7 +169,14 @@ export const CLAUDE_MANIFEST: DetectionManifest = {
     { id: 'busy.token-counter-min', pattern: '\\(\\d+m\\s+\\d+s\\s+·.*tokens?\\)', state: 'BUSY' },
     { id: 'busy.token-counter-sec', pattern: '\\(\\d+s\\s+·.*tokens?\\)', state: 'BUSY' },
     { id: 'busy.esc-interrupt', pattern: 'esc to interrupt', flags: 'i', state: 'BUSY' },
-    { id: 'permit.yn', pattern: '\\[y/n\\]|\\[Y/n\\]', flags: 'i', state: 'PERMIT' },
+    {
+      id: 'permit.yn',
+      pattern: '\\[y/n\\]|\\[Y/n\\]',
+      flags: 'i',
+      state: 'PERMIT',
+      approveKeys: ['y'],
+      denyKeys: ['n'],
+    },
     { id: 'permit.do-you-want', pattern: 'Do you want to (proceed|allow)', state: 'PERMIT' },
     { id: 'question.enter-select', pattern: 'Enter to select.*[↑↓]|Esc to cancel', state: 'QUESTION' },
     { id: 'busy.spinner-glyph', pattern: WORKING_GLYPH_PATTERN, state: 'BUSY' },
@@ -151,6 +185,13 @@ export const CLAUDE_MANIFEST: DetectionManifest = {
   // TITLE while working — so the title, not the glyph rule above, is the reliable
   // fast-cycle working signal for a hook-less claude.
   titleRules: [{ id: 'busy.title-spinner', pattern: WORKING_TITLE_PATTERN, state: 'BUSY' }],
+  // Claude's permission dialog is a numbered select menu ("❯ 1. Yes / 2. … / 3.
+  // No"), not a y/n prompt: a literal 'y' is ignored (issue #40). '1' selects
+  // "Yes" explicitly regardless of the highlighted row; Esc always cancels
+  // ("Esc to cancel" in the dialog footer). The permit.yn rule above overrides
+  // these for a genuine [y/n] prompt.
+  approveKeys: ['1'],
+  denyKeys: ['Escape'],
 };
 
 // --- the embedded built-in `codex` manifest (Phase 3) ---
@@ -169,7 +210,7 @@ export const CODEX_MANIFEST: DetectionManifest = {
   rules: [
     { id: 'permit.allow', pattern: 'allow command\\?', flags: 'i', state: 'PERMIT' },
     { id: 'permit.confirm', pattern: 'press enter to confirm or esc to cancel', flags: 'i', state: 'PERMIT' },
-    { id: 'permit.yn', pattern: '\\[y/n\\]', flags: 'i', state: 'PERMIT' },
+    { id: 'permit.yn', pattern: '\\[y/n\\]', flags: 'i', state: 'PERMIT', approveKeys: ['y'], denyKeys: ['n'] },
     { id: 'permit.do-you-want', pattern: 'do you want to', flags: 'i', state: 'PERMIT' },
   ],
   // Codex retitles its pane "Action Required" while blocked on approval — the
@@ -180,6 +221,11 @@ export const CODEX_MANIFEST: DetectionManifest = {
     { id: 'permit.title-action-required', pattern: 'Action Required', state: 'PERMIT' },
     { id: 'busy.title-spinner', pattern: WORKING_TITLE_PATTERN, state: 'BUSY' },
   ],
+  // Codex approval panels are arrow-select menus with "Yes" preselected
+  // ("press enter to confirm or esc to cancel" is the dialog's own footer), so
+  // Enter approves and Esc denies; permit.yn above overrides for [y/n] prompts.
+  approveKeys: ['Enter'],
+  denyKeys: ['Escape'],
 };
 
 // --- the embedded built-in `opencode` manifest ---
@@ -212,6 +258,11 @@ export const OPENCODE_MANIFEST: DetectionManifest = {
     // working; ≥4 in a row so a stray box-drawing char can't false-positive.
     { id: 'busy.progress-bar', pattern: '(■|⬝){4,}', state: 'BUSY' },
   ],
+  // opencode's permission dialog is a button row ("Allow once / Allow always /
+  // Reject") with "Allow once" preselected and "enter confirm · esc dismiss" as
+  // its footer — a literal 'y' is ignored (issue #40).
+  approveKeys: ['Enter'],
+  denyKeys: ['Escape'],
 };
 
 // --- the embedded built-in `pi` manifest ---
