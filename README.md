@@ -217,15 +217,44 @@ The in-tmux status-line flash still fires as before. The terminal **bell**, thou
 
 ## Theming
 
-Fleet ships two palettes — Catppuccin Mocha for dark terminals, Catppuccin Latte for light ones — and picks between them automatically. Detection walks a chain and stops at the first hit:
+Fleet ships two state palettes — Catppuccin Mocha for dark terminals, Catppuccin Latte for light ones — and picks between them automatically. You can customize the seven agent-state colors with `${XDG_CONFIG_HOME:-$HOME/.config}/fleet/theme.toml`:
+
+```toml
+[colors]
+permit = "yellow"
+question = "magenta"
+done = "green"
+busy = "bright-red"
+idle = "blue"
+shell = "bright-black"
+down = "white"
+```
+
+Each role is required and accepts one of the 16 ANSI foreground names (`black` through `white`, plus their `bright-` variants) or a six-digit `#rrggbb` value. ANSI colors follow your terminal palette; RGB colors remain fixed, and the two forms can be mixed:
+
+```toml
+[colors]
+permit = "yellow"
+question = "#cba6f7"
+done = "green"
+busy = "#fab387"
+idle = "blue"
+shell = "bright-black"
+down = "#45475a"
+```
+
+This is state-palette customization, not complete UI theming: chrome, style modifiers, pane previews, glyphs, and the tmux status line are unchanged. A missing file is normal. An invalid or unreadable file prints one warning and falls back to automatic selection.
+
+Selection walks this chain and stops at the first hit:
 
 1. **`FLEET_THEME`** — `FLEET_THEME=light` or `FLEET_THEME=dark` forces the theme outright.
 2. **tmux option** — `tmux set -g @fleet-theme light` (or `dark`) pins it for every Fleet launched in that tmux server.
-3. **Terminal background** — outside tmux, Fleet asks the terminal for its background color (OSC 11), falling back to `COLORFGBG` if the terminal exports it. Current tmux doesn't forward the OSC 11 query, so this rung only fires when you run Fleet directly, not through tmux.
-4. **macOS appearance** — inside tmux on a Mac, Fleet follows the system Light/Dark setting. This is the rung that makes auto-switching work in a normal tmux session.
-5. Otherwise it defaults to dark (Mocha).
+3. **Custom state palette** — a valid XDG `theme.toml` selects its ANSI/RGB colors.
+4. **Terminal background** — outside tmux, Fleet asks the terminal for its background color (OSC 11), falling back to `COLORFGBG` if the terminal exports it. Current tmux doesn't forward the OSC 11 query, so this rung only fires when you run Fleet directly, not through tmux.
+5. **macOS appearance** — inside tmux on a Mac, Fleet follows the system Light/Dark setting. This is the rung that makes auto-switching work in a normal tmux session.
+6. Otherwise it defaults to dark (Mocha).
 
-`NO_COLOR` is always honored: set it and Fleet renders monochrome, whatever the theme would have been.
+`NO_COLOR` is always honored: set it and Fleet emits no color or styling escape sequences, whatever the theme would have been. It produces plain terminal text; it is not an ANSI-color fallback.
 
 ## Configuration
 

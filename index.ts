@@ -15,8 +15,8 @@ import {
   setPaneTitle,
   getTerminalSize,
 } from './src/terminal/terminal.ts';
-import { setThemeMode, C } from './src/terminal/colors.ts';
-import { detectThemeMode } from './src/terminal/theme.ts';
+import { setStatePalette, setThemeMode, C } from './src/terminal/colors.ts';
+import { detectTheme, prepareTheme } from './src/terminal/theme.ts';
 import { fuseState, hookStateForStatus } from './src/state/engine.ts';
 import {
   readAllStatusDirs,
@@ -761,13 +761,16 @@ async function launchTui(): Promise<number> {
     app.mode = TuiMode.PREVIEW;
   }
 
-  // Raw mode first so the OSC 11 theme reply is readable from stdin, then the
-  // rest of the terminal setup. Detection is instant inside tmux or with an
+  // Read and validate the optional palette before raw mode so warnings are
+  // ordinary stderr output. Raw mode then makes the OSC 11 reply readable from
+  // stdin. Detection is instant inside tmux or with an
   // explicit FLEET_THEME/@fleet-theme override; only a direct terminal query
   // (outside tmux, no override) costs up to 150ms.
+  const themeStartup = prepareTheme();
   enterRawMode();
-  const detectedTheme = await detectThemeMode();
-  setThemeMode(detectedTheme.mode);
+  const detectedTheme = await detectTheme(themeStartup);
+  if (detectedTheme.selection.palette) setStatePalette(detectedTheme.selection.palette);
+  else setThemeMode(detectedTheme.selection.mode);
   enterAlternateScreen();
   hideCursor();
   enableMouse();

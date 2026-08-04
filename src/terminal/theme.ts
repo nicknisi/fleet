@@ -1,5 +1,9 @@
 // src/terminal/theme.ts
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { getTmuxOption } from '../tmux/ipc.ts';
+import type { StateColorKey, StatePalette, ThemeColor } from './colors.ts';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -7,6 +11,100 @@ export interface Rgb {
   r: number;
   g: number;
   b: number;
+}
+
+const STATE_COLOR_KEYS = ['permit', 'question', 'done', 'busy', 'idle', 'shell', 'down'] as const;
+
+const ANSI_FOREGROUND_CODES: Record<string, number> = {
+  black: 30,
+  red: 31,
+  green: 32,
+  yellow: 33,
+  blue: 34,
+  magenta: 35,
+  cyan: 36,
+  white: 37,
+  'bright-black': 90,
+  'bright-red': 91,
+  'bright-green': 92,
+  'bright-yellow': 93,
+  'bright-blue': 94,
+  'bright-magenta': 95,
+  'bright-cyan': 96,
+  'bright-white': 97,
+};
+
+export function parseThemeColor(value: unknown): ThemeColor {
+  if (typeof value !== 'string') throw new Error('color values must be strings');
+  const ansiCode = ANSI_FOREGROUND_CODES[value];
+  if (ansiCode !== undefined) return { kind: 'ansi', code: ansiCode };
+  if (/^#[0-9a-fA-F]{6}$/.test(value)) {
+    return {
+      kind: 'rgb',
+      r: parseInt(value.slice(1, 3), 16),
+      g: parseInt(value.slice(3, 5), 16),
+      b: parseInt(value.slice(5, 7), 16),
+    };
+  }
+  throw new Error(`unsupported color ${JSON.stringify(value)}`);
+}
+
+function parsePaletteColor(key: StateColorKey, value: unknown): ThemeColor {
+  try {
+    return parseThemeColor(value);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`invalid ${JSON.stringify(key)}: ${reason}`);
+  }
+}
+
+export function parseStatePalette(value: unknown): StatePalette {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('theme must contain a [colors] table');
+  }
+  const colors = (value as Record<string, unknown>).colors;
+  if (typeof colors !== 'object' || colors === null || Array.isArray(colors)) {
+    throw new Error('theme must contain a [colors] table');
+  }
+  const colorValues = colors as Record<string, unknown>;
+  for (const key of Object.keys(colorValues)) {
+    if (!STATE_COLOR_KEYS.includes(key as StateColorKey)) throw new Error(`unknown color key ${JSON.stringify(key)}`);
+  }
+  const palette = {} as StatePalette;
+  for (const key of STATE_COLOR_KEYS) {
+    if (!(key in colorValues)) throw new Error(`missing color ${JSON.stringify(key)}`);
+    palette[key] = parsePaletteColor(key, colorValues[key]);
+  }
+  return palette;
+}
+
+export function resolveThemePath(env: { XDG_CONFIG_HOME?: string }, home: string): string {
+  const configHome = env.XDG_CONFIG_HOME || join(home, '.config');
+  return join(configHome, 'fleet', 'theme.toml');
+}
+
+interface ThemeLoaderOptions {
+  env?: { XDG_CONFIG_HOME?: string };
+  home?: string;
+  path?: string;
+  warn?: (message: string) => void;
+  exists?: (path: string) => boolean;
+  read?: (path: string) => string;
+}
+
+export function loadCustomStatePalette(options: ThemeLoaderOptions = {}): StatePalette | null {
+  const env = options.env ?? { XDG_CONFIG_HOME: Bun.env.XDG_CONFIG_HOME };
+  const path = options.path ?? resolveThemePath(env, options.home ?? homedir());
+  if (!(options.exists ?? existsSync)(path)) return null;
+  try {
+    return parseStatePalette(Bun.TOML.parse((options.read ?? ((file) => readFileSync(file, 'utf8')))(path)));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    (options.warn ?? ((message) => process.stderr.write(`${message}\n`)))(
+      `fleet: invalid state palette at ${path}: ${reason}`,
+    );
+    return null;
+  }
 }
 
 // OSC 11 reply: ESC ] 11 ; rgb:RRRR/GGGG/BBBB terminated by BEL or ST (ESC \).
@@ -51,6 +149,22 @@ export interface ThemeSignals {
   oscBackground: Rgb | null; // parsed OSC 11 reply
   colorFgBg: string | undefined; // COLORFGBG env
   macAppearance: 'Dark' | 'Light' | null; // AppleInterfaceStyle; null off-macOS
+  customPalette?: StatePalette | null;
+}
+
+export type ThemeSelection = { mode: ThemeMode; palette: null } | { mode: null; palette: StatePalette };
+
+export interface ThemeStartup {
+  envTheme: string | undefined;
+  tmuxOption: string | null;
+  customPalette: StatePalette | null;
+}
+
+export function resolveThemeSelection(s: ThemeSignals): ThemeSelection {
+  if (s.envTheme === 'light' || s.envTheme === 'dark') return { mode: s.envTheme, palette: null };
+  if (s.tmuxOption === 'light' || s.tmuxOption === 'dark') return { mode: s.tmuxOption, palette: null };
+  if (s.customPalette) return { mode: null, palette: s.customPalette };
+  return { mode: resolveThemeMode(s), palette: null };
 }
 
 // First hit wins: explicit overrides, then measured signals, then default.
@@ -69,9 +183,14 @@ export function resolveThemeMode(s: ThemeSignals): ThemeMode {
 // Whether the OSC 11 round-trip is worth attempting. Inside tmux the query is
 // not forwarded to the outer terminal (verified on tmux 3.7a), so waiting out
 // the timeout only delays startup — skip straight to the env/OS rungs.
-export function shouldQueryOsc(env: { TMUX?: string; FLEET_THEME?: string }, tmuxOption: string | null): boolean {
+export function shouldQueryOsc(
+  env: { TMUX?: string; FLEET_THEME?: string },
+  tmuxOption: string | null,
+  customPalette: StatePalette | null = null,
+): boolean {
   if (env.FLEET_THEME === 'light' || env.FLEET_THEME === 'dark') return false;
   if (tmuxOption === 'light' || tmuxOption === 'dark') return false;
+  if (customPalette) return false;
   if (env.TMUX) return false;
   return true;
 }
@@ -92,6 +211,22 @@ export function readMacAppearance(): 'Dark' | 'Light' | null {
   } catch {
     return null;
   }
+}
+
+function explicitThemeMode(envTheme: string | undefined, tmuxOption: string | null): ThemeMode | null {
+  if (envTheme === 'light' || envTheme === 'dark') return envTheme;
+  if (tmuxOption === 'light' || tmuxOption === 'dark') return tmuxOption;
+  return null;
+}
+
+export function prepareTheme(): ThemeStartup {
+  const envTheme = Bun.env.FLEET_THEME;
+  const tmuxOption = readTmuxThemeOption();
+  return {
+    envTheme,
+    tmuxOption,
+    customPalette: explicitThemeMode(envTheme, tmuxOption) ? null : loadCustomStatePalette(),
+  };
 }
 
 const OSC11_QUERY = '\x1b]11;?\x07';
@@ -131,26 +266,30 @@ export function queryOscBackground(
   });
 }
 
-export async function detectThemeMode(): Promise<{ mode: ThemeMode; leftover: Buffer }> {
-  const envTheme = Bun.env.FLEET_THEME;
-  const tmuxOption = readTmuxThemeOption();
-  if (!shouldQueryOsc({ TMUX: Bun.env.TMUX, FLEET_THEME: envTheme }, tmuxOption)) {
-    const mode = resolveThemeMode({
+export async function detectTheme(startup = prepareTheme()): Promise<{ selection: ThemeSelection; leftover: Buffer }> {
+  const { envTheme, tmuxOption, customPalette } = startup;
+  const explicitMode = explicitThemeMode(envTheme, tmuxOption);
+  if (explicitMode) return { selection: { mode: explicitMode, palette: null }, leftover: Buffer.alloc(0) };
+
+  if (!shouldQueryOsc({ TMUX: Bun.env.TMUX, FLEET_THEME: envTheme }, tmuxOption, customPalette)) {
+    const selection = resolveThemeSelection({
       envTheme,
       tmuxOption,
       oscBackground: null,
       colorFgBg: Bun.env.COLORFGBG,
       macAppearance: readMacAppearance(),
+      customPalette,
     });
-    return { mode, leftover: Buffer.alloc(0) };
+    return { selection, leftover: Buffer.alloc(0) };
   }
   const { background, leftover } = await queryOscBackground();
-  const mode = resolveThemeMode({
+  const selection = resolveThemeSelection({
     envTheme,
     tmuxOption,
     oscBackground: background,
     colorFgBg: Bun.env.COLORFGBG,
     macAppearance: readMacAppearance(),
+    customPalette,
   });
-  return { mode, leftover };
+  return { selection, leftover };
 }
