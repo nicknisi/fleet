@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/nicknisi/fleet/compare/v0.19.1...v0.20.0) (2026-08-04)
+
+
+### Features
+
+* support custom state palettes ([#53](https://github.com/nicknisi/fleet/issues/53)) ([8b35990](https://github.com/nicknisi/fleet/commit/8b35990eb463485474f573e5b37b257c35bfe4d4))
+
 ## [0.19.1](https://github.com/nicknisi/fleet/compare/v0.19.0...v0.19.1) (2026-08-04)
 
 
