@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.1](https://github.com/nicknisi/fleet/compare/v0.19.0...v0.19.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* detect shimmed pi question tools ([#50](https://github.com/nicknisi/fleet/issues/50)) ([4a7ab9a](https://github.com/nicknisi/fleet/commit/4a7ab9a984ab7f590785fce4a75a07dec34fb5e0))
+* mask fleet sidebar window renames ([#51](https://github.com/nicknisi/fleet/issues/51)) ([386427d](https://github.com/nicknisi/fleet/commit/386427d96dd758568665708b5e82af31eae8db7a))
+
 ## [0.19.0](https://github.com/nicknisi/fleet/compare/v0.18.2...v0.19.0) (2026-08-03)
 
 
