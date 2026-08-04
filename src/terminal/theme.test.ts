@@ -1,15 +1,34 @@
 // src/terminal/theme.test.ts
 import { describe, expect, test } from 'bun:test';
 import {
+  loadCustomStatePalette,
   luminance,
   modeFromBackground,
   modeFromColorFgBg,
   parseOsc11Reply,
+  parseStatePalette,
+  parseThemeColor,
+  resolveThemePath,
+  resolveThemeSelection,
   resolveThemeMode,
   shouldQueryOsc,
   stripOsc11Reply,
   type ThemeSignals,
 } from './theme.ts';
+
+const paletteSource = {
+  colors: {
+    permit: 'yellow',
+    question: '#CBA6F7',
+    done: 'green',
+    busy: '#fab387',
+    idle: 'blue',
+    shell: 'bright-black',
+    down: '#45475a',
+  },
+};
+
+const palette = parseStatePalette(paletteSource);
 
 const signals = (over: Partial<ThemeSignals>): ThemeSignals => ({
   envTheme: undefined,
@@ -73,6 +92,107 @@ describe('modeFromColorFgBg', () => {
   test('junk is null', () => expect(modeFromColorFgBg('banana')).toBeNull());
 });
 
+describe('custom state palettes', () => {
+  test('maps all 16 ANSI names to their foreground codes', () => {
+    const names = [
+      'black',
+      'red',
+      'green',
+      'yellow',
+      'blue',
+      'magenta',
+      'cyan',
+      'white',
+      'bright-black',
+      'bright-red',
+      'bright-green',
+      'bright-yellow',
+      'bright-blue',
+      'bright-magenta',
+      'bright-cyan',
+      'bright-white',
+    ];
+    expect(names.map((name) => parseThemeColor(name))).toEqual(
+      [...Array(8).keys(), ...Array(8).keys()].map((offset, index) => ({
+        kind: 'ansi',
+        code: (index < 8 ? 30 : 90) + offset,
+      })),
+    );
+  });
+
+  test('accepts lowercase and uppercase six-digit RGB', () => {
+    expect(parseThemeColor('#cba6f7')).toEqual({ kind: 'rgb', r: 203, g: 166, b: 247 });
+    expect(parseThemeColor('#CBA6F7')).toEqual({ kind: 'rgb', r: 203, g: 166, b: 247 });
+  });
+
+  test.each(['#fff', '#cba6f7ff', '#gggggg', 'orange', 42])('rejects unsupported color %p', (value) => {
+    expect(() => parseThemeColor(value)).toThrow();
+  });
+
+  test('accepts a complete mixed palette', () => {
+    expect(palette.permit).toEqual({ kind: 'ansi', code: 33 });
+    expect(palette.question).toEqual({ kind: 'rgb', r: 203, g: 166, b: 247 });
+  });
+
+  for (const key of Object.keys(paletteSource.colors)) {
+    test(`rejects a palette missing ${key}`, () => {
+      const colors = { ...paletteSource.colors } as Record<string, unknown>;
+      delete colors[key];
+      expect(() => parseStatePalette({ colors })).toThrow(`missing color "${key}"`);
+    });
+  }
+
+  test('rejects unknown keys and missing or invalid colors tables', () => {
+    expect(() => parseStatePalette({ colors: { ...paletteSource.colors, accent: 'red' } })).toThrow(
+      'unknown color key "accent"',
+    );
+    expect(() => parseStatePalette({})).toThrow('theme must contain a [colors] table');
+    expect(() => parseStatePalette({ colors: 'red' })).toThrow('theme must contain a [colors] table');
+  });
+});
+
+describe('custom state palette loader', () => {
+  test('resolves XDG_CONFIG_HOME with HOME fallback for unset and empty values', () => {
+    expect(resolveThemePath({}, '/home/test')).toBe('/home/test/.config/fleet/theme.toml');
+    expect(resolveThemePath({ XDG_CONFIG_HOME: '' }, '/home/test')).toBe('/home/test/.config/fleet/theme.toml');
+    expect(resolveThemePath({ XDG_CONFIG_HOME: '/tmp/config' }, '/home/test')).toBe('/tmp/config/fleet/theme.toml');
+  });
+
+  test('returns null without warning when the file is missing', () => {
+    const warnings: string[] = [];
+    expect(
+      loadCustomStatePalette({ path: '/missing/theme.toml', exists: () => false, warn: (m) => warnings.push(m) }),
+    ).toBeNull();
+    expect(warnings).toEqual([]);
+  });
+
+  test('loads a valid TOML palette', () => {
+    const source = Object.entries(paletteSource.colors)
+      .map(([key, value]) => `${key} = "${value}"`)
+      .join('\n');
+    expect(
+      loadCustomStatePalette({ path: '/theme.toml', exists: () => true, read: () => `[colors]\n${source}` }),
+    ).toEqual(palette);
+  });
+
+  test.each([
+    ['invalid TOML', () => 'not = [valid'],
+    [
+      'unreadable file',
+      () => {
+        throw new Error('permission denied');
+      },
+    ],
+  ])('warns once and falls back for an %s', (_name, read) => {
+    const warnings: string[] = [];
+    expect(
+      loadCustomStatePalette({ path: '/theme.toml', exists: () => true, read, warn: (m) => warnings.push(m) }),
+    ).toBeNull();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('/theme.toml');
+  });
+});
+
 describe('resolveThemeMode precedence', () => {
   test('defaults to dark with no signals', () => {
     expect(resolveThemeMode(signals({}))).toBe('dark');
@@ -102,6 +222,32 @@ describe('resolveThemeMode precedence', () => {
   });
 });
 
+describe('resolveThemeSelection precedence', () => {
+  const withPalette = (over: Partial<ThemeSignals>) => signals({ customPalette: palette, ...over });
+
+  test('valid environment and tmux modes beat the custom palette', () => {
+    expect(resolveThemeSelection(withPalette({ envTheme: 'light', tmuxOption: 'dark' }))).toEqual({
+      mode: 'light',
+      palette: null,
+    });
+    expect(resolveThemeSelection(withPalette({ tmuxOption: 'dark' }))).toEqual({ mode: 'dark', palette: null });
+  });
+
+  test('custom palette beats automatic detection', () => {
+    expect(resolveThemeSelection(withPalette({ oscBackground: { r: 255, g: 255, b: 255 } }))).toEqual({
+      mode: null,
+      palette,
+    });
+  });
+
+  test('invalid overrides do not block the custom palette', () => {
+    expect(resolveThemeSelection(withPalette({ envTheme: 'solarized', tmuxOption: 'auto' }))).toEqual({
+      mode: null,
+      palette,
+    });
+  });
+});
+
 describe('shouldQueryOsc', () => {
   test('queries when outside tmux with no overrides', () => {
     expect(shouldQueryOsc({}, null)).toBe(true);
@@ -112,6 +258,9 @@ describe('shouldQueryOsc', () => {
   test('skips on explicit env or tmux option', () => {
     expect(shouldQueryOsc({ FLEET_THEME: 'light' }, null)).toBe(false);
     expect(shouldQueryOsc({}, 'dark')).toBe(false);
+  });
+  test('skips when a valid custom palette is selected', () => {
+    expect(shouldQueryOsc({}, null, palette)).toBe(false);
   });
   test('invalid override values do not skip by themselves', () => {
     expect(shouldQueryOsc({ FLEET_THEME: 'solarized' }, 'auto')).toBe(true);

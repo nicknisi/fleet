@@ -13,47 +13,65 @@ function code(c: string): string {
   return c;
 }
 
-function rgb(r: number, g: number, b: number): string {
-  return code(`\x1b[38;2;${r};${g};${b}m`);
-}
-
 export type StateColorKey = 'permit' | 'question' | 'done' | 'busy' | 'idle' | 'shell' | 'down';
 
-type StatePalette = Record<StateColorKey, readonly [number, number, number]>;
+export type AnsiColor = { kind: 'ansi'; code: number };
+export type RgbColor = { kind: 'rgb'; r: number; g: number; b: number };
+export type ThemeColor = AnsiColor | RgbColor;
+export type StatePalette = Record<StateColorKey, ThemeColor>;
+
+const rgb = (r: number, g: number, b: number): RgbColor => ({ kind: 'rgb', r, g, b });
+
+export function serializeThemeColor(color: ThemeColor, enabled = !(forceNoColor || noColor || !isTTY)): string {
+  if (!enabled) return '';
+  if (color.kind === 'ansi') return `\x1b[${color.code}m`;
+  return `\x1b[38;2;${color.r};${color.g};${color.b}m`;
+}
+
+function stateColor(color: ThemeColor): string {
+  return serializeThemeColor(color);
+}
 
 // Catppuccin Mocha (dark terminals): yellow, mauve, green, peach, blue, overlay0, surface1
 const MOCHA: StatePalette = {
-  permit: [249, 226, 175],
-  question: [203, 166, 247],
-  done: [166, 227, 161],
-  busy: [250, 179, 135],
-  idle: [137, 180, 250],
-  shell: [108, 112, 134],
-  down: [69, 71, 90],
+  permit: rgb(249, 226, 175),
+  question: rgb(203, 166, 247),
+  done: rgb(166, 227, 161),
+  busy: rgb(250, 179, 135),
+  idle: rgb(137, 180, 250),
+  shell: rgb(108, 112, 134),
+  down: rgb(69, 71, 90),
 };
 
 // Catppuccin Latte (light terminals): same roles, legible on white
 const LATTE: StatePalette = {
-  permit: [223, 142, 29],
-  question: [136, 57, 239],
-  done: [64, 160, 43],
-  busy: [254, 100, 11],
-  idle: [30, 102, 245],
-  shell: [156, 160, 176],
-  down: [188, 192, 204],
+  permit: rgb(223, 142, 29),
+  question: rgb(136, 57, 239),
+  done: rgb(64, 160, 43),
+  busy: rgb(254, 100, 11),
+  idle: rgb(30, 102, 245),
+  shell: rgb(156, 160, 176),
+  down: rgb(188, 192, 204),
 };
 
 let activePalette: StatePalette = MOCHA;
+let activeMode: ThemeMode | null = 'dark';
 
 export function setThemeMode(mode: ThemeMode): void {
   activePalette = mode === 'light' ? LATTE : MOCHA;
+  activeMode = mode;
 }
 
-export function getThemeMode(): ThemeMode {
-  return activePalette === LATTE ? 'light' : 'dark';
+export function setStatePalette(palette: StatePalette): void {
+  activePalette = palette;
+  activeMode = null;
 }
 
-export function stateRgb(key: StateColorKey): readonly [number, number, number] {
+export function getThemeMode(): ThemeMode | null {
+  return activeMode;
+}
+
+export function stateThemeColor(key: StateColorKey): ThemeColor {
   return activePalette[key];
 }
 
@@ -103,26 +121,26 @@ export const C = {
   get underline() {
     return code('\x1b[4m');
   },
-  // State colors route through the active palette (Mocha/Latte per theme).
+  // State colors route through the active built-in or custom palette.
   get permit() {
-    return rgb(...activePalette.permit);
+    return stateColor(activePalette.permit);
   },
   get question() {
-    return rgb(...activePalette.question);
+    return stateColor(activePalette.question);
   },
   get done() {
-    return rgb(...activePalette.done);
+    return stateColor(activePalette.done);
   },
   get busy() {
-    return rgb(...activePalette.busy);
+    return stateColor(activePalette.busy);
   },
   get idle() {
-    return rgb(...activePalette.idle);
+    return stateColor(activePalette.idle);
   },
   get shell() {
-    return rgb(...activePalette.shell);
+    return stateColor(activePalette.shell);
   },
   get down() {
-    return rgb(...activePalette.down);
+    return stateColor(activePalette.down);
   },
 } as const;
