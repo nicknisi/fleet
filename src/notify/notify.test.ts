@@ -113,28 +113,36 @@ describe('decideNotifications — detection', () => {
 describe('applySuppression', () => {
   const candidates = [notif('%1'), notif('%2')];
 
-  test('activePaneId === a candidate pane → that one dropped, others kept', () => {
-    expect(applySuppression(candidates, '%1', null)).toEqual([notif('%2')]);
+  test('candidate pane ∈ focusedPanes → that one dropped, others kept', () => {
+    expect(applySuppression(candidates, new Set(['%1']), null)).toEqual([notif('%2')]);
   });
 
-  test('activePaneId === fleetPaneId → all dropped (watching the dashboard)', () => {
-    expect(applySuppression(candidates, '%9', '%9')).toEqual([]);
+  test('fleetPaneId ∈ focusedPanes → all dropped (watching the dashboard)', () => {
+    expect(applySuppression(candidates, new Set(['%9']), '%9')).toEqual([]);
   });
 
   test('watching fleet drops toasts even for a pane that is also a candidate', () => {
-    // Focus is fleet's pane, which happens to equal a candidate pane id.
-    expect(applySuppression(candidates, '%1', '%1')).toEqual([]);
+    // Fleet's pane is focused and happens to equal a candidate pane id.
+    expect(applySuppression(candidates, new Set(['%1']), '%1')).toEqual([]);
   });
 
-  test('activePaneId === null → nothing dropped (suppression disabled)', () => {
-    expect(applySuppression(candidates, null, null)).toEqual(candidates);
+  test('empty focusedPanes → nothing dropped (suppression disabled)', () => {
+    expect(applySuppression(candidates, new Set(), null)).toEqual(candidates);
   });
 
-  test('null active pane disables suppression even when fleetPaneId is set', () => {
-    expect(applySuppression(candidates, null, '%9')).toEqual(candidates);
+  test('empty focus set suppresses nothing even when fleetPaneId is set', () => {
+    expect(applySuppression(candidates, new Set(), '%9')).toEqual(candidates);
   });
 
-  test('active pane not among candidates → all kept', () => {
-    expect(applySuppression(candidates, '%7', '%9')).toEqual(candidates);
+  test('no candidate pane ∈ focusedPanes → all kept', () => {
+    expect(applySuppression(candidates, new Set(['%7']), '%9')).toEqual(candidates);
+  });
+
+  test('two clients: agent pane visible in client B is suppressed; a hidden agent still fires', () => {
+    // Client B is viewing %2 (an agent pane that just stopped); client A is on
+    // a non-agent pane %5. %2 is focused → its toast is suppressed. %1 stopped
+    // too but nobody is watching it → its toast still fires.
+    const cands = [notif('%1'), notif('%2')];
+    expect(applySuppression(cands, new Set(['%2', '%5']), null)).toEqual([notif('%1')]);
   });
 });

@@ -1,5 +1,6 @@
 import { AgentStatus, type DetectResult } from './types.ts';
 import { capturePane } from '../tmux/sessions.ts';
+import { capturePaneVia, type ControlReadClient } from '../tmux/control-adapter.ts';
 import {
   CLAUDE_MANIFEST,
   getCompiledRegex,
@@ -73,6 +74,14 @@ export function capturePaneLines(paneId: string): string[] {
   } catch {
     return [];
   }
+}
+
+// Control-mode variant of capturePaneLines: same SCRAPE_LINES window and
+// empty-on-failure semantic for NON-control errors, but a TmuxControlError (or
+// any throw from the control client) propagates so the TUI's tick wrapper can
+// flip the control latch and fall back to the fork path for the whole batch.
+export async function capturePaneLinesVia(client: ControlReadClient, paneId: string): Promise<string[]> {
+  return await capturePaneVia(client, paneId, SCRAPE_LINES);
 }
 
 export function scrapePane(paneId: string, agent: string): AgentStatus | null {

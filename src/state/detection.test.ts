@@ -395,6 +395,40 @@ describe('claude: live working indicators outrank a lingering answered prompt', 
   });
 });
 
+// 8b. Field-tested Claude Code permission-dialog phrases (herdr/tmux-agents-mon
+//     agents/claude.conf BLOCKED_SCREEN) added as case-insensitive PERMIT rules
+//     in tier 2. Each phrase alone reads PERMIT; a live token counter alongside
+//     a lingering answered one of these prompts still reads BUSY (tier 1 wins).
+describe('claude: field-tested permit phrases', () => {
+  const cases: Array<{ name: string; lines: string[]; ruleId: string }> = [
+    { name: 'waiting for permission', lines: ['waiting for permission'], ruleId: 'permit.waiting-for-permission' },
+    {
+      name: 'do you want to allow this connection?',
+      lines: ['do you want to allow this connection?'],
+      ruleId: 'permit.allow-connection',
+    },
+    { name: 'tab to amend', lines: ['tab to amend'], ruleId: 'permit.tab-to-amend' },
+    { name: 'ctrl+e to explain', lines: ['ctrl+e to explain'], ruleId: 'permit.ctrl-e-explain' },
+    { name: 'run a dynamic workflow?', lines: ['run a dynamic workflow?'], ruleId: 'permit.dynamic-workflow' },
+  ];
+  for (const c of cases) {
+    test(`${c.name} → PERMIT via ${c.ruleId}`, () => {
+      expect(detectFromPaneContent([...c.lines, '❯'], CLAUDE_MANIFEST)).toEqual({
+        status: AgentStatus.PERMIT,
+        ruleId: c.ruleId,
+      });
+    });
+  }
+
+  test('a live token counter outranks a lingering answered "waiting for permission" prompt', () => {
+    const lines = ['│ waiting for permission', '│ ❯ 1. Yes', '', '✽ Processing… (20m 29s · ↓ 45.4k tokens)', '', '❯'];
+    expect(detectFromPaneContent(lines, CLAUDE_MANIFEST)).toEqual({
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.token-counter-min',
+    });
+  });
+});
+
 // 9. The opencode built-in, verified against real captured opencode frames
 //    (herdr/agent-radar-derived patterns). Previously a hook-less opencode could
 //    only ever read BUSY/IDLE from the glyph scan.

@@ -121,6 +121,21 @@ export function windowColorArgs(states: AgentState[]): string[][] {
   return args;
 }
 
+// Decide the `--statusline` segment, preferring a fresh cache so a live TUI's
+// already-computed segment is reused without cold-booting Bun or re-reading
+// agent state. Pure: the caller hands in whatever it read from the cache (null
+// on miss) and a thunk for the live compute, and gets back the segment plus
+// whether it was a cache hit. Split out so the short-circuit is testable without
+// a real tmux/filesystem — the thin CLI shell in index.ts wires real I/O around
+// it.
+export function resolveStatusLineSegment(
+  cached: string | null,
+  computeLive: () => string,
+): { segment: string; hit: boolean } {
+  if (cached !== null) return { segment: cached, hit: true };
+  return { segment: computeLive(), hit: false };
+}
+
 export function runStatus(args: string[], states: AgentState[]): string {
   const tmuxMode = args.includes('--tmux');
   const statusLineMode = args.includes('--statusline');

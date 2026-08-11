@@ -211,6 +211,45 @@ export function linkPluginDir(fleetDir: string, link: string): void {
   symlinkSync(fleetDir, link);
 }
 
+// macOS-only best-effort click-to-jump notification helper. The FleetNotifier.app
+// bundle (built by scripts/install-notifier.sh into ~/Applications) owns the
+// notification permission on macOS 26; --setup requests it interactively. Any
+// failure is reported and swallowed so the main install/uninstall never fails
+// over the helper, and non-darwin platforms skip it entirely.
+const NOTIFIER_APP = join(homedir(), 'Applications', 'FleetNotifier.app');
+const NOTIFIER_HELPER = join(NOTIFIER_APP, 'Contents', 'MacOS', 'fleet-notifier');
+
+export function runNotifierInstallStep(): void {
+  if (process.platform !== 'darwin') return;
+  const fleetDir = fleetPluginDir();
+  if (!fleetDir) return;
+  const script = join(fleetDir, 'scripts', 'install-notifier.sh');
+  if (!existsSync(script)) return;
+
+  const build = Bun.spawnSync({ cmd: ['bash', script, '--quiet'], stdout: 'inherit', stderr: 'inherit' });
+  if (build.exitCode !== 0) {
+    process.stdout.write('  skipped macOS notification helper (install failed)\n');
+    return;
+  }
+  if (!existsSync(NOTIFIER_HELPER)) return;
+
+  const setup = Bun.spawnSync({ cmd: [NOTIFIER_HELPER, '--setup'], stdout: 'inherit', stderr: 'inherit' });
+  if (setup.exitCode === 0) {
+    process.stdout.write('Enabled click-to-jump notifications (FleetNotifier.app installed)\n');
+  } else {
+    process.stdout.write('  notifications are off — enable: System Settings → Notifications → FleetNotifier\n');
+  }
+}
+
+export function runNotifierUninstallStep(): void {
+  if (process.platform !== 'darwin') return;
+  try {
+    rmSync(NOTIFIER_APP, { recursive: true, force: true });
+  } catch {
+    /* best effort */
+  }
+}
+
 export function runInstall(): number {
   const fleetDir = fleetPluginDir();
   if (fleetDir === null) {
@@ -254,6 +293,8 @@ export function runInstall(): number {
     );
   }
 
+  runNotifierInstallStep();
+
   // Window state rollup is intentionally NOT offered here. Its tmux config
   // (see addTmuxRollupLines) overrides window-status-format wholesale, which
   // would discard a user's themed window formatting — fleet extends tmux, it
@@ -266,6 +307,7 @@ export function runInstall(): number {
 
 export function runUninstall(): number {
   runStatusLineRemove();
+  runNotifierUninstallStep();
 
   const confPath = tmuxConfPath();
   if (removeTmuxConfLine(confPath)) {

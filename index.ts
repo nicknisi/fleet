@@ -27,7 +27,13 @@ import {
 } from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
 import { acknowledgePlan } from './src/state/acknowledge.ts';
-import { detectFromPaneContent, detectFromTitle, scrapePane, capturePaneLines } from './src/state/scraper.ts';
+import {
+  detectFromPaneContent,
+  detectFromTitle,
+  scrapePane,
+  capturePaneLines,
+  capturePaneLinesVia,
+} from './src/state/scraper.ts';
 import { loadDetectionManifest } from './src/state/detection.ts';
 import { loadRenames, saveRename } from './src/state/rename.ts';
 import {
@@ -40,6 +46,7 @@ import {
   type ResolvedHookStatus,
 } from './src/state/types.ts';
 import { decideNotifications, applySuppression } from './src/notify/transitions.ts';
+import { readClientFocus } from './src/tmux/clients.ts';
 import { deliverDesktop } from './src/notify/deliver.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import type { AgentDir } from './src/agents/config.ts';
@@ -57,19 +64,22 @@ import {
   switchClient,
   killPane,
   gitBranch,
-  currentPaneId,
   type ListPanesResult,
   type PaneInfo,
 } from './src/tmux/sessions.ts';
+import { TmuxControlClient } from './src/tmux/control.ts';
+import { listPanesResultVia } from './src/tmux/control-adapter.ts';
+import { flipControlDead, shouldAttemptControl, type ControlLatch } from './src/tmux/control-router.ts';
 import { tmux, tmuxOrNull } from './src/tmux/ipc.ts';
 import { detectPorts } from './src/tmux/ports.ts';
 import { sendKeys, sendKeyNames, sendRawKey } from './src/tmux/send.ts';
 import { resolvePermitKeys } from './src/state/permit-keys.ts';
-import { runStatus } from './src/cli/status.ts';
+import { runStatus, formatStatusLine, resolveStatusLineSegment } from './src/cli/status.ts';
 import { runSidebar } from './src/cli/sidebar.ts';
 import { runNext } from './src/cli/next.ts';
 import { runSend } from './src/cli/send.ts';
 import { runInstall, runUninstall } from './src/cli/install.ts';
+import { runNotificationOpen } from './src/cli/notification-open.ts';
 import { runInstallCodex, runUninstallCodex } from './src/cli/install-codex.ts';
 import { runInstallPi, runUninstallPi } from './src/cli/install-pi.ts';
 import { runDoctor } from './src/cli/doctor.ts';
@@ -78,6 +88,7 @@ import { runExplain } from './src/cli/explain.ts';
 import { runStatusLineInject, runStatusLineRemove, emitWindowColors, rollupEnabled } from './src/cli/statusline.ts';
 import { runWait } from './src/cli/wait.ts';
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
+import { readFreshSegmentCache, writeSegmentCache } from './src/state/segment-cache.ts';
 
 const VERSION: string = packageJson.version;
 const FAST_REFRESH_MS = 500;
@@ -267,6 +278,19 @@ function reloadRenameCache(): void {
 }
 
 function refreshSlowCaches(panes: PaneInfo[], hookStatuses: ResolvedHookStatus[]): void {
+  refreshSlowCachesWithCapture(panes, hookStatuses, capturePaneLines);
+}
+
+// Same scan as refreshSlowCaches, but the per-pane capture is supplied by the
+// caller. The fork path passes capturePaneLines (sync); the control-mode TUI
+// path pre-fetches every pane via the control client, then passes a sync
+// lookup into the cache so the rest of the slow-tick work (git, ports,
+// discovery, classification) runs unchanged and shared between both paths.
+function refreshSlowCachesWithCapture(
+  panes: PaneInfo[],
+  hookStatuses: ResolvedHookStatus[],
+  captureFn: (paneId: string) => string[],
+): void {
   const paths = new Set<string>();
   for (const p of panes) paths.add(p.currentPath);
   branchCache.clear();
@@ -307,7 +331,7 @@ function refreshSlowCaches(panes: PaneInfo[], hookStatuses: ResolvedHookStatus[]
   // identity, and hook-less panes are only named by discovery below.
   const captureCache = new Map<string, string[]>();
   for (const p of panes) {
-    const lines = capturePaneLines(p.paneId);
+    const lines = captureFn(p.paneId);
     if (lines.length > 0) captureCache.set(p.paneId, lines);
   }
 
@@ -470,6 +494,64 @@ function fullRefreshStates(dirs: AgentDir[]): AgentState[] {
   return refreshStates(dirs, { panesResult, hookStatuses });
 }
 
+// --- TUI control-mode refresh seam ---------------------------------------
+// Async variants the TUI tick selects between. When the control client is
+// live, list-panes + per-pane capture go through it (one long-lived child,
+// zero forks); on ANY throw the latch flips, the client is closed, and the
+// batch re-runs through the synchronous fork path. After a flip, the latch
+// stays dead for the whole session — no retries. These are thin shells over
+// the shared refreshStates / refreshSlowCachesWithCapture so pane data shapes
+// are identical between paths. CLI one-shot paths never call these.
+async function refreshStatesTui(
+  dirs: AgentDir[],
+  client: TmuxControlClient | null,
+  latch: ControlLatch,
+): Promise<AgentState[]> {
+  if (client === null || latch.dead) return refreshStates(dirs);
+  try {
+    const panesResult = await listPanesResultVia(client);
+    const hookStatuses = readAllStatusDirs(dirs);
+    return refreshStates(dirs, { panesResult, hookStatuses });
+  } catch {
+    flipControlDead(latch);
+    try {
+      await client.close();
+    } catch {}
+    return refreshStates(dirs);
+  }
+}
+
+async function fullRefreshStatesTui(
+  dirs: AgentDir[],
+  client: TmuxControlClient | null,
+  latch: ControlLatch,
+): Promise<AgentState[]> {
+  if (client === null || latch.dead) return fullRefreshStates(dirs);
+  try {
+    // Resync barrier before the scan batch — drains any stale/unsolicited
+    // blocks so the list-panes read pairs with its own response.
+    await client.sync();
+    const panesResult = await listPanesResultVia(client);
+    const hookStatuses = readAllStatusDirs(dirs);
+    // Pre-fetch every pane's capture via the control client, then hand the
+    // cache to the shared slow-tick body so git/ports/discovery/classification
+    // run identically to the fork path.
+    const captureCache = new Map<string, string[]>();
+    for (const p of panesResult.panes) {
+      const lines = await capturePaneLinesVia(client, p.paneId);
+      if (lines.length > 0) captureCache.set(p.paneId, lines);
+    }
+    refreshSlowCachesWithCapture(panesResult.panes, hookStatuses, (id) => captureCache.get(id) ?? []);
+    return refreshStates(dirs, { panesResult, hookStatuses });
+  } catch {
+    flipControlDead(latch);
+    try {
+      await client.close();
+    } catch {}
+    return fullRefreshStates(dirs);
+  }
+}
+
 async function handleCli(args: string[]): Promise<number | null> {
   if (args.includes('--version') || args.includes('-v')) return printVersion();
   if (args.includes('--help') || args.includes('-h')) return printHelp();
@@ -484,13 +566,28 @@ async function handleCli(args: string[]): Promise<number | null> {
 
   switch (command) {
     case 'status': {
+      if (args.includes('--statusline')) {
+        // Serve the running TUI's already-computed segment when its cache is
+        // fresh, so this cold-booted Bun process does zero state reads / tmux
+        // forks on the hot path. On a miss, live-compute exactly as before and
+        // seed the cache for the next status-interval. Window colors are emitted
+        // by the running TUI on its own tick when the cache is fresh; on a miss
+        // (TUI closed) this process still emits them as today.
+        const cached = readFreshSegmentCache();
+        if (cached !== null) {
+          if (cached.length > 0) process.stdout.write(cached + '\n');
+          return 0;
+        }
+        const states = fullRefreshStates(dirs);
+        const { segment } = resolveStatusLineSegment(null, () => formatStatusLine(states));
+        writeSegmentCache(segment);
+        if (segment.length > 0) process.stdout.write(segment + '\n');
+        if (rollupEnabled()) emitWindowColors(states);
+        return 0;
+      }
       const states = fullRefreshStates(dirs);
       const output = runStatus(args.slice(1), states);
       if (output.length > 0) process.stdout.write(output + '\n');
-      // Emit runs even when output is empty: an all-calm bar still needs every
-      // window UNSET to clear stale tints. Gated on --statusline (the single
-      // per-redraw fleet call) and the opt-in @fleet_rollup option.
-      if (args.includes('--statusline') && rollupEnabled()) emitWindowColors(states);
       return 0;
     }
     case 'next': {
@@ -583,6 +680,9 @@ async function handleCli(args: string[]): Promise<number | null> {
       if (args[1] === 'codex') return runUninstallCodex();
       if (args[1] === 'pi') return runUninstallPi();
       return runUninstall();
+    case 'notification-open': {
+      return runNotificationOpen(args.slice(1));
+    }
     case 'doctor':
       return runDoctor();
     case 'reconcile': {
@@ -790,6 +890,15 @@ async function launchTui(): Promise<number> {
   // watching the dashboard. Null when launched outside tmux (harmless: per-pane
   // suppression still works).
   const fleetPaneId = process.env.TMUX_PANE ?? null;
+  // The running TUI is the authoritative source of the statusline segment and
+  // (when the rollup is opted in) the per-window @fleet_state tints, so it
+  // refreshes the cache the CLI `status --statusline` path reads and emits
+  // window colors on its own tick — letting that CLI path short-circuit with
+  // zero state reads / tmux forks once the cache is warm. Only meaningful inside
+  // tmux; read the rollup gate once (it spawns tmux) rather than per tick.
+  const insideTmux = process.env.TMUX !== undefined && process.env.TMUX.length > 0;
+  const rollupOn = insideTmux && rollupEnabled();
+  let lastWrittenSegment: string | null = null;
   let notifyPrev = new Map<string, AgentStatus>();
 
   // Compare this snapshot's statuses to the last and fire a silent desktop toast
@@ -799,12 +908,12 @@ async function launchTui(): Promise<number> {
   const maybeNotify = (states: AgentState[]) => {
     const { candidates, previous } = decideNotifications(states, notifyPrev);
     notifyPrev = previous;
-    if (candidates.length === 0) return; // resolve the active pane only when something fires
-    // null when tmux can't answer, which disables per-pane suppression —
+    if (candidates.length === 0) return; // resolve focus only when something fires
+    // Empty focus set (tmux down / no clients) suppresses nothing —
     // better a redundant toast than a missed one.
-    const activePaneId = currentPaneId();
-    for (const n of applySuppression(candidates, activePaneId, fleetPaneId)) {
-      deliverDesktop(`${STATUS_DISPLAY[n.status].label}: ${n.label}`, n.agentType);
+    const { focusedPanes } = readClientFocus();
+    for (const n of applySuppression(candidates, focusedPanes, fleetPaneId)) {
+      deliverDesktop(`${STATUS_DISPLAY[n.status].label}: ${n.label}`, n.agentType, n.paneId);
     }
   };
 
@@ -813,6 +922,22 @@ async function launchTui(): Promise<number> {
     app.tmuxDown = !lastTmuxOk;
     app.hooksMissing = !statusDirs.some((d) => existsSync(d));
     needsRender = true;
+    // Keep the CLI's statusline cache warm with the SAME renderer the CLI uses
+    // (formatStatusLine) so a cached hit is byte-identical to a live compute.
+    // Skip the write when the segment is unchanged since the last tick — the
+    // statusline is quiet most of the time, so this is usually a no-op fs call.
+    if (insideTmux) {
+      const segment = formatStatusLine(states);
+      if (segment !== lastWrittenSegment) {
+        writeSegmentCache(segment);
+        lastWrittenSegment = segment;
+      }
+      // Window tints used to be emitted by the CLI status path on every
+      // status-interval; now that the CLI short-circuits on a cache hit while
+      // the TUI runs, the TUI owns them so they stay live (one batched tmux
+      // spawn per tick, gated on the opt-in @fleet_rollup option).
+      if (rollupOn) emitWindowColors(states);
+    }
   };
 
   const doRefresh = () => applyStates(refreshStates(dirs));
@@ -841,6 +966,29 @@ async function launchTui(): Promise<number> {
     let slowTimer: ReturnType<typeof setInterval> | null = null;
     let finished = false;
 
+    // Control-mode fast path: one long-lived `tmux -C` child replaces a fork
+    // per list-panes / capture-pane on the hot loop. Opt-in (TUI-only, $TMUX
+    // set, FLEET_CONTROL_MODE !== '0'); connect failure or ANY later throw
+    // flips the latch to dead for the whole session and the loop reverts to
+    // the fork path permanently. The latch + client live in this closure.
+    const controlEnabled = shouldAttemptControl(process.env);
+    const controlLatch: ControlLatch = { dead: false };
+    let controlClient: TmuxControlClient | null = null;
+    // Guards against overlapping ticks: control reads are async, so a slow
+    // tick could still be draining when the fast interval fires. Skip the
+    // tick if the previous one is still running — do not queue.
+    let tickInFlight = false;
+
+    const safeCloseControl = async () => {
+      const c = controlClient;
+      controlClient = null;
+      if (c) {
+        try {
+          await c.close();
+        } catch {}
+      }
+    };
+
     const finish = (code: number) => {
       if (finished) return;
       finished = true;
@@ -849,6 +997,11 @@ async function launchTui(): Promise<number> {
       if (watcherTimeout !== null) clearTimeout(watcherTimeout);
       stopWatching();
       process.stdin.removeAllListeners('data');
+      // Close the control client best-effort on exit (detach + reap + unlink
+      // the capture temp file). Fire-and-forget: finish() is called from sync
+      // input handlers and resolve() ends the promise; the child is reaped
+      // during the microtask gap before process.exit.
+      void safeCloseControl();
       restore();
       resolve(code);
     };
@@ -1132,26 +1285,75 @@ async function launchTui(): Promise<number> {
 
     const isTyping = () => app.mode === TuiMode.SEND || app.mode === TuiMode.RENAME || app.isFiltering();
 
+    // Async ticks: route list-panes + capture through the control client when
+    // it's live, fall back to the fork path (permanently) on any error. The
+    // in-flight guard skips a tick if the previous one is still draining — it
+    // never queues, so a slow control batch simply stretches the interval.
+    const runFastTick = async () => {
+      if (tickInFlight || finished) return;
+      tickInFlight = true;
+      try {
+        const states = await refreshStatesTui(dirs, controlClient, controlLatch);
+        if (finished) return;
+        maybeNotify(states);
+        if (isTyping()) return;
+        applyStates(states);
+        if (app.visibleStates().some((s) => s.status === AgentStatus.BUSY)) {
+          app.pulsePhase = !app.pulsePhase;
+          needsRender = true;
+        }
+        tick();
+      } catch {
+        // Defensive: refreshStatesTui already falls back to fork, but never
+        // let an unexpected throw crash the TUI.
+      } finally {
+        tickInFlight = false;
+      }
+    };
+
+    const runSlowTick = async () => {
+      if (tickInFlight || finished) return;
+      if (isTyping()) return;
+      tickInFlight = true;
+      try {
+        const states = await fullRefreshStatesTui(dirs, controlClient, controlLatch);
+        if (finished) return;
+        applyStates(states);
+        tick();
+      } catch {
+        // Defensive: fullRefreshStatesTui already falls back to fork.
+      } finally {
+        tickInFlight = false;
+      }
+    };
+
+    // Attempt the control-mode connection (TUI-only, opt-in). Connect failure
+    // is silent: controlClient stays null and every tick uses the fork path
+    // for the whole session. On success the client is published so the next
+    // tick reads via control; onWake (debounced ~100ms inside control.ts)
+    // triggers an immediate fast tick, respecting the in-flight guard.
+    if (controlEnabled) {
+      const candidate = new TmuxControlClient({ onWake: () => void runFastTick() });
+      void candidate
+        .connect()
+        .then(() => {
+          if (!controlLatch.dead && !finished) controlClient = candidate;
+        })
+        .catch(() => {
+          void candidate.close().catch(() => {});
+        });
+    }
+
     // Fast timer: keep running in passthrough (preview needs live updates).
     // Notification detection runs every tick even while typing — only the list
     // refresh + render pause, so a background agent finishing still toasts.
     refreshTimer = setInterval(() => {
-      const states = refreshStates(dirs);
-      maybeNotify(states);
-      if (isTyping()) return;
-      applyStates(states);
-      if (app.visibleStates().some((s) => s.status === AgentStatus.BUSY)) {
-        app.pulsePhase = !app.pulsePhase;
-        needsRender = true;
-      }
-      tick();
+      void runFastTick();
     }, FAST_REFRESH_MS);
 
     // Slow timer: skip if user is actively typing
     slowTimer = setInterval(() => {
-      if (isTyping()) return;
-      doFullRefresh();
-      tick();
+      void runSlowTick();
     }, SLOW_REFRESH_MS);
 
     tick();
