@@ -140,9 +140,7 @@ export class TmuxControlClient {
    */
   sync(): Promise<void> {
     const marker = nextSyncMarker();
-    return this.serialize(() =>
-      drainUntilMarker(() => this.runSerialized(`display-message -p ${marker}`), marker),
-    );
+    return this.serialize(() => drainUntilMarker(() => this.runSerialized(`display-message -p ${marker}`), marker));
   }
 
   /**

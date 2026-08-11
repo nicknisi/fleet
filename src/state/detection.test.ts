@@ -421,14 +421,7 @@ describe('claude: field-tested permit phrases', () => {
   }
 
   test('a live token counter outranks a lingering answered "waiting for permission" prompt', () => {
-    const lines = [
-      '│ waiting for permission',
-      '│ ❯ 1. Yes',
-      '',
-      '✽ Processing… (20m 29s · ↓ 45.4k tokens)',
-      '',
-      '❯',
-    ];
+    const lines = ['│ waiting for permission', '│ ❯ 1. Yes', '', '✽ Processing… (20m 29s · ↓ 45.4k tokens)', '', '❯'];
     expect(detectFromPaneContent(lines, CLAUDE_MANIFEST)).toEqual({
       status: AgentStatus.BUSY,
       ruleId: 'busy.token-counter-min',

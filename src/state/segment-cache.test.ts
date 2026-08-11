@@ -70,7 +70,7 @@ describe('writeSegmentCache + readFreshSegmentCache', () => {
   test('returns null when the cache mtime is older than maxAgeSecs', () => {
     writeSegmentCache('stale-segment');
     // Push mtime 60s into the past — well beyond the 6s default.
-    const old = (Date.now() / 1000) - 60;
+    const old = Date.now() / 1000 - 60;
     utimesSync(cacheFilePath(), old, old);
     expect(readFreshSegmentCache()).toBeNull();
     // A larger maxAgeSecs still considers it fresh.
@@ -79,7 +79,7 @@ describe('writeSegmentCache + readFreshSegmentCache', () => {
 
   test('treats the boundary as fresh: age == maxAgeSecs is NOT stale', () => {
     writeSegmentCache('boundary');
-    const exactly = (Date.now() / 1000) - 6;
+    const exactly = Date.now() / 1000 - 6;
     utimesSync(cacheFilePath(), exactly, exactly);
     // ageSecs > maxAgeSecs is the gate, so age == 6 is still fresh.
     expect(readFreshSegmentCache(6)).toBe('boundary');

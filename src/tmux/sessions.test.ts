@@ -1,11 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  listPanes,
-  listPanesArgs,
-  listPanesCommand,
-  parsePanesOutput,
-  processCaptureOutput,
-} from './sessions.ts';
+import { listPanes, listPanesArgs, listPanesCommand, parsePanesOutput, processCaptureOutput } from './sessions.ts';
 
 describe('listPanes', () => {
   test('returns array (may be empty if not in tmux)', () => {

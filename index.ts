@@ -27,7 +27,13 @@ import {
 } from './src/state/hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './src/state/events.ts';
 import { acknowledgePlan } from './src/state/acknowledge.ts';
-import { detectFromPaneContent, detectFromTitle, scrapePane, capturePaneLines, capturePaneLinesVia } from './src/state/scraper.ts';
+import {
+  detectFromPaneContent,
+  detectFromTitle,
+  scrapePane,
+  capturePaneLines,
+  capturePaneLinesVia,
+} from './src/state/scraper.ts';
 import { loadDetectionManifest } from './src/state/detection.ts';
 import { loadRenames, saveRename } from './src/state/rename.ts';
 import {

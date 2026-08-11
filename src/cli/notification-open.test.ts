@@ -77,11 +77,7 @@ describe('listPanesArgs / listClientsArgs', () => {
     ]);
   });
   test('list-clients with the activity/name/flags format', () => {
-    expect(listClientsArgs('-')).toEqual([
-      'list-clients',
-      '-F',
-      '#{client_activity}\t#{client_name}\t#{client_flags}',
-    ]);
+    expect(listClientsArgs('-')).toEqual(['list-clients', '-F', '#{client_activity}\t#{client_name}\t#{client_flags}']);
   });
 });
 

@@ -10,13 +10,7 @@ import {
 
 describe('attachArgs', () => {
   test('no $TMUX: plain -C attach-session -f no-output', () => {
-    expect(attachArgs(undefined)).toEqual([
-      'tmux',
-      '-C',
-      'attach-session',
-      '-f',
-      'no-output',
-    ]);
+    expect(attachArgs(undefined)).toEqual(['tmux', '-C', 'attach-session', '-f', 'no-output']);
   });
 
   test('with $TMUX: first comma-field becomes -S socket', () => {
@@ -32,13 +26,7 @@ describe('attachArgs', () => {
   });
 
   test('empty socket field is skipped (no -S "")', () => {
-    expect(attachArgs(',12345,3')).toEqual([
-      'tmux',
-      '-C',
-      'attach-session',
-      '-f',
-      'no-output',
-    ]);
+    expect(attachArgs(',12345,3')).toEqual(['tmux', '-C', 'attach-session', '-f', 'no-output']);
   });
 });
 

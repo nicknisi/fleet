@@ -1,10 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  flipControlDead,
-  selectReadPath,
-  shouldAttemptControl,
-  type ControlLatch,
-} from './control-router.ts';
+import { flipControlDead, selectReadPath, shouldAttemptControl, type ControlLatch } from './control-router.ts';
 
 describe('selectReadPath', () => {
   test('control only when enabled + connected + not dead', () => {

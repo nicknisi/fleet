@@ -126,11 +126,7 @@ describe('planDarwinDelivery — ladder decision', () => {
       () => true,
     );
     expect(spec.program).toBe(helperPath(home));
-    expect(spec.args).toEqual([
-      'Codex finished',
-      'context',
-      "'/exe' 'notification-open' '%7' '-' '-'",
-    ]);
+    expect(spec.args).toEqual(['Codex finished', 'context', "'/exe' 'notification-open' '%7' '-' '-'"]);
     expect(spec.detached).toBe(true);
     expect(spec.stdin).toBeUndefined();
   });
@@ -143,7 +139,13 @@ describe('planDarwinDelivery — ladder decision', () => {
   });
 
   test('helper absent → silent osascript spec (no sound, no click)', () => {
-    const spec = planDarwinDelivery('Codex finished', 'context', "'/exe' 'notification-open'", '/Users/me', () => false);
+    const spec = planDarwinDelivery(
+      'Codex finished',
+      'context',
+      "'/exe' 'notification-open'",
+      '/Users/me',
+      () => false,
+    );
     expect(spec.program).toBe('osascript');
     expect(spec.args[0]).toBe('-e');
     const script = spec.args[1]!;

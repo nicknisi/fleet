@@ -23,9 +23,7 @@ describe('ControlProtocol greeting', () => {
 describe('ControlProtocol tag-matched termination', () => {
   test('a matching %end tag closes the block', () => {
     const p = new ControlProtocol();
-    const ev = p.feed(
-      '%begin 1 7 f\nline one\nline two\n%end 1 7 f\n',
-    );
+    const ev = p.feed('%begin 1 7 f\nline one\nline two\n%end 1 7 f\n');
     expect(ev).toHaveLength(1);
     const b = ev[0]!;
     expect(b.kind).toBe('block');
@@ -37,9 +35,7 @@ describe('ControlProtocol tag-matched termination', () => {
 
   test('a %end with a mismatched tag is body content, not a terminator', () => {
     const p = new ControlProtocol();
-    const ev = p.feed(
-      '%begin 1 7 f\n%end 1 999 f\nreal end\n%end 1 7 f\n',
-    );
+    const ev = p.feed('%begin 1 7 f\n%end 1 999 f\nreal end\n%end 1 7 f\n');
     const blocks = blockEvents(ev);
     expect(blocks).toHaveLength(1);
     const b = blocks[0]!;
@@ -88,12 +84,7 @@ describe('ControlProtocol %exit', () => {
 describe('ControlProtocol chunk splitting', () => {
   test('chunks split mid-line reassemble correctly', () => {
     const p = new ControlProtocol();
-    const ev = feedAll(p, [
-      '%beg',
-      'in 1 2 f\nhel',
-      'lo\n%end 1 2 ',
-      'f\n',
-    ]);
+    const ev = feedAll(p, ['%beg', 'in 1 2 f\nhel', 'lo\n%end 1 2 ', 'f\n']);
     const blocks = blockEvents(ev);
     expect(blocks).toHaveLength(1);
     const b = blocks[0]!;
@@ -104,10 +95,7 @@ describe('ControlProtocol chunk splitting', () => {
 
   test('chunks split mid-%end do not terminate early', () => {
     const p = new ControlProtocol();
-    const ev = feedAll(p, [
-      '%begin 1 5 f\nbody\n%en',
-      'd 1 999 f\n%end 1 5 f\n',
-    ]);
+    const ev = feedAll(p, ['%begin 1 5 f\nbody\n%en', 'd 1 999 f\n%end 1 5 f\n']);
     const blocks = blockEvents(ev);
     expect(blocks).toHaveLength(1);
     const b = blocks[0]!;
@@ -171,9 +159,7 @@ describe('ControlProtocol wake classification', () => {
 describe('ControlProtocol multiple blocks', () => {
   test('two back-to-back blocks each terminate on their own tag', () => {
     const p = new ControlProtocol();
-    const ev = p.feed(
-      '%begin 1 1 f\na\n%end 1 1 f\n%begin 1 2 f\nb\n%end 1 2 f\n',
-    );
+    const ev = p.feed('%begin 1 1 f\na\n%end 1 1 f\n%begin 1 2 f\nb\n%end 1 2 f\n');
     const blocks = blockEvents(ev);
     expect(blocks).toHaveLength(2);
     expect((blocks[0] as { body: string }).body).toBe('a');

@@ -6,12 +6,7 @@
 // wrapper catches them and flips the control latch).
 
 import type { TmuxControlClient } from './control.ts';
-import {
-  listPanesCommand,
-  parsePanesOutput,
-  processCaptureOutput,
-  type ListPanesResult,
-} from './sessions.ts';
+import { listPanesCommand, parsePanesOutput, processCaptureOutput, type ListPanesResult } from './sessions.ts';
 
 /** The subset of TmuxControlClient the adapters need — also a stub seam. */
 export interface ControlReadClient {
@@ -35,11 +30,7 @@ export async function listPanesResultVia(client: ControlReadClient): Promise<Lis
  * TmuxControlClient.capturePane), then the same line post-processing the fork
  * path applies, so the scraper sees an identical line array.
  */
-export async function capturePaneVia(
-  client: ControlReadClient,
-  paneId: string,
-  maxLines: number,
-): Promise<string[]> {
+export async function capturePaneVia(client: ControlReadClient, paneId: string, maxLines: number): Promise<string[]> {
   const output = await client.capturePane(paneId);
   return processCaptureOutput(output, maxLines);
 }

@@ -24,10 +24,9 @@ describe('parseClients — focus-events ON', () => {
 
 describe('parseClients — focus-events OFF', () => {
   test('treats every selected real-client pane as focused', () => {
-    const rows = [
-      '20\tclient-1\t$1\t%2\twork\tattached,utf8',
-      '30\tclient-2\t$2\t%3\tagents-mon\tattached,utf8',
-    ].join('\n');
+    const rows = ['20\tclient-1\t$1\t%2\twork\tattached,utf8', '30\tclient-2\t$2\t%3\tagents-mon\tattached,utf8'].join(
+      '\n',
+    );
     const focus = parseClients(rows, false);
 
     expect(focus.focusedPanes).toEqual(new Set(['%2', '%3']));

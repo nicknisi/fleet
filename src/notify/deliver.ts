@@ -54,7 +54,10 @@ export function sanitizeNotificationText(s: string): string {
   const n = chars.length;
   const isWs = (ch: string) => ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\v' || ch === '\f';
   // oxlint-disable-next-line no-control-regex
-  const isControl = (ch: string) => { const c = ch.codePointAt(0)!; return c < 0x20 || (c >= 0x7f && c < 0xa0); };
+  const isControl = (ch: string) => {
+    const c = ch.codePointAt(0)!;
+    return c < 0x20 || (c >= 0x7f && c < 0xa0);
+  };
   const skipCsi = () => {
     while (i < n) {
       const ch = chars[i]!;
@@ -197,12 +200,7 @@ export function deliverDesktop(title: string, body: string, paneId: string): voi
     if (process.platform === 'darwin') {
       const safeTitle = truncateText(sanitizeNotificationText(title), TITLE_LIMIT);
       const safeBody = truncateText(sanitizeNotificationText(body), BODY_LIMIT);
-      const click = buildClickCommand(
-        process.execPath,
-        paneId,
-        tmuxSocket(process.env),
-        terminalBundle(process.env),
-      );
+      const click = buildClickCommand(process.execPath, paneId, tmuxSocket(process.env), terminalBundle(process.env));
       const spec = planDarwinDelivery(safeTitle, safeBody, click, homedir(), existsSync);
       runSpec(spec);
       return;

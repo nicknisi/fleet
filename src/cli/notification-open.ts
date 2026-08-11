@@ -102,12 +102,7 @@ export function activationCommand(bundleId: string): string[] | null {
 // The exact-pane jump: switch the chosen client onto the pane's session, then
 // select the pane's window and the pane itself. `;` joins the three tmux
 // commands in one process (same shape as the reference open_pane).
-export function jumpArgs(
-  socketPath: string,
-  client: string,
-  paneId: string,
-  sessionName: string,
-): string[] {
+export function jumpArgs(socketPath: string, client: string, paneId: string, sessionName: string): string[] {
   return [
     ...socketArgs(socketPath),
     'switch-client',
@@ -159,5 +154,3 @@ export function runNotificationOpen(args: string[]): number {
   tmux(jumpArgs(socketPath, client, paneId, ref.sessionName));
   return 0;
 }
-
-

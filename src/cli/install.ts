@@ -237,9 +237,7 @@ export function runNotifierInstallStep(): void {
   if (setup.exitCode === 0) {
     process.stdout.write('Enabled click-to-jump notifications (FleetNotifier.app installed)\n');
   } else {
-    process.stdout.write(
-      '  notifications are off — enable: System Settings → Notifications → FleetNotifier\n',
-    );
+    process.stdout.write('  notifications are off — enable: System Settings → Notifications → FleetNotifier\n');
   }
 }
 
