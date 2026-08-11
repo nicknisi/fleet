@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/nicknisi/fleet/compare/v0.20.1...v0.21.0) (2026-08-11)
+
+
+### Features
+
+* control-mode tmux IPC, click-to-jump notifications, and detection hardening ([#58](https://github.com/nicknisi/fleet/issues/58)) ([cfff194](https://github.com/nicknisi/fleet/commit/cfff19499a504e6d1a0351d90000867ee6ecd5b5))
+
 ## [0.20.1](https://github.com/nicknisi/fleet/compare/v0.20.0...v0.20.1) (2026-08-04)
 
 
