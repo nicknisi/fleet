@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { formatTmuxStatus, formatPlainStatus, formatStatusLine, formatAge, windowColorArgs } from './status.ts';
+import {
+  formatTmuxStatus,
+  formatPlainStatus,
+  formatStatusLine,
+  formatAge,
+  windowColorArgs,
+  resolveStatusLineSegment,
+} from './status.ts';
 import { AgentStatus, ACK_ALL_RANGE, SIDEBAR_RANGE, type AgentState } from '../state/types.ts';
 
 const makeState = (overrides: Partial<AgentState>): AgentState => ({
@@ -318,5 +325,42 @@ describe('windowColorArgs', () => {
 
   test('returns no args for an empty state list', () => {
     expect(windowColorArgs([])).toHaveLength(0);
+  });
+});
+
+describe('resolveStatusLineSegment', () => {
+  // A fresh cached value short-circuits the live path: computeLive is never
+  // called, so no tmux forks or state reads happen on a cache hit. The decision
+  // is pure — no real tmux/filesystem needed.
+  test('returns the cached segment as a hit and never calls computeLive', () => {
+    let liveCalls = 0;
+    const computeLive = () => {
+      liveCalls++;
+      return formatStatusLine([makeState({ status: AgentStatus.PERMIT })]);
+    };
+    const result = resolveStatusLineSegment('cached-segment', computeLive);
+    expect(result).toEqual({ segment: 'cached-segment', hit: true });
+    expect(liveCalls).toBe(0);
+  });
+
+  test('falls back to computeLive on a miss (null cache) and reports hit: false', () => {
+    const states = [makeState({ status: AgentStatus.PERMIT, window: 'p-win' })];
+    const result = resolveStatusLineSegment(null, () => formatStatusLine(states));
+    expect(result.hit).toBe(false);
+    expect(result.segment).toContain('p-win');
+    // Byte-identical to the live renderer the TUI uses.
+    expect(result.segment).toBe(formatStatusLine(states));
+  });
+
+  test('a miss with an empty cache string is still treated as a hit', () => {
+    // An empty bar is a valid cached value (sidebar button only); null is the
+    // only miss signal, so the CLI never recomputes just to render nothing.
+    let liveCalls = 0;
+    const result = resolveStatusLineSegment('', () => {
+      liveCalls++;
+      return 'live';
+    });
+    expect(result).toEqual({ segment: '', hit: true });
+    expect(liveCalls).toBe(0);
   });
 });

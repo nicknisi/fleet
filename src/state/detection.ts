@@ -178,6 +178,14 @@ export const CLAUDE_MANIFEST: DetectionManifest = {
       denyKeys: ['n'],
     },
     { id: 'permit.do-you-want', pattern: 'Do you want to (proceed|allow)', state: 'PERMIT' },
+    // Field-tested Claude Code permission-dialog phrases (herdr/tmux-agents-mon
+    // agents/claude.conf BLOCKED_SCREEN) fleet previously missed. All are
+    // case-insensitive; the manifest-level approve/deny keys (1 / Escape) apply.
+    { id: 'permit.waiting-for-permission', pattern: 'waiting for permission', flags: 'i', state: 'PERMIT' },
+    { id: 'permit.allow-connection', pattern: 'do you want to allow this connection\\?', flags: 'i', state: 'PERMIT' },
+    { id: 'permit.tab-to-amend', pattern: 'tab to amend', flags: 'i', state: 'PERMIT' },
+    { id: 'permit.ctrl-e-explain', pattern: 'ctrl\\+e to explain', flags: 'i', state: 'PERMIT' },
+    { id: 'permit.dynamic-workflow', pattern: 'run a dynamic workflow\\?', flags: 'i', state: 'PERMIT' },
     { id: 'question.enter-select', pattern: 'Enter to select.*[↑↓]|Esc to cancel', state: 'QUESTION' },
     { id: 'busy.spinner-glyph', pattern: WORKING_GLYPH_PATTERN, state: 'BUSY' },
   ],
@@ -196,8 +204,10 @@ export const CLAUDE_MANIFEST: DetectionManifest = {
 
 // --- the embedded built-in `codex` manifest (Phase 3) ---
 // Codex fires PreToolUse+Stop hooks, so BUSY/DONE come from the hook (which is
-// authoritative and faster than any spinner regex) — no BUSY scrape rule is
-// needed. Codex has no Notification hook and its on-screen prompts don't cleanly
+// authoritative and faster than any spinner regex). A busy.esc-interrupt screen
+// rule is kept as a hook-less fallback (herdr WORKING_SCREEN) so a captured
+// working frame still reads BUSY when no hook is wired. Codex has no Notification
+// hook and its on-screen prompts don't cleanly
 // separate a permission request from a question, so every prompt rule is PERMIT
 // (QUESTION is not currently sourced for Codex — a documented limitation). Rules
 // are ORDERED, first match wins, exactly like CLAUDE_MANIFEST; ids follow the
@@ -212,6 +222,10 @@ export const CODEX_MANIFEST: DetectionManifest = {
     { id: 'permit.confirm', pattern: 'press enter to confirm or esc to cancel', flags: 'i', state: 'PERMIT' },
     { id: 'permit.yn', pattern: '\\[y/n\\]', flags: 'i', state: 'PERMIT', approveKeys: ['y'], denyKeys: ['n'] },
     { id: 'permit.do-you-want', pattern: 'do you want to', flags: 'i', state: 'PERMIT' },
+    // Hook-less BUSY fallback (herdr WORKING_SCREEN='esc to interrupt'). Codex's
+    // PreToolUse+Stop hooks are authoritative and faster, so this only lands
+    // when no hook is wired — it never overrides a permit rule above it.
+    { id: 'busy.esc-interrupt', pattern: 'esc to interrupt', flags: 'i', state: 'BUSY' },
   ],
   // Codex retitles its pane "Action Required" while blocked on approval — the
   // signal its missing Notification hook never provides — and prefixes a braille

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { listPanes, parsePanesOutput } from './sessions.ts';
+import {
+  listPanes,
+  listPanesArgs,
+  listPanesCommand,
+  parsePanesOutput,
+  processCaptureOutput,
+} from './sessions.ts';
 
 describe('listPanes', () => {
   test('returns array (may be empty if not in tmux)', () => {
@@ -78,5 +84,46 @@ describe('parsePanesOutput', () => {
     expect(panes[0]!.focused).toBe(true);
     expect(panes[1]!.windowId).toBe('@2');
     expect(panes[1]!.focused).toBe(false);
+  });
+});
+
+describe('listPanesArgs / listPanesCommand', () => {
+  test('fork argv carries PANE_FORMAT as a single literal arg', () => {
+    const args = listPanesArgs();
+    expect(args).toEqual(['list-panes', '-a', '-F', expect.any(String)]);
+    // The format is one arg — tabs ride inside it, not as separate tokens.
+    expect(args).toHaveLength(4);
+    expect(args[3]!.includes('\t')).toBe(true);
+  });
+
+  test('control command single-quotes the format so tabs are not split', () => {
+    const cmd = listPanesCommand();
+    expect(cmd.startsWith("list-panes -a -F '")).toBe(true);
+    expect(cmd.endsWith("'")).toBe(true);
+    // The embedded tabs ride INSIDE the quoted argument.
+    expect(cmd.includes('\t')).toBe(true);
+    // Exactly two single quotes — the wrapping pair — so the format body has no
+    // stray quote that would prematurely close the argument.
+    expect(cmd.split("'").length - 1).toBe(2);
+  });
+});
+
+describe('processCaptureOutput', () => {
+  test('strips trailing whitespace per line, drops trailing blanks, keeps the bottom window', () => {
+    const out = processCaptureOutput('a   \nb\n\n\n', 2);
+    expect(out).toEqual(['a', 'b']);
+  });
+
+  test('slices to the last maxLines', () => {
+    const out = processCaptureOutput('1\n2\n3\n4', 2);
+    expect(out).toEqual(['3', '4']);
+  });
+
+  test('handles output shorter than maxLines', () => {
+    expect(processCaptureOutput('only\n', 50)).toEqual(['only']);
+  });
+
+  test('empty input -> empty array', () => {
+    expect(processCaptureOutput('', 50)).toEqual([]);
   });
 });

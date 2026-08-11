@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { tmux } from '../tmux/ipc.ts';
+import { tmux, getTmuxOption } from '../tmux/ipc.ts';
 import { loadAgentDirs } from '../agents/config.ts';
 import { marketplaceDir } from './install.ts';
 
@@ -9,6 +9,9 @@ interface Check {
   name: string;
   ok: boolean;
   detail: string;
+  // Advisory checks render a warning but never fail the overall exit code —
+  // used for recommendations like enabling focus-events.
+  advisory?: boolean;
 }
 
 interface InstalledPluginEntry {
@@ -37,7 +40,13 @@ export function installedPluginHasHooks(pluginsRoot: string, prefix = 'fleet@'):
   return false;
 }
 
-// The plugin cache can hold hooks while the marketplace *source* is broken —
+// The global focus-events option gates per-client focus detection. With it
+// off, every real client's selected pane is treated as focused (a coarser but
+// still useful fallback). It's a recommendation, not a hard failure.
+export function focusEventsOn(option: string | null): boolean {
+  return option === 'on';
+}
+
 // e.g. a symlink into a Homebrew keg that `brew upgrade` deleted. Claude Code
 // then drops the plugin at session start and hooks silently stop firing, while
 // the cache-based check above still passes. existsSync follows symlinks, so a
@@ -112,12 +121,22 @@ export function runDoctor(): number {
     });
   }
 
+  const focusEvents = getTmuxOption('focus-events');
+  checks.push({
+    name: 'focus-events',
+    ok: focusEventsOn(focusEvents),
+    advisory: true,
+    detail: focusEventsOn(focusEvents)
+      ? 'on'
+      : `off — per-client focus detection needs 'set -g focus-events on' for accurate suppression`,
+  });
+
   let allOk = true;
   for (const check of checks) {
-    const icon = check.ok ? '✓' : '✗';
-    const color = check.ok ? '\x1b[32m' : '\x1b[31m';
+    const icon = check.ok ? '✓' : check.advisory ? '!' : '✗';
+    const color = check.ok ? '\x1b[32m' : check.advisory ? '\x1b[33m' : '\x1b[31m';
     process.stdout.write(`${color}${icon}\x1b[0m ${check.name}: ${check.detail}\n`);
-    if (!check.ok) allOk = false;
+    if (!check.ok && !check.advisory) allOk = false;
   }
 
   return allOk ? 0 : 1;

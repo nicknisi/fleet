@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installedPluginHasHooks, marketplaceSourceOk } from './doctor.ts';
+import { focusEventsOn, installedPluginHasHooks, marketplaceSourceOk } from './doctor.ts';
 
 let pluginsRoot: string;
 
@@ -99,5 +99,14 @@ describe('marketplaceSourceOk', () => {
   test('returns false when the source dir lacks hooks', () => {
     mkdirSync(join(pluginsRoot, 'fleet'), { recursive: true });
     expect(marketplaceSourceOk(pluginsRoot)).toBe(false);
+  });
+});
+
+describe('focusEventsOn', () => {
+  test('true only for the exact value "on"', () => {
+    expect(focusEventsOn('on')).toBe(true);
+    expect(focusEventsOn('off')).toBe(false);
+    expect(focusEventsOn('')).toBe(false);
+    expect(focusEventsOn(null)).toBe(false);
   });
 });

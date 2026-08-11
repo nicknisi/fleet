@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { detectFromPaneContent, detectFromTitle } from './scraper.ts';
+import { capturePaneLinesVia, detectFromPaneContent, detectFromTitle } from './scraper.ts';
 import { CLAUDE_MANIFEST, CODEX_MANIFEST, OPENCODE_MANIFEST, PI_MANIFEST } from './detection.ts';
 import { AgentStatus } from './types.ts';
+import type { ControlReadClient } from '../tmux/control-adapter.ts';
 
 describe('detectFromPaneContent', () => {
   test('detects permission prompt [y/n]', () => {
@@ -111,5 +112,24 @@ describe('detectFromTitle', () => {
   test('manifests without titleRules never title-match', () => {
     expect(detectFromTitle('⠂ anything', PI_MANIFEST).status).toBeNull();
     expect(detectFromTitle('Action Required', OPENCODE_MANIFEST).status).toBeNull();
+  });
+});
+
+describe('capturePaneLinesVia', () => {
+  // SCRAPE_LINES is 50 — the bottom window the scraper evaluates.
+  test('returns the processed capture (same post-processing as the fork path)', async () => {
+    const fake: ControlReadClient = {
+      run: async () => '',
+      capturePane: async () => 'top\nmid   \nbottom\n\n',
+    };
+    expect(await capturePaneLinesVia(fake, '%1')).toEqual(['top', 'mid', 'bottom']);
+  });
+
+  test('propagates control errors so the TUI wrapper can flip the latch', async () => {
+    const fake: ControlReadClient = {
+      run: async () => '',
+      capturePane: async () => Promise.reject(new Error('dead')),
+    };
+    await expect(capturePaneLinesVia(fake, '%1')).rejects.toThrow('dead');
   });
 });

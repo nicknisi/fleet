@@ -38,15 +38,18 @@ export function decideNotifications(
   return { candidates, previous: next };
 }
 
-// Suppression: silent entirely while you're viewing fleet's own pane (you can see
-// the change on the dashboard); otherwise drop the one pane you're viewing.
-// activePaneId === null disables suppression (used when the active pane can't be
-// resolved — better a redundant toast than a missed one).
+// Suppression: silent entirely while you're viewing fleet's own pane (you can
+// see the change on the dashboard); otherwise drop candidates whose pane a real
+// tmux client is currently focused on. `focusedPanes` is the multi-client focus
+// set from readClientFocus() — empty when tmux can't answer, which suppresses
+// nothing (better a redundant toast than a missed one). `fleetPaneId` is null
+// when fleet runs outside tmux, in which case per-pane suppression still applies.
 export function applySuppression(
   candidates: Notification[],
-  activePaneId: string | null,
+  focusedPanes: Set<string>,
   fleetPaneId: string | null,
 ): Notification[] {
-  if (activePaneId != null && activePaneId === fleetPaneId) return []; // watching the dashboard
-  return candidates.filter((c) => c.paneId !== activePaneId);
+  if (fleetPaneId != null && focusedPanes.has(fleetPaneId)) return []; // watching the dashboard
+  if (focusedPanes.size === 0) return candidates; // suppress nothing when unknown
+  return candidates.filter((c) => !focusedPanes.has(c.paneId));
 }

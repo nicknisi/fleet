@@ -19,7 +19,7 @@ export interface PaneInfo {
 
 // Fields are inserted BEFORE pane_title so it stays LAST: a stray tab in a pane
 // title then lands in trailing (ignored) parts instead of shifting a field.
-const PANE_FORMAT =
+export const PANE_FORMAT =
   '#{pane_id}\t#{session_name}\t#{window_name}\t#{window_id}\t#{window_index}\t#{pane_current_path}\t#{pane_pid}\t#{pane_active}\t#{window_active}\t#{session_attached}\t#{pane_title}';
 
 export interface ListPanesResult {
@@ -54,8 +54,21 @@ export function parsePanesOutput(stdout: string): PaneInfo[] {
   return panes;
 }
 
+// Argv the fork path feeds to `tmux` (one literal arg, tabs preserved).
+export function listPanesArgs(): string[] {
+  return ['list-panes', '-a', '-F', PANE_FORMAT];
+}
+
+// The same scan as a single control-mode command line. PANE_FORMAT contains
+// literal tab separators, so it MUST be single-quoted — tmux's command parser
+// splits an unquoted argument on whitespace (tabs included) and the format
+// would be broken across tokens. PANE_FORMAT has no single-quote chars.
+export function listPanesCommand(): string {
+  return `list-panes -a -F '${PANE_FORMAT}'`;
+}
+
 export function listPanesResult(): ListPanesResult {
-  const result = tmux(['list-panes', '-a', '-F', PANE_FORMAT]);
+  const result = tmux(listPanesArgs());
   if (result.exitCode !== 0) return { ok: false, panes: [] };
   return { ok: true, panes: parsePanesOutput(result.stdout) };
 }
@@ -64,14 +77,22 @@ export function listPanes(): PaneInfo[] {
   return listPanesResult().panes;
 }
 
-export function capturePane(paneId: string, maxLines: number): string[] {
-  const output = tmuxOrThrow(['capture-pane', '-e', '-p', '-t', paneId], 'capture-pane failed');
+// Shared post-processing for capture-pane output (fork `-p` text and control
+// save-buffer text alike): strip trailing whitespace per line, drop trailing
+// blank lines, then keep only the bottom `maxLines` window. Extracted so the
+// control-mode adapter produces byte-identical line arrays to the fork path.
+export function processCaptureOutput(output: string, maxLines: number): string[] {
   const lines = output.split('\n').map((line) => line.replace(/[\s ]+$/, ''));
   while (lines.length > 0 && lines[lines.length - 1] === '') {
     lines.pop();
   }
   const start = Math.max(0, lines.length - maxLines);
   return lines.slice(start);
+}
+
+export function capturePane(paneId: string, maxLines: number): string[] {
+  const output = tmuxOrThrow(['capture-pane', '-e', '-p', '-t', paneId], 'capture-pane failed');
+  return processCaptureOutput(output, maxLines);
 }
 
 export function currentSessionName(): string | null {
