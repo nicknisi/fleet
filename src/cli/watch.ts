@@ -14,6 +14,7 @@
 
 import { type AgentState } from '../state/types.ts';
 import { resolveSelector } from '../state/selector.ts';
+import { computeRepoGroups, siblingWorktreeCount } from '../state/repo-groups.ts';
 import { SCHEMA_VERSION, buildEnvelope, classifyOutcome, isAgent, toAgentView, type AgentView } from './schema.ts';
 
 export const WATCH_INTERVAL_MS = 500;
@@ -59,6 +60,7 @@ export function diffStates(
   const next = new Map<string, string>();
   const changes: ChangeLine[] = [];
   const byPane = new Map<string, AgentState>();
+  const groups = computeRepoGroups(agents);
   for (const a of agents) byPane.set(a.paneId, a);
 
   for (const a of agents) {
@@ -74,7 +76,7 @@ export function diffStates(
         agentType: a.agentType,
         from: before ?? null,
         to: a.status,
-        agent: toAgentView(a),
+        agent: toAgentView(a, siblingWorktreeCount(a, groups)),
       });
     }
   }
@@ -118,6 +120,7 @@ export function snapshotLine(
   tmuxOk: boolean,
   now: number,
   totalAgents = agents.length,
+  groupAgents = agents,
 ): string {
   const outcome = classifyOutcome({
     tmuxOk,
@@ -127,6 +130,7 @@ export function snapshotLine(
   });
   const envelope = buildEnvelope({
     agents,
+    groupAgents,
     outcome,
     selector: selectors.length > 0 ? selectors.join(',') : null,
     now,
@@ -138,9 +142,10 @@ export async function runWatch(opts: RunWatchOptions): Promise<number> {
   const interval = opts.intervalMs ?? WATCH_INTERVAL_MS;
 
   const initialStates = opts.getStates();
+  const initialAgents = initialStates.filter(isAgent);
   const initial = selectAgents(initialStates, opts.selectors);
   let tmuxWasOk = opts.tmuxOk();
-  opts.emit(snapshotLine(initial, opts.selectors, tmuxWasOk, opts.now(), initialStates.filter(isAgent).length));
+  opts.emit(snapshotLine(initial, opts.selectors, tmuxWasOk, opts.now(), initialAgents.length, initialAgents));
 
   let prev = new Map<string, string>();
   for (const a of initial) prev.set(a.paneId, a.status);
@@ -157,13 +162,15 @@ export async function runWatch(opts: RunWatchOptions): Promise<number> {
     // a false disappearance/reappearance storm. Recovery emits a new baseline.
     if (!tmuxOk) {
       if (tmuxWasOk) {
-        opts.emit(snapshotLine(agents, opts.selectors, false, opts.now(), states.filter(isAgent).length));
+        const allAgents = states.filter(isAgent);
+        opts.emit(snapshotLine(agents, opts.selectors, false, opts.now(), allAgents.length, allAgents));
       }
       tmuxWasOk = false;
       continue;
     }
     if (!tmuxWasOk) {
-      opts.emit(snapshotLine(agents, opts.selectors, true, opts.now(), states.filter(isAgent).length));
+      const allAgents = states.filter(isAgent);
+      opts.emit(snapshotLine(agents, opts.selectors, true, opts.now(), allAgents.length, allAgents));
       prev = new Map(agents.map((agent) => [agent.paneId, agent.status]));
       tmuxWasOk = true;
       continue;

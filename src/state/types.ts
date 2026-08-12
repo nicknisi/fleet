@@ -84,6 +84,9 @@ export const STATUS_DISPLAY: Record<AgentStatus, { icon: string; label: string; 
   [AgentStatus.DOWN]: { icon: '○', label: 'down', color: 'brightblack' },
 };
 
+import type { GitMetadata } from './git-metadata.ts';
+import type { WorkmuxEnrichment } from '../adapters/workmux.ts';
+
 export interface AgentState {
   paneId: string;
   paneNum: number;
@@ -96,6 +99,18 @@ export interface AgentState {
   tool: string | null;
   project: string | null;
   branch: string | null;
+  // Read-only git metadata for this pane's cwd (repository identity, worktree
+  // root, branch/detached, dirty + staged/unstaged/untracked counts,
+  // ahead/behind, diffstat). null on a non-git dir or any git failure.
+  // Refreshed on the slow tick only — never on the fast path. `branch` above is
+  // preserved (derived from this) for source/JSON compatibility.
+  // Optional for source compatibility with AgentState fixtures; live refreshes
+  // always set it (null on a non-git dir).
+  git?: GitMetadata | null;
+  // Read-only workmux enrichment, present only when workmux is installed and
+  // claims this pane. Fleet's core detection never depends on this. Optional for
+  // fixture compatibility; live refreshes set it to null when unmanaged.
+  workmux?: WorkmuxEnrichment | null;
   ports: number[];
   ts: number;
   agentType: string;

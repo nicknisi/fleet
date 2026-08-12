@@ -12,6 +12,9 @@ import {
   type AgentState,
   type StateDecision,
 } from '../state/types.ts';
+import type { GitMetadata } from '../state/git-metadata.ts';
+import type { WorkmuxEnrichment } from '../adapters/workmux.ts';
+import { computeRepoGroups, siblingWorktreeCount } from '../state/repo-groups.ts';
 import { EXIT, type ExitCode } from './exit-codes.ts';
 
 export const SCHEMA_VERSION = 'fleet.observe/v1';
@@ -59,6 +62,13 @@ export interface AgentView {
   project: string | null;
   branch: string | null;
   ports: number[];
+  // --- Additive (v1) git metadata. null on a non-git dir. -------------------
+  git: GitMetadata | null;
+  // Distinct sibling worktrees sharing this pane's repository id (0 when the
+  // pane has no git metadata). Computed across the reported agent set.
+  repoSiblingCount: number;
+  // --- Additive (v1) workmux enrichment. null when unmanaged/absent. --------
+  workmux: WorkmuxEnrichment | null;
 }
 
 export interface Envelope {
@@ -77,7 +87,7 @@ export function isAgent(state: AgentState): boolean {
   return state.agentType.length > 0;
 }
 
-export function toAgentView(state: AgentState): AgentView {
+export function toAgentView(state: AgentState, repoSiblingCount = 0): AgentView {
   const d = state.decision ?? null;
   return {
     pane: state.paneId,
@@ -106,6 +116,9 @@ export function toAgentView(state: AgentState): AgentView {
     project: state.project,
     branch: state.branch,
     ports: state.ports,
+    git: state.git ?? null,
+    repoSiblingCount,
+    workmux: state.workmux ?? null,
   };
 }
 
@@ -147,18 +160,22 @@ export function outcomeExitCode(outcome: Outcome): ExitCode {
 
 export interface BuildEnvelopeInput {
   agents: AgentState[]; // already selector-filtered agents to report
+  groupAgents?: AgentState[]; // unfiltered roster used for sibling counts
   outcome: Outcome;
   selector: string | null;
   now: number; // epoch ms
 }
 
 export function buildEnvelope(input: BuildEnvelopeInput): Envelope {
+  // Sibling counts are computed across the unfiltered roster when supplied, so
+  // narrowing status to one pane does not make its sibling count collapse.
+  const groups = computeRepoGroups(input.groupAgents ?? input.agents);
   return {
     schema: SCHEMA_VERSION,
     outcome: input.outcome,
     queriedAt: input.now,
     selector: input.selector,
     count: input.agents.length,
-    agents: input.agents.map(toAgentView),
+    agents: input.agents.map((a) => toAgentView(a, siblingWorktreeCount(a, groups))),
   };
 }

@@ -34,6 +34,7 @@ import { runReconcile } from './reconcile.ts';
 import { runExplain } from './explain.ts';
 import { runStatusLineInject, runStatusLineRemove, emitWindowColors, rollupEnabled } from './statusline.ts';
 import { runWait, parseWaitArgs } from './wait.ts';
+import { workmuxOpenCli } from './workmux-open.ts';
 import type { Selectable } from '../state/selector.ts';
 
 const VERSION: string = packageJson.version;
@@ -65,6 +66,7 @@ export function printHelp(): number {
       `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
       `    ${C.idle}fleet wait${C.reset} <sel> --state <s>     ${C.gray}Block until agent reaches state${C.reset}`,
       `    ${C.idle}fleet explain${C.reset} <session>          ${C.gray}Trace how a session's state was decided${C.reset}`,
+      `    ${C.idle}fleet workmux-open${C.reset} <selector>     ${C.gray}Focus a workmux-managed agent${C.reset}`,
       `    ${C.idle}fleet reconcile${C.reset} [--dry-run]      ${C.gray}Sweep orphan status files${C.reset}`,
       '',
       `  ${C.bold}Observe${C.reset}  ${C.dim}— machine-readable (${SCHEMA_VERSION})${C.reset}`,
@@ -319,6 +321,13 @@ export async function handleCli(args: string[]): Promise<number | null> {
       }
       process.stderr.write('Usage: fleet statusline --inject [--force] | --remove\n');
       return 1;
+    }
+    case 'workmux-open': {
+      // Read-only: resolve the selector to an already-enriched agent and ask
+      // workmux to focus it. Clear nonzero diagnostic when workmux is absent or
+      // the pane isn't workmux-managed. Never mutates git/worktree state.
+      const states = fullRefreshStates(dirs);
+      return workmuxOpenCli(args.slice(1), states);
     }
     case 'wait': {
       const parsed = parseWaitArgs(args.slice(1));

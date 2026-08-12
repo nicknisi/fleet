@@ -16,7 +16,17 @@
 // Run: `bun run build && bun test ./e2e/harness.e2e.ts`
 
 import { test, expect, describe, beforeAll, afterAll, afterEach } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+  rmSync,
+  chmodSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -37,7 +47,9 @@ const hasTmux = Bun.spawnSync({ cmd: ['tmux', '-V'], stdout: 'ignore', stderr: '
 const hasBin = existsSync(BIN);
 // The whole suite depends on real tmux + the compiled binary. Skipping loudly
 // (rather than silently passing) keeps a missing prerequisite honest in CI.
+const hasGit = Bun.spawnSync({ cmd: ['git', '--version'], stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
 const suite = hasTmux && hasBin ? describe : describe.skip;
+const gitSuite = hasTmux && hasBin && hasGit ? describe : describe.skip;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -77,6 +89,32 @@ function newSession(): { name: string; pane: string } {
   tm(['new-session', '-d', '-s', name, '-x', '120', '-y', '40']);
   const pane = tmOut(['list-panes', '-t', name, '-F', '#{pane_id}']).split('\n')[0]!;
   return { name, pane };
+}
+
+// Same, but with the pane's start directory set to `dir` so pane_current_path
+// (and thus git metadata) resolves against a known worktree.
+function newSessionIn(dir: string): { name: string; pane: string } {
+  const name = `e2e${++sessionSeq}`;
+  tm(['new-session', '-d', '-s', name, '-x', '120', '-y', '40', '-c', dir]);
+  const pane = tmOut(['list-panes', '-t', name, '-F', '#{pane_id}']).split('\n')[0]!;
+  return { name, pane };
+}
+
+function runGit(cwd: string, args: string[]): string {
+  const p = Bun.spawnSync({
+    cmd: ['git', ...args],
+    cwd,
+    stdout: 'pipe',
+    stderr: 'ignore',
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'e2e',
+      GIT_AUTHOR_EMAIL: 'e2e@x',
+      GIT_COMMITTER_NAME: 'e2e',
+      GIT_COMMITTER_EMAIL: 'e2e@x',
+    },
+  });
+  return p.stdout.toString().trim();
 }
 
 function statusPath(pane: string): string {
@@ -540,6 +578,202 @@ suite('watch (compiled binary, bounded subprocess)', () => {
     // Clean shutdown: exit 0 (the SIGTERM handler flips the stop flag and the
     // loop returns) or the signal's 143 — never a crash.
     expect(code === 0 || code === 143).toBe(true);
+
+    tm(['kill-session', '-t', name]);
+  });
+});
+
+gitSuite('git metadata (compiled binary)', () => {
+  // A real repo with one commit and a dirty working tree, exercised through the
+  // compiled binary's `list --json` so the whole git-metadata cache + parsers +
+  // JSON surface run end to end.
+  function makeRepo(): string {
+    const repo = mkdtempSync(join(root, 'gitrepo-'));
+    runGit(repo, ['init', '-q', '-b', 'main']);
+    writeFileSync(join(repo, 'a.txt'), 'hello\n');
+    runGit(repo, ['add', 'a.txt']);
+    runGit(repo, ['commit', '-q', '-m', 'init']);
+    return repo;
+  }
+
+  test('list --json reports repository identity, worktree root, branch and diffstat', () => {
+    const repo = makeRepo();
+    // Dirty the tree: one staged change and one untracked file.
+    writeFileSync(join(repo, 'a.txt'), 'hello world\n');
+    runGit(repo, ['add', 'a.txt']);
+    writeFileSync(join(repo, 'b.txt'), 'new\n');
+
+    const { name, pane } = newSessionIn(repo);
+    writeStatus(pane, name, { state: 'idle' });
+
+    const res = fleet(['list', '--json']);
+    expect(res.code).toBe(0);
+    const env = JSON.parse(res.stdout);
+    const agent = env.agents.find((a: { pane: string }) => a.pane === pane);
+    expect(agent).toBeTruthy();
+    expect(agent.git).toBeTruthy();
+    expect(agent.git.commonDir).toMatch(/\.git$/);
+    expect(agent.git.repoId).toBe(agent.git.commonDir);
+    expect(agent.git.branch).toBe('main');
+    expect(agent.git.detached).toBe(false);
+    expect(agent.git.dirty).toBe(true);
+    expect(agent.git.staged).toBeGreaterThanOrEqual(1);
+    expect(agent.git.untracked).toBeGreaterThanOrEqual(1);
+    expect(agent.git.diffstat.files).toBeGreaterThanOrEqual(1);
+    expect(agent.branch).toBe('main'); // preserved legacy field
+    expect(agent.repoSiblingCount).toBeGreaterThanOrEqual(1);
+
+    tm(['kill-session', '-t', name]);
+  });
+
+  test('linked worktrees share a repository id (sibling grouping)', () => {
+    const repo = makeRepo();
+    const wt = join(root, `wt-${Date.now()}`);
+    runGit(repo, ['worktree', 'add', '-q', '-b', 'feature', wt]);
+
+    const a = newSessionIn(repo);
+    const b = newSessionIn(wt);
+    writeStatus(a.pane, a.name, { state: 'idle' });
+    writeStatus(b.pane, b.name, { state: 'idle' });
+
+    const env = JSON.parse(fleet(['list', '--json']).stdout);
+    const av = env.agents.find((x: { pane: string }) => x.pane === a.pane);
+    const bv = env.agents.find((x: { pane: string }) => x.pane === b.pane);
+    expect(av.git.repoId).toBe(bv.git.repoId); // same common dir
+    expect(av.git.worktreeRoot).not.toBe(bv.git.worktreeRoot); // distinct worktrees
+    expect(av.repoSiblingCount).toBe(2);
+    expect(bv.repoSiblingCount).toBe(2);
+
+    tm(['kill-session', '-t', a.name]);
+    tm(['kill-session', '-t', b.name]);
+  });
+
+  test('a non-git pane reports null git metadata', () => {
+    const plain = mkdtempSync(join(root, 'plain-'));
+    const { name, pane } = newSessionIn(plain);
+    writeStatus(pane, name, { state: 'idle' });
+    const env = JSON.parse(fleet(['list', '--json']).stdout);
+    const agent = env.agents.find((a: { pane: string }) => a.pane === pane);
+    expect(agent.git).toBeNull();
+    expect(agent.repoSiblingCount).toBe(0);
+    tm(['kill-session', '-t', name]);
+  });
+});
+
+suite('workmux absence (compiled binary)', () => {
+  // A PATH containing ONLY symlinks to tmux + git, so the binary can never find
+  // a real `workmux` (regardless of host) while core detection still works —
+  // proving detection never depends on workmux.
+  function sanitizedPath(): string {
+    const bindir = mkdtempSync(join(root, 'nowm-'));
+    for (const tool of ['tmux', 'git']) {
+      const real = Bun.which(tool);
+      if (real) {
+        try {
+          symlinkSync(real, join(bindir, tool));
+        } catch {}
+      }
+    }
+    return bindir;
+  }
+  let noWorkmuxPath: string | null = null;
+  const noWorkmux = () => {
+    if (noWorkmuxPath === null) noWorkmuxPath = sanitizedPath();
+    return { PATH: noWorkmuxPath };
+  };
+
+  test('list --json still works with no workmux (enrichment is null)', () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'idle' });
+    const res = fleet(['list', '--json'], noWorkmux());
+    expect(res.code).toBe(0);
+    const env = JSON.parse(res.stdout);
+    const agent = env.agents.find((a: { pane: string }) => a.pane === pane);
+    expect(agent.workmux).toBeNull();
+    tm(['kill-session', '-t', name]);
+  });
+
+  test('workmux-open returns a clear nonzero diagnostic when workmux is absent', () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'idle' });
+    const res = fleet(['workmux-open', pane], noWorkmux());
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain('workmux is not installed');
+    tm(['kill-session', '-t', name]);
+  });
+});
+
+suite('workmux adapter (fake executable — never installs real workmux)', () => {
+  // A throwaway shell script named `workmux` on a private PATH. It emits a
+  // status pointing at a given worktree and logs `open` invocations. We NEVER
+  // install or depend on the real workmux binary.
+  function fakeWorkmux(targetPath: string): { bin: string; log: string } {
+    const bindir = mkdtempSync(join(root, 'wmbin-'));
+    const log = join(bindir, 'open.log');
+    const script = `#!/usr/bin/env bash
+if [ "$1" = "status" ]; then
+  printf '[{"path":"%s","handle":"wm-handle","pane":null}]\\n' "${targetPath}"
+  exit 0
+fi
+if [ "$1" = "open" ]; then
+  echo "$2" >> "${log}"
+  exit 0
+fi
+exit 1
+`;
+    const bin = join(bindir, 'workmux');
+    writeFileSync(bin, script);
+    chmodSync(bin, 0o755);
+    return { bin, log };
+  }
+
+  // git toplevel resolves symlinks (macOS /var -> /private/var); match on it so
+  // the adapter's worktree-root path lines up with what the fake reports.
+  function toplevel(dir: string): string {
+    return runGit(dir, ['rev-parse', '--show-toplevel']);
+  }
+
+  test('list --json enriches a workmux-managed pane', () => {
+    if (!hasGit) return;
+    const repo = mkdtempSync(join(root, 'wmrepo-'));
+    runGit(repo, ['init', '-q', '-b', 'main']);
+    writeFileSync(join(repo, 'f'), 'x');
+    runGit(repo, ['add', '.']);
+    runGit(repo, ['commit', '-q', '-m', 'i']);
+    const top = toplevel(repo);
+    const { bin } = fakeWorkmux(top);
+    const bindir = bin.slice(0, bin.lastIndexOf('/'));
+
+    const { name, pane } = newSessionIn(repo);
+    writeStatus(pane, name, { state: 'idle' });
+
+    const res = fleet(['list', '--json'], { PATH: `${bindir}:${process.env.PATH ?? ''}` });
+    expect(res.code).toBe(0);
+    const env = JSON.parse(res.stdout);
+    const agent = env.agents.find((a: { pane: string }) => a.pane === pane);
+    expect(agent.workmux).toEqual({ managed: true, handle: 'wm-handle', path: top });
+
+    tm(['kill-session', '-t', name]);
+  });
+
+  test('workmux-open resolves an enriched handle and invokes workmux', () => {
+    if (!hasGit) return;
+    const repo = mkdtempSync(join(root, 'wmrepo2-'));
+    runGit(repo, ['init', '-q', '-b', 'main']);
+    writeFileSync(join(repo, 'f'), 'x');
+    runGit(repo, ['add', '.']);
+    runGit(repo, ['commit', '-q', '-m', 'i']);
+    const top = toplevel(repo);
+    const { bin, log } = fakeWorkmux(top);
+    const bindir = bin.slice(0, bin.lastIndexOf('/'));
+
+    const { name, pane } = newSessionIn(repo);
+    writeStatus(pane, name, { state: 'idle' });
+
+    const res = fleet(['workmux-open', pane], { PATH: `${bindir}:${process.env.PATH ?? ''}` });
+    expect(res.code).toBe(0);
+    expect(existsSync(log)).toBe(true);
+    expect(readFileSync(log, 'utf8').trim()).toBe('wm-handle');
 
     tm(['kill-session', '-t', name]);
   });

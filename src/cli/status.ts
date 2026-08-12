@@ -160,7 +160,7 @@ export function runStatusJson(args: string[], states: AgentState[], tmuxOk: bool
     matchedAgents: matched.length,
   });
 
-  const envelope = buildEnvelope({ agents: matched, outcome, selector, now });
+  const envelope = buildEnvelope({ agents: matched, groupAgents: allAgents, outcome, selector, now });
   return { stdout: JSON.stringify(envelope), code: outcomeExitCode(outcome) };
 }
 

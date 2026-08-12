@@ -36,7 +36,15 @@ import {
   type DiscoveredAgent,
   type DoneTracking,
 } from '../agents/discovery.ts';
-import { listPanesResult, gitBranch, type ListPanesResult, type PaneInfo } from '../tmux/sessions.ts';
+import { listPanesResult, type ListPanesResult, type PaneInfo } from '../tmux/sessions.ts';
+import { readGitMetadata, branchLabel, type GitMetadata } from './git-metadata.ts';
+import {
+  readWorkmuxStatus,
+  indexWorkmux,
+  matchWorkmux,
+  type WorkmuxIndex,
+  type WorkmuxEnrichment,
+} from '../adapters/workmux.ts';
 import type { TmuxControlClient } from '../tmux/control.ts';
 import { listPanesResultVia } from '../tmux/control-adapter.ts';
 import { flipControlDead, type ControlLatch } from '../tmux/control-router.ts';
@@ -83,8 +91,16 @@ export function discoveredDecision(
   };
 }
 
-// Slow caches (git branches, ports, scrape) — refreshed every SLOW_REFRESH_MS
-const branchCache = new Map<string, string | null>();
+// Slow caches (git metadata, ports, scrape) — refreshed every SLOW_REFRESH_MS.
+// Keyed by unique pane cwd: a read-only GitMetadata snapshot (repository
+// identity, worktree root, branch/detached, dirty counts, ahead/behind,
+// diffstat) or null on a non-git dir. Replaces the old branch-only cache.
+const gitMetadataCache = new Map<string, GitMetadata | null>();
+const GIT_METADATA_REFRESH_MS = 10_000;
+let gitMetadataUpdatedAt = 0;
+// One workmux status snapshot per slow tick (empty when workmux isn't
+// installed), indexed by path + pane for the enrichment merge on the fast path.
+let workmuxIndex: WorkmuxIndex = { byPath: new Map(), byPane: new Map() };
 let portCache = new Map<string, number[]>();
 const scrapeCache = new Map<string, AgentStatus | null>();
 // Parallel to scrapeCache: the matched scraper rule id for each pane's cached
@@ -114,6 +130,15 @@ let lastTmuxOk = true;
 // binding) so the mutable module state stays encapsulated here.
 export function getLastTmuxOk(): boolean {
   return lastTmuxOk;
+}
+
+// Resolve the workmux enrichment for a pane against the slow-tick snapshot.
+// Matches by pane id first, then by worktree root, then by raw cwd. null when
+// workmux isn't installed or doesn't claim this pane. Read-only.
+function resolveWorkmux(paneId: string, git: GitMetadata | null, cwd: string): WorkmuxEnrichment | null {
+  const entry = matchWorkmux(workmuxIndex, paneId, [git?.worktreeRoot, cwd]);
+  if (!entry) return null;
+  return { managed: true, handle: entry.handle, path: entry.path };
 }
 
 // User renames (session name → custom label), loaded once per entry point and
@@ -235,10 +260,21 @@ export function refreshSlowCachesWithCapture(
 ): void {
   const paths = new Set<string>();
   for (const p of panes) paths.add(p.currentPath);
-  branchCache.clear();
-  for (const path of paths) {
-    branchCache.set(path, gitBranch(path));
+  const nowMs = Date.now();
+  if (
+    nowMs - gitMetadataUpdatedAt >= GIT_METADATA_REFRESH_MS ||
+    paths.size !== gitMetadataCache.size ||
+    [...paths].some((path) => !gitMetadataCache.has(path))
+  ) {
+    gitMetadataCache.clear();
+    for (const path of paths) gitMetadataCache.set(path, readGitMetadata(path));
+    gitMetadataUpdatedAt = nowMs;
   }
+
+  // One global workmux status spawn per slow tick, only when workmux is
+  // installed (readWorkmuxStatus no-ops to empty otherwise). Indexed here so the
+  // fast path only does an in-memory lookup — zero fast-tick subprocesses.
+  workmuxIndex = indexWorkmux(readWorkmuxStatus());
 
   // One pane_pid map (from the caller's list-panes) and one ps pass, shared by
   // port detection and hook-less discovery — no extra tmux/ps spawns.
@@ -431,6 +467,8 @@ export function refreshStates(
       }
     }
 
+    const git = gitMetadataCache.get(pane.currentPath) ?? null;
+
     states.push({
       paneId: pane.paneId,
       paneNum: pane.paneNum,
@@ -442,7 +480,9 @@ export function refreshStates(
       status,
       tool,
       project: shortenPath(pane.currentPath),
-      branch: branchCache.get(pane.currentPath) ?? null,
+      branch: branchLabel(git),
+      git,
+      workmux: resolveWorkmux(pane.paneId, git, pane.currentPath),
       ports: portCache.get(pane.paneId) ?? [],
       ts,
       agentType,
