@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/nicknisi/fleet/compare/v0.22.0...v0.22.1) (2026-08-12)
+
+
+### Bug Fixes
+
+* remove workmux-specific coupling ([#66](https://github.com/nicknisi/fleet/issues/66)) ([d1d14e2](https://github.com/nicknisi/fleet/commit/d1d14e2063fb8cfb9d2f99555a95b4d4f5a0f842))
+
 ## [0.22.0](https://github.com/nicknisi/fleet/compare/v0.21.0...v0.22.0) (2026-08-12)
 
 
