@@ -33,7 +33,7 @@ describe('TuiApp', () => {
     expect(sorted[2]!.session).toBe('idle-session');
   });
 
-  test('working sorts above ready, ready above idle', () => {
+  test('ready sorts above working, working above idle', () => {
     const app = new TuiApp();
     app.updateStates([
       makeState('ready-s', AgentStatus.DONE),
@@ -42,7 +42,9 @@ describe('TuiApp', () => {
       makeState('working-s', AgentStatus.BUSY, '%4'),
     ]);
     const order = app.sortedStates().map((s) => s.session);
-    expect(order).toEqual(['question-s', 'working-s', 'ready-s', 'idle-s']);
+    // DONE (an attention state) now outranks BUSY: a finished agent waiting on
+    // you is surfaced above quiet background work.
+    expect(order).toEqual(['question-s', 'ready-s', 'working-s', 'idle-s']);
   });
 
   test('filter narrows visible sessions', () => {

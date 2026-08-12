@@ -10,6 +10,10 @@ export function tmux(args: string[]): TmuxResult {
       cmd: ['tmux', ...args],
       stdout: 'pipe',
       stderr: 'pipe',
+      // Pass the live environment explicitly. Bun otherwise snapshots the
+      // process environment at startup, so a test harness (or embedding host)
+      // that intentionally retargets $TMUX cannot select its private server.
+      env: process.env,
     });
     return {
       exitCode: proc.exitCode ?? -1,

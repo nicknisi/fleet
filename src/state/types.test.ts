@@ -18,13 +18,33 @@ describe('statusPriority', () => {
     expect(statusPriority(AgentStatus.PERMIT)).toBeLessThan(statusPriority(AgentStatus.BUSY));
   });
 
-  test('blocking states sort above BUSY, which sorts above ready/idle', () => {
-    // PERMIT and QUESTION need you now, so they outrank working. Working outranks
-    // ready (finished, waiting on you) so live work stays visible; ready outranks idle.
-    expect(statusPriority(AgentStatus.PERMIT)).toBeLessThan(statusPriority(AgentStatus.BUSY));
-    expect(statusPriority(AgentStatus.QUESTION)).toBeLessThan(statusPriority(AgentStatus.BUSY));
-    expect(statusPriority(AgentStatus.BUSY)).toBeLessThan(statusPriority(AgentStatus.DONE));
-    expect(statusPriority(AgentStatus.DONE)).toBeLessThan(statusPriority(AgentStatus.IDLE));
+  test('attention states (PERMIT, QUESTION, DONE) all sort above BUSY', () => {
+    // The three states that need you — blocked, asking, or finished — lead the
+    // order. DONE outranks BUSY so a finished agent waiting on you is surfaced
+    // ahead of quiet background work; BUSY still outranks idle.
+    expect(statusPriority(AgentStatus.QUESTION)).toBeLessThan(statusPriority(AgentStatus.DONE));
+    expect(statusPriority(AgentStatus.DONE)).toBeLessThan(statusPriority(AgentStatus.BUSY));
+    expect(statusPriority(AgentStatus.BUSY)).toBeLessThan(statusPriority(AgentStatus.IDLE));
+  });
+
+  test('the full priority order is PERMIT, QUESTION, DONE, BUSY, IDLE, SHELL, DOWN', () => {
+    const order = [
+      AgentStatus.PERMIT,
+      AgentStatus.QUESTION,
+      AgentStatus.DONE,
+      AgentStatus.BUSY,
+      AgentStatus.IDLE,
+      AgentStatus.SHELL,
+      AgentStatus.DOWN,
+    ];
+    // Each entry is strictly less urgent than the next — locks the exact order.
+    for (let i = 0; i < order.length - 1; i++) {
+      expect(statusPriority(order[i]!)).toBeLessThan(statusPriority(order[i + 1]!));
+    }
+    // Shuffling and re-sorting recovers the canonical order.
+    const shuffled = [...order].reverse();
+    shuffled.sort(compareStatus);
+    expect(shuffled).toEqual(order);
   });
 
   test('DOWN is lowest priority', () => {
@@ -37,7 +57,7 @@ describe('compareStatus', () => {
   test('sorts higher priority first', () => {
     const statuses = [AgentStatus.IDLE, AgentStatus.PERMIT, AgentStatus.BUSY, AgentStatus.DONE];
     statuses.sort(compareStatus);
-    expect(statuses).toEqual([AgentStatus.PERMIT, AgentStatus.BUSY, AgentStatus.DONE, AgentStatus.IDLE]);
+    expect(statuses).toEqual([AgentStatus.PERMIT, AgentStatus.DONE, AgentStatus.BUSY, AgentStatus.IDLE]);
   });
 });
 

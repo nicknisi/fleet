@@ -280,16 +280,17 @@ describe('windowColorArgs', () => {
     expect(args[0]).toEqual(['set', '-w', '-u', '-t', '@7', '@fleet_state']);
   });
 
-  test('reduce-then-classify: BUSY+DONE in one window reduces to BUSY → unset (BUSY masks DONE)', () => {
-    // PRIORITY ranks BUSY above DONE, so the window reduces to BUSY, which is not
-    // in the attention set → unset. Documents the intentional mask; guards
-    // against a regression that would start tinting working windows.
+  test('reduce-then-classify: BUSY+DONE in one window reduces to DONE → tinted green', () => {
+    // PRIORITY ranks DONE (an attention state) above BUSY, so a window holding a
+    // finished agent and a working one reduces to DONE and tints green — the
+    // finished agent needs you, so the window is surfaced rather than staying
+    // quiet behind the background work.
     const args = windowColorArgs([
       makeState({ windowId: '@1', status: AgentStatus.BUSY, paneId: '%1' }),
       makeState({ windowId: '@1', status: AgentStatus.DONE, paneId: '%2' }),
     ]);
     expect(args).toHaveLength(1);
-    expect(args[0]).toEqual(['set', '-w', '-u', '-t', '@1', '@fleet_state']);
+    expect(args[0]).toEqual(['set', '-w', '-t', '@1', '@fleet_state', 'green']);
   });
 
   test('a window with multiple attention agents tints by the most urgent (PERMIT over DONE)', () => {

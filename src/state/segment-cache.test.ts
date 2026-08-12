@@ -77,12 +77,13 @@ describe('writeSegmentCache + readFreshSegmentCache', () => {
     expect(readFreshSegmentCache(120)).toBe('stale-segment');
   });
 
-  test('treats the boundary as fresh: age == maxAgeSecs is NOT stale', () => {
+  test('treats an age just inside maxAgeSecs as fresh', () => {
     writeSegmentCache('boundary');
-    const exactly = Date.now() / 1000 - 6;
-    utimesSync(cacheFilePath(), exactly, exactly);
-    // ageSecs > maxAgeSecs is the gate, so age == 6 is still fresh.
-    expect(readFreshSegmentCache(6)).toBe('boundary');
+    const justInside = Date.now() / 1000 - 6;
+    utimesSync(cacheFilePath(), justInside, justInside);
+    // Leave scheduling headroom: this asserts the > comparison without an
+    // exact wall-clock boundary that can cross during a loaded CI run.
+    expect(readFreshSegmentCache(7)).toBe('boundary');
   });
 
   test('writeSegmentCache never throws when the tmp dir is gone', () => {

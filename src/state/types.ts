@@ -19,14 +19,18 @@ export type AgentStatus = (typeof AgentStatus)[keyof typeof AgentStatus];
 export const ACK_ALL_RANGE = '__ack_all__';
 export const SIDEBAR_RANGE = '__sidebar__';
 
-// Dashboard sort order, most-urgent first: a blocked tool (PERMIT) and a
-// question (QUESTION) need you now; working agents come next so live work stays
-// visible; then ready (finished, waiting on you); then idle and the rest.
+// Dashboard sort order, most-urgent first. The three attention states
+// (PERMIT, QUESTION, DONE — see ATTENTION_STATES) lead, in urgency order: a
+// blocked tool (PERMIT) and a question (QUESTION) need you now, then a finished
+// agent (DONE) waiting on your next move. Non-attention states follow: BUSY
+// (working, needs nothing from you), then idle, shells, and dead panes. Keeping
+// every attention state above BUSY means "needs you" is always sorted, tinted,
+// and surfaced ahead of quiet background work.
 const PRIORITY: Record<AgentStatus, number> = {
   [AgentStatus.PERMIT]: 0,
   [AgentStatus.QUESTION]: 1,
-  [AgentStatus.BUSY]: 2,
-  [AgentStatus.DONE]: 3,
+  [AgentStatus.DONE]: 2,
+  [AgentStatus.BUSY]: 3,
   [AgentStatus.IDLE]: 4,
   [AgentStatus.SHELL]: 5,
   [AgentStatus.DOWN]: 6,
