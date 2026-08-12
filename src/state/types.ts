@@ -85,7 +85,6 @@ export const STATUS_DISPLAY: Record<AgentStatus, { icon: string; label: string; 
 };
 
 import type { GitMetadata } from './git-metadata.ts';
-import type { WorkmuxEnrichment } from '../adapters/workmux.ts';
 
 export interface AgentState {
   paneId: string;
@@ -107,10 +106,6 @@ export interface AgentState {
   // Optional for source compatibility with AgentState fixtures; live refreshes
   // always set it (null on a non-git dir).
   git?: GitMetadata | null;
-  // Read-only workmux enrichment, present only when workmux is installed and
-  // claims this pane. Fleet's core detection never depends on this. Optional for
-  // fixture compatibility; live refreshes set it to null when unmanaged.
-  workmux?: WorkmuxEnrichment | null;
   ports: number[];
   ts: number;
   agentType: string;

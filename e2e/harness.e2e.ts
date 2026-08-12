@@ -16,17 +16,7 @@
 // Run: `bun run build && bun test ./e2e/harness.e2e.ts`
 
 import { test, expect, describe, beforeAll, afterAll, afterEach } from 'bun:test';
-import {
-  mkdtempSync,
-  mkdirSync,
-  writeFileSync,
-  readFileSync,
-  readdirSync,
-  existsSync,
-  rmSync,
-  chmodSync,
-  symlinkSync,
-} from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -703,125 +693,6 @@ gitSuite('git metadata (compiled binary)', () => {
     const agent = env.agents.find((a: { pane: string }) => a.pane === pane);
     expect(agent.git).toBeNull();
     expect(agent.repoSiblingCount).toBe(0);
-    tm(['kill-session', '-t', name]);
-  });
-});
-
-suite('workmux absence (compiled binary)', () => {
-  // A PATH containing ONLY symlinks to tmux + git, so the binary can never find
-  // a real `workmux` (regardless of host) while core detection still works —
-  // proving detection never depends on workmux.
-  function sanitizedPath(): string {
-    const bindir = mkdtempSync(join(root, 'nowm-'));
-    for (const tool of ['tmux', 'git']) {
-      const real = Bun.which(tool);
-      if (real) {
-        try {
-          symlinkSync(real, join(bindir, tool));
-        } catch {}
-      }
-    }
-    return bindir;
-  }
-  let noWorkmuxPath: string | null = null;
-  const noWorkmux = () => {
-    if (noWorkmuxPath === null) noWorkmuxPath = sanitizedPath();
-    return { PATH: noWorkmuxPath };
-  };
-
-  test('list --json still works with no workmux (enrichment is null)', () => {
-    const { name, pane } = newSession();
-    writeStatus(pane, name, { state: 'idle' });
-    const res = fleet(['list', '--json'], noWorkmux());
-    expect(res.code).toBe(0);
-    const env = JSON.parse(res.stdout);
-    const agent = env.agents.find((a: { pane: string }) => a.pane === pane);
-    expect(agent.workmux).toBeNull();
-    tm(['kill-session', '-t', name]);
-  });
-
-  test('workmux-open returns a clear nonzero diagnostic when workmux is absent', () => {
-    const { name, pane } = newSession();
-    writeStatus(pane, name, { state: 'idle' });
-    const res = fleet(['workmux-open', pane], noWorkmux());
-    expect(res.code).not.toBe(0);
-    expect(res.stderr).toContain('workmux is not installed');
-    tm(['kill-session', '-t', name]);
-  });
-});
-
-suite('workmux adapter (fake executable — never installs real workmux)', () => {
-  // A throwaway shell script named `workmux` on a private PATH. It emits a
-  // status pointing at a given worktree and logs `open` invocations. We NEVER
-  // install or depend on the real workmux binary.
-  function fakeWorkmux(targetPath: string): { bin: string; log: string } {
-    const bindir = mkdtempSync(join(root, 'wmbin-'));
-    const log = join(bindir, 'open.log');
-    const script = `#!/usr/bin/env bash
-if [ "$1" = "status" ]; then
-  printf '[{"path":"%s","handle":"wm-handle","pane":null}]\\n' "${targetPath}"
-  exit 0
-fi
-if [ "$1" = "open" ]; then
-  echo "$2" >> "${log}"
-  exit 0
-fi
-exit 1
-`;
-    const bin = join(bindir, 'workmux');
-    writeFileSync(bin, script);
-    chmodSync(bin, 0o755);
-    return { bin, log };
-  }
-
-  // git toplevel resolves symlinks (macOS /var -> /private/var); match on it so
-  // the adapter's worktree-root path lines up with what the fake reports.
-  function toplevel(dir: string): string {
-    return runGit(dir, ['rev-parse', '--show-toplevel']);
-  }
-
-  test('list --json enriches a workmux-managed pane', () => {
-    if (!hasGit) return;
-    const repo = mkdtempSync(join(root, 'wmrepo-'));
-    runGit(repo, ['init', '-q', '-b', 'main']);
-    writeFileSync(join(repo, 'f'), 'x');
-    runGit(repo, ['add', '.']);
-    runGit(repo, ['commit', '-q', '-m', 'i']);
-    const top = toplevel(repo);
-    const { bin } = fakeWorkmux(top);
-    const bindir = bin.slice(0, bin.lastIndexOf('/'));
-
-    const { name, pane } = newSessionIn(repo);
-    writeStatus(pane, name, { state: 'idle' });
-
-    const res = fleet(['list', '--json'], { PATH: `${bindir}:${process.env.PATH ?? ''}` });
-    expect(res.code).toBe(0);
-    const env = JSON.parse(res.stdout);
-    const agent = env.agents.find((a: { pane: string }) => a.pane === pane);
-    expect(agent.workmux).toEqual({ managed: true, handle: 'wm-handle', path: top });
-
-    tm(['kill-session', '-t', name]);
-  });
-
-  test('workmux-open resolves an enriched handle and invokes workmux', () => {
-    if (!hasGit) return;
-    const repo = mkdtempSync(join(root, 'wmrepo2-'));
-    runGit(repo, ['init', '-q', '-b', 'main']);
-    writeFileSync(join(repo, 'f'), 'x');
-    runGit(repo, ['add', '.']);
-    runGit(repo, ['commit', '-q', '-m', 'i']);
-    const top = toplevel(repo);
-    const { bin, log } = fakeWorkmux(top);
-    const bindir = bin.slice(0, bin.lastIndexOf('/'));
-
-    const { name, pane } = newSessionIn(repo);
-    writeStatus(pane, name, { state: 'idle' });
-
-    const res = fleet(['workmux-open', pane], { PATH: `${bindir}:${process.env.PATH ?? ''}` });
-    expect(res.code).toBe(0);
-    expect(existsSync(log)).toBe(true);
-    expect(readFileSync(log, 'utf8').trim()).toBe('wm-handle');
-
     tm(['kill-session', '-t', name]);
   });
 });
