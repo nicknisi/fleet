@@ -54,10 +54,18 @@ jobs:
       - name: Package tarball
         run: tar czf ${{ matrix.artifact }}.tar.gz fleet hooks .claude-plugin
 
+      - name: Checksum tarball
+        # Per-asset SHA-256 sidecar so an installer (or a human) can verify a
+        # download without pulling every asset. shasum ships on both macOS and
+        # ubuntu runners; the sidecar carries the bare filename (no path).
+        run: shasum -a 256 ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}.tar.gz
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.tar.gz.sha256
 
   attach-binaries:
     needs: [release-please, build]
@@ -67,10 +75,18 @@ jobs:
         with:
           merge-multiple: true
 
+      - name: Aggregate checksums
+        # One combined manifest alongside the per-asset sidecars, so
+        # `shasum -a 256 -c SHA256SUMS` verifies every tarball at once.
+        run: shasum -a 256 *.tar.gz > SHA256SUMS
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: '*.tar.gz'
+          files: |
+            *.tar.gz
+            *.tar.gz.sha256
+            SHA256SUMS
 
   update-formula:
     needs: [release-please, build]
@@ -111,9 +127,16 @@ jobs:
           import re
           f = 'Formula/fleet.rb'
           txt = open(f).read()
-          shas = {'arm64': '${SHA_ARM64}', 'x86_64': '${SHA_X86_64}', 'linux': '${SHA_LINUX}'}
-          for arch, sha in shas.items():
-              txt = re.sub(r'(fleet-.*' + arch + r'.*\n\s*sha256 \")([a-fA-F0-9]+|PLACEHOLDER_\w+)(\")', lambda m: m.group(1) + sha + m.group(3), txt)
+          shas = {
+              'fleet-darwin-arm64.tar.gz': '${SHA_ARM64}',
+              'fleet-darwin-x86_64.tar.gz': '${SHA_X86_64}',
+              'fleet-linux-x86_64.tar.gz': '${SHA_LINUX}',
+          }
+          for asset, sha in shas.items():
+              pattern = r'(' + re.escape(asset) + r'.*\n\s*sha256 \")([a-fA-F0-9]+|PLACEHOLDER_\w+)(\")'
+              txt, count = re.subn(pattern, lambda m: m.group(1) + sha + m.group(3), txt, count=1)
+              if count != 1:
+                  raise SystemExit(f'failed to update checksum for {asset}')
           open(f, 'w').write(txt)
           "
 

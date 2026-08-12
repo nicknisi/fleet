@@ -46,6 +46,25 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
 
+  deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun run check:deps
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+
   compile:
     runs-on: ubuntu-latest
     steps:
@@ -55,3 +74,21 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - run: bun run build
+      # Smoke-test the freshly compiled standalone binary end to end (no tmux
+      # required): version, help, unknown-command exit code, statusline render.
+      - run: bun run test:smoke
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      # Real-tmux end-to-end harness on a private socket. Exercises fusion,
+      # control-mode vs fork fallback, pane recycling, ack, wait/send/approve.
+      - run: bun run test:e2e

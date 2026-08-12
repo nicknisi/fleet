@@ -1,14 +1,22 @@
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmux } from '../tmux/ipc.ts';
 import { loadAgentDirs } from '../agents/config.ts';
-import { parseStatusFile } from '../state/hooks.ts';
+import { parseStatusFile, writeFileAtomic } from '../state/hooks.ts';
+import { classifyPane, isDeletable, livePaneSet } from '../state/presence.ts';
+import { listPanesResult } from '../tmux/sessions.ts';
 
 export function runReconcile(dryRun: boolean, verbose: boolean): number {
   const dirs = loadAgentDirs();
   let removed = 0;
   let fixed = 0;
   const now = Math.floor(Date.now() / 1000);
+
+  // ONE list-panes drives Present|Absent|Unknown for every tracked pane. A
+  // failed query (tmux down) makes every pane Unknown, so the orphan sweep
+  // deletes nothing this run — a transient failure must never wipe live state.
+  // The old per-pane display-message conflated "pane dead" with "tmux down" and
+  // would delete every status file the moment the server blinked.
+  const live = livePaneSet(listPanesResult());
 
   const log = (msg: string) => {
     if (verbose) process.stdout.write(`${msg}\n`);
@@ -34,15 +42,27 @@ export function runReconcile(dryRun: boolean, verbose: boolean): number {
 
       const status = parseStatusFile(content);
       if (!status) {
-        log(`CORRUPT: ${path}`);
-        if (!dryRun) rmSync(path, { force: true });
-        removed++;
+        // Invalid JSON is indeterminate, not proof that its pane is dead. A
+        // concurrent/non-Fleet hook may be between truncate and write; retain
+        // the file so a later pass can observe a complete record.
+        log(`SKIP: ${path} (corrupt or incomplete status)`);
         continue;
       }
 
       if (status.pane) {
-        const check = tmux(['display-message', '-t', status.pane, '-p', '#{pane_id}']);
-        if (check.exitCode !== 0 || check.stdout.trim() === '') {
+        const presence = classifyPane(status.pane, live);
+        if (presence === 'unknown') {
+          log(`SKIP: ${path} (pane ${status.pane} presence unknown — tmux unreachable)`);
+          continue;
+        }
+        if (isDeletable(presence)) {
+          // Close the snapshot/create race: confirm absence immediately before
+          // deletion. Only two definitive Absent reads may remove state.
+          const confirmed = classifyPane(status.pane, livePaneSet(listPanesResult()));
+          if (!isDeletable(confirmed)) {
+            log(`SKIP: ${path} (pane ${status.pane} absence was not confirmed)`);
+            continue;
+          }
           log(`ORPHAN: ${path} (pane ${status.pane} dead)`);
           if (!dryRun) rmSync(path, { force: true });
           removed++;
@@ -57,7 +77,7 @@ export function runReconcile(dryRun: boolean, verbose: boolean): number {
           if (!dryRun) {
             const data = JSON.parse(content) as Record<string, unknown>;
             data.state = 'idle';
-            writeFileSync(path, JSON.stringify(data) + '\n');
+            writeFileAtomic(path, JSON.stringify(data) + '\n');
           }
           fixed++;
         }

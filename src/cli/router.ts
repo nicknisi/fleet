@@ -1,0 +1,253 @@
+// CLI command dispatch: everything `fleet <command>` resolves to before the TUI
+// is considered. Extracted verbatim from index.ts (handleCli + the version/help
+// banners) — pure code movement, no behavior change. main() calls handleCli
+// first; a null return means "no CLI command matched" and the TUI launches.
+
+import packageJson from '../../package.json' with { type: 'json' };
+import { C } from '../terminal/colors.ts';
+import { AgentRegistry } from '../agents/registry.ts';
+import { fullRefreshStates, acknowledgePane, acknowledgeAllReady, reloadRenameCache } from '../state/refresh.ts';
+import { ACK_ALL_RANGE, SIDEBAR_RANGE } from '../state/types.ts';
+import { switchClient } from '../tmux/sessions.ts';
+import { tmux } from '../tmux/ipc.ts';
+import { readFreshSegmentCache, writeSegmentCache } from '../state/segment-cache.ts';
+import { runStatus, formatStatusLine, resolveStatusLineSegment } from './status.ts';
+import { runSidebar } from './sidebar.ts';
+import { runNext } from './next.ts';
+import { runSend } from './send.ts';
+import { runInstall, runUninstall } from './install.ts';
+import { runNotificationOpen } from './notification-open.ts';
+import { runInstallCodex, runUninstallCodex } from './install-codex.ts';
+import { runInstallPi, runUninstallPi } from './install-pi.ts';
+import { runDoctor } from './doctor.ts';
+import { runReconcile } from './reconcile.ts';
+import { runExplain } from './explain.ts';
+import { runStatusLineInject, runStatusLineRemove, emitWindowColors, rollupEnabled } from './statusline.ts';
+import { runWait } from './wait.ts';
+
+const VERSION: string = packageJson.version;
+
+export function printVersion(): number {
+  process.stdout.write(`fleet ${VERSION}\n`);
+  return 0;
+}
+
+export function printHelp(): number {
+  const logo = `${C.permit}f${C.question}l${C.done}e${C.busy}e${C.idle}t${C.reset}`;
+  const quips = ['herding agents', 'cat wrangling', 'mission control', 'pane management', 'vibes: immaculate'];
+  const quip = quips[Math.floor(Math.random() * quips.length)];
+
+  process.stdout.write(
+    [
+      '',
+      `  ${C.bold}${logo}${C.reset}  ${C.dim}— ${quip}${C.reset}`,
+      '',
+      `  ${C.bold}Dashboard${C.reset}`,
+      `    ${C.idle}fleet${C.reset}                           ${C.gray}Launch TUI ${C.dim}(preview auto-opens on wide terms)${C.reset}`,
+      `    ${C.idle}fleet${C.reset} --preview | --no-preview   ${C.gray}Force preview on/off${C.reset}`,
+      '',
+      `  ${C.bold}Commands${C.reset}`,
+      `    ${C.idle}fleet status${C.reset} [--tmux] <session>  ${C.gray}Query agent state${C.reset}`,
+      `    ${C.idle}fleet status${C.reset} --statusline        ${C.gray}Render multi-agent tmux status line${C.reset}`,
+      `    ${C.idle}fleet next${C.reset}                       ${C.gray}Jump to next waiting agent${C.reset}`,
+      `    ${C.idle}fleet sidebar${C.reset}                    ${C.gray}Toggle the ☰ sidebar split${C.reset}`,
+      `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
+      `    ${C.idle}fleet wait${C.reset} <session> --state <s> ${C.gray}Block until agent reaches state${C.reset}`,
+      `    ${C.idle}fleet explain${C.reset} <session>          ${C.gray}Trace how a session's state was decided${C.reset}`,
+      `    ${C.idle}fleet reconcile${C.reset} [--dry-run]      ${C.gray}Sweep orphan status files${C.reset}`,
+      '',
+      `  ${C.bold}Plugin${C.reset}`,
+      `    ${C.idle}fleet install${C.reset}                    ${C.gray}Register as Claude Code plugin${C.reset}`,
+      `    ${C.idle}fleet install codex${C.reset}              ${C.gray}Wire fleet into Codex's hooks + config${C.reset}`,
+      `    ${C.idle}fleet install pi${C.reset}                 ${C.gray}Wire fleet into pi as a package extension${C.reset}`,
+      `    ${C.idle}fleet uninstall${C.reset}                  ${C.gray}Remove plugin registration${C.reset}`,
+      `    ${C.idle}fleet uninstall codex${C.reset}            ${C.gray}Remove fleet's Codex hooks + config${C.reset}`,
+      `    ${C.idle}fleet uninstall pi${C.reset}               ${C.gray}Remove fleet's pi extension${C.reset}`,
+      `    ${C.idle}fleet doctor${C.reset}                     ${C.gray}Health check${C.reset}`,
+      '',
+      `  ${C.bold}Tmux${C.reset}`,
+      `    ${C.idle}fleet statusline${C.reset} --inject        ${C.gray}Add fleet status to tmux row 2${C.reset}`,
+      `    ${C.idle}fleet statusline${C.reset} --inject --force ${C.gray}Re-apply even if already injected${C.reset}`,
+      `    ${C.idle}fleet statusline${C.reset} --remove        ${C.gray}Remove fleet status from tmux${C.reset}`,
+      '',
+      `  ${C.permit}⚠ waiting${C.reset}  ${C.question}? asking${C.reset}  ${C.done}✓ done${C.reset}  ${C.busy}◉ working${C.reset}  ${C.idle}● idle${C.reset}`,
+      '',
+    ].join('\n'),
+  );
+  return 0;
+}
+
+// Force the tmux status bar to redraw now. Without this, an ack-in-place click
+// wouldn't visibly clear until the next status-interval (~15s). Best-effort:
+// tmux() swallows "not in tmux" into a non-zero exit.
+function refreshTmuxStatus(): void {
+  tmux(['refresh-client', '-S']);
+}
+
+export async function handleCli(args: string[]): Promise<number | null> {
+  if (args.includes('--version') || args.includes('-v')) return printVersion();
+  if (args.includes('--help') || args.includes('-h')) return printHelp();
+
+  const command = args[0];
+  if (!command) return null;
+
+  const registry = new AgentRegistry();
+  const dirs = registry.all(); // AgentDir[] for the read path (name rides with the data)
+  const statusDirs = registry.statusDirs(); // string[] for the file-locating write helpers
+  reloadRenameCache();
+
+  switch (command) {
+    case 'status': {
+      if (args.includes('--statusline')) {
+        // Serve the running TUI's already-computed segment when its cache is
+        // fresh, so this cold-booted Bun process does zero state reads / tmux
+        // forks on the hot path. On a miss, live-compute exactly as before and
+        // seed the cache for the next status-interval. Window colors are emitted
+        // by the running TUI on its own tick when the cache is fresh; on a miss
+        // (TUI closed) this process still emits them as today.
+        const cached = readFreshSegmentCache();
+        if (cached !== null) {
+          if (cached.length > 0) process.stdout.write(cached + '\n');
+          return 0;
+        }
+        const states = fullRefreshStates(dirs);
+        const { segment } = resolveStatusLineSegment(null, () => formatStatusLine(states));
+        writeSegmentCache(segment);
+        if (segment.length > 0) process.stdout.write(segment + '\n');
+        if (rollupEnabled()) emitWindowColors(states);
+        return 0;
+      }
+      const states = fullRefreshStates(dirs);
+      const output = runStatus(args.slice(1), states);
+      if (output.length > 0) process.stdout.write(output + '\n');
+      return 0;
+    }
+    case 'next': {
+      const states = fullRefreshStates(dirs);
+      return runNext(states);
+    }
+    case 'ack': {
+      // Acknowledge a ready agent without switching to it (clears it from the
+      // attention tier in place). Bound to right-click on the status line, and
+      // handy for scripting. The ACK_ALL_RANGE sentinel clears every ready agent;
+      // the SIDEBAR_RANGE button toggles either way it's clicked, so a stray
+      // right-click on it isn't a dead spot.
+      const target = args[1];
+      if (!target) {
+        process.stderr.write('Usage: fleet ack <pane-id>\n');
+        return 1;
+      }
+      if (target === SIDEBAR_RANGE) {
+        return runSidebar(args.slice(2));
+      }
+      if (target === ACK_ALL_RANGE) {
+        acknowledgeAllReady(dirs);
+      } else {
+        acknowledgePane(target, statusDirs);
+      }
+      refreshTmuxStatus();
+      return 0;
+    }
+    case 'switch': {
+      // Invoked by the statusline left-click binding. The ACK_ALL_RANGE sentinel
+      // (the "clear all" chip) clears every ready agent without switching, and
+      // SIDEBAR_RANGE (the "☰" button) toggles the sidebar. Otherwise
+      // acknowledge the target (so a click counts the same as Enter in the
+      // dashboard) and switch to it.
+      const target = args[1];
+      if (!target) {
+        process.stderr.write('Usage: fleet switch <pane-id>\n');
+        return 1;
+      }
+      if (target === SIDEBAR_RANGE) {
+        return runSidebar(args.slice(2));
+      }
+      if (target === ACK_ALL_RANGE) {
+        acknowledgeAllReady(dirs);
+        refreshTmuxStatus();
+        return 0;
+      }
+      acknowledgePane(target, statusDirs);
+      try {
+        switchClient(target);
+      } catch {
+        // Pane may have closed
+      }
+      return 0;
+    }
+    case 'sidebar': {
+      // Open the fleet sidebar split, or close it if it's already up. Same entry
+      // point the status-line button routes to.
+      return runSidebar(args.slice(1));
+    }
+    case 'send': {
+      const session = args[1];
+      const prompt = args
+        .slice(2)
+        .filter((a) => !a.startsWith('--'))
+        .join(' ');
+      if (!session || !prompt) {
+        process.stderr.write('Usage: fleet send <session> <prompt>\n');
+        return 1;
+      }
+      const states = fullRefreshStates(dirs);
+      const force = args.includes('--force');
+      return runSend(session, prompt, states, force);
+    }
+    case 'explain': {
+      const session = args[1];
+      if (!session) {
+        process.stderr.write('Usage: fleet explain <session> [--show-snapshot]\n');
+        return 1;
+      }
+      const showSnapshot = args.includes('--show-snapshot');
+      const states = fullRefreshStates(dirs);
+      return runExplain(session, states, statusDirs, showSnapshot);
+    }
+    case 'install':
+      if (args[1] === 'codex') return runInstallCodex();
+      if (args[1] === 'pi') return runInstallPi();
+      return runInstall();
+    case 'uninstall':
+      if (args[1] === 'codex') return runUninstallCodex();
+      if (args[1] === 'pi') return runUninstallPi();
+      return runUninstall();
+    case 'notification-open': {
+      return runNotificationOpen(args.slice(1));
+    }
+    case 'doctor':
+      return runDoctor();
+    case 'reconcile': {
+      const dryRun = args.includes('--dry-run');
+      const verbose = args.includes('--verbose');
+      return runReconcile(dryRun, verbose);
+    }
+    case 'statusline': {
+      if (args.includes('--inject') || args.includes('--install')) {
+        // Silent no-op when already applied — the conf line re-runs this on
+        // every tmux source-file. --force re-applies regardless.
+        return runStatusLineInject(args.includes('--force'));
+      }
+      if (args.includes('--remove') || args.includes('--uninstall')) {
+        return runStatusLineRemove();
+      }
+      process.stderr.write('Usage: fleet statusline --inject [--force] | --remove\n');
+      return 1;
+    }
+    case 'wait': {
+      const stateIdx = args.indexOf('--state');
+      const timeoutIdx = args.indexOf('--timeout');
+      return await runWait({
+        session: args[1],
+        stateArg: stateIdx >= 0 ? args[stateIdx + 1] : undefined,
+        timeoutArg: timeoutIdx >= 0 ? args[timeoutIdx + 1] : undefined,
+        getStates: () => fullRefreshStates(dirs),
+        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        now: () => Date.now(),
+      });
+    }
+    default:
+      process.stderr.write(`Unknown command: ${command}\n`);
+      return 1;
+  }
+}
