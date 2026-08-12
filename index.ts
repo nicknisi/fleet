@@ -44,6 +44,7 @@ import {
   getLastTmuxOk,
 } from './src/state/refresh.ts';
 import { writeSegmentCache } from './src/state/segment-cache.ts';
+import { writeAgentSnapshot } from './src/state/snapshot-cache.ts';
 import { existsSync } from 'node:fs';
 
 const FAST_REFRESH_MS = 500;
@@ -256,6 +257,7 @@ async function launchTui(): Promise<number> {
     // Skip the write when the segment is unchanged since the last tick — the
     // statusline is quiet most of the time, so this is usually a no-op fs call.
     if (insideTmux) {
+      if (getLastTmuxOk()) writeAgentSnapshot(states);
       const segment = formatStatusLine(states);
       if (segment !== lastWrittenSegment) {
         writeSegmentCache(segment);

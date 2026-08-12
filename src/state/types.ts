@@ -99,9 +99,17 @@ export interface AgentState {
   ports: number[];
   ts: number;
   agentType: string;
+  // How Fleet identified the pane. Optional for source compatibility with
+  // callers constructing AgentState fixtures; live refreshes always set it.
+  tracking?: 'hook' | 'discovery' | 'shell';
   // Raw #{pane_title} (optional — populated by refreshStates so explain can
   // trace the same title rules the live fusion used).
   paneTitle?: string;
+  // Fusion provenance for this pane's status, attached by refreshStates for
+  // hooked and discovered agents. Discovered decisions use the visual scrape
+  // candidate and explicit discovery reasons rather than pretending a hook or
+  // JSONL event existed. Undefined only for shell panes.
+  decision?: StateDecision;
 }
 
 export function extractClaudeName(paneTitle: string): string | null {

@@ -95,6 +95,16 @@ export function capturePane(paneId: string, maxLines: number): string[] {
   return processCaptureOutput(output, maxLines);
 }
 
+// Read-only plain capture for `fleet capture`: no `-e`, so escape sequences are
+// stripped and the bottom `maxLines` come back as clean text. Returns [] on any
+// tmux failure (dead server, gone pane) so the caller degrades instead of
+// throwing. Never mutates anything — capture-pane only reads.
+export function capturePanePlain(paneId: string, maxLines: number): string[] {
+  const output = tmuxOrNull(['capture-pane', '-p', '-t', paneId]);
+  if (output === null) return [];
+  return processCaptureOutput(output, maxLines);
+}
+
 export function currentSessionName(): string | null {
   return tmuxOrNull(['display-message', '-p', '#S']);
 }

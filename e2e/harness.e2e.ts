@@ -26,6 +26,11 @@ import { TmuxControlClient } from '../src/tmux/control.ts';
 import { resolvePermitKeys } from '../src/state/permit-keys.ts';
 import { sendKeyNames } from '../src/tmux/send.ts';
 import { AgentStatus } from '../src/state/types.ts';
+import {
+  __resetSnapshotCacheForTests,
+  snapshotCacheFilePath,
+  writeAgentSnapshot,
+} from '../src/state/snapshot-cache.ts';
 
 const BIN = join(import.meta.dir, '..', 'dist', 'fleet');
 const hasTmux = Bun.spawnSync({ cmd: ['tmux', '-V'], stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
@@ -316,9 +321,9 @@ suite('wait', () => {
     tm(['kill-session', '-t', name]);
   });
 
-  test('returns 1 for an unknown session', () => {
+  test('returns 2 for an unknown session selector', () => {
     const r = fleet(['wait', 'no-such-session', '--state', 'ready', '--timeout', '1']);
-    expect(r.code).toBe(1);
+    expect(r.code).toBe(2);
     expect(r.stderr).toContain('No agents found');
   });
 });
@@ -381,6 +386,161 @@ suite('approve (permit-key resolution + transport)', () => {
     // Fork-path fusion sees the on-screen prompt and reports PERMIT.
     const states = fullRefreshStates(dirs);
     expect(states.find((s) => s.paneId === pane)?.status).toBe(AgentStatus.PERMIT);
+    tm(['kill-session', '-t', name]);
+  });
+});
+
+suite('observability JSON (compiled binary)', () => {
+  test('list --json emits the versioned envelope with the live agent', () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'permit' });
+    const r = fleet(['list', '--json']);
+    expect(r.code).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.schema).toBe('fleet.observe/v1');
+    expect(env.outcome).toBe('ok');
+    const mine = env.agents.find((a: { pane: string }) => a.pane === pane);
+    expect(mine?.status).toBe('PERMIT');
+    expect(mine?.session).toBe(name);
+    tm(['kill-session', '-t', name]);
+  });
+
+  test('status --json <pane-selector> narrows to exactly that pane', () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'done' });
+    const r = fleet(['status', '--json', pane]);
+    expect(r.code).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.selector).toBe(pane);
+    expect(env.count).toBe(1);
+    expect(env.agents[0].pane).toBe(pane);
+    expect(env.agents[0].status).toBe('DONE');
+    tm(['kill-session', '-t', name]);
+  });
+
+  test('status --json with a no-match selector → no_match, exit 2', () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'idle' });
+    const r = fleet(['status', '--json', '%999999']);
+    expect(r.code).toBe(2);
+    expect(JSON.parse(r.stdout).outcome).toBe('no_match');
+    tm(['kill-session', '-t', name]);
+  });
+
+  test('status --json distinguishes a cached snapshot from tmux unavailable', () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'done' });
+    const state = fullRefreshStates(dirs).find((candidate) => candidate.paneId === pane)!;
+    const liveEnv = process.env.TMUX;
+    const staleEnv = `${join(root, 'unreachable.sock')},0,0`;
+    process.env.TMUX = staleEnv;
+    __resetSnapshotCacheForTests();
+    writeAgentSnapshot([state]);
+    const cachePath = snapshotCacheFilePath();
+    process.env.TMUX = liveEnv;
+
+    const r = fleet(['status', '--json', pane], { TMUX: staleEnv });
+    expect(r.code).toBe(0);
+    const env = JSON.parse(r.stdout);
+    expect(env.outcome).toBe('stale_data');
+    expect(env.agents[0].pane).toBe(pane);
+    rmSync(cachePath, { force: true });
+  });
+});
+
+suite('wait multi-target (compiled binary)', () => {
+  test('--any returns 0 when ONE of two selectors is already satisfied', () => {
+    const a = newSession();
+    const b = newSession();
+    writeStatus(a.pane, a.name, { state: 'working' }); // not ready
+    writeStatus(b.pane, b.name, { state: 'done' }); // ready
+    const r = fleet(['wait', a.name, b.name, '--state', 'ready', '--any', '--timeout', '5']);
+    expect(r.code).toBe(0);
+    tm(['kill-session', '-t', a.name]);
+    tm(['kill-session', '-t', b.name]);
+  });
+
+  test('default (ALL) times out when only one of two selectors is satisfied', () => {
+    const a = newSession();
+    const b = newSession();
+    writeStatus(a.pane, a.name, { state: 'working' });
+    writeStatus(b.pane, b.name, { state: 'done' });
+    const r = fleet(['wait', a.name, b.name, '--state', 'ready', '--timeout', '1']);
+    expect(r.code).toBe(124);
+    tm(['kill-session', '-t', a.name]);
+    tm(['kill-session', '-t', b.name]);
+  });
+});
+
+suite('capture (compiled binary)', () => {
+  test('captures a pane buffer as plain text (read-only)', async () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'idle' });
+    paintLiteral(pane, 'CAPTURE-MARKER-123');
+    expect(await waitForScreen(pane, 'CAPTURE-MARKER-123')).toBe(true);
+    const r = fleet(['capture', '--pane', pane, '--lines', '50']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('CAPTURE-MARKER-123');
+    // Read-only: the status file is untouched.
+    expect(JSON.parse(readFileSync(statusPath(pane), 'utf-8')).state).toBe('idle');
+    tm(['kill-session', '-t', name]);
+  });
+
+  test('--json wraps the buffer, and a no-match selector exits 2', () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'idle' });
+    paintLiteral(pane, 'JSONCAP');
+    const ok = fleet(['capture', '--pane', pane, '--json']);
+    expect(ok.code).toBe(0);
+    expect(JSON.parse(ok.stdout).pane).toBe(pane);
+    const miss = fleet(['capture', '--pane', '%999999']);
+    expect(miss.code).toBe(2);
+    expect(miss.stderr).toContain('No pane matched');
+    tm(['kill-session', '-t', name]);
+  });
+});
+
+suite('watch (compiled binary, bounded subprocess)', () => {
+  test('emits an initial snapshot then terminates cleanly on SIGTERM', async () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'permit' });
+
+    const proc = Bun.spawn({
+      cmd: [BIN, 'watch', name],
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: { ...process.env, TMUX: tmuxEnv, TMUX_TMPDIR: root, XDG_CONFIG_HOME: configDir },
+    });
+
+    // Read the first (snapshot) line, then tear the process down.
+    const reader = proc.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buffered = '';
+    let firstLine = '';
+    const deadline = Date.now() + 4000;
+    while (Date.now() < deadline) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffered += decoder.decode(value, { stream: true });
+      const nl = buffered.indexOf('\n');
+      if (nl >= 0) {
+        firstLine = buffered.slice(0, nl);
+        break;
+      }
+    }
+    await reader.cancel().catch(() => {});
+
+    proc.kill('SIGTERM');
+    const code = await proc.exited;
+
+    const snap = JSON.parse(firstLine);
+    expect(snap.type).toBe('snapshot');
+    expect(snap.schema).toBe('fleet.observe/v1');
+    expect(snap.agents.some((a: { pane: string }) => a.pane === pane)).toBe(true);
+    // Clean shutdown: exit 0 (the SIGTERM handler flips the stop flag and the
+    // loop returns) or the signal's 143 — never a crash.
+    expect(code === 0 || code === 143).toBe(true);
+
     tm(['kill-session', '-t', name]);
   });
 });

@@ -6,12 +6,24 @@
 import packageJson from '../../package.json' with { type: 'json' };
 import { C } from '../terminal/colors.ts';
 import { AgentRegistry } from '../agents/registry.ts';
-import { fullRefreshStates, acknowledgePane, acknowledgeAllReady, reloadRenameCache } from '../state/refresh.ts';
+import type { AgentDir } from '../agents/config.ts';
+import {
+  fullRefreshStates,
+  acknowledgePane,
+  acknowledgeAllReady,
+  reloadRenameCache,
+  getLastTmuxOk,
+} from '../state/refresh.ts';
 import { ACK_ALL_RANGE, SIDEBAR_RANGE } from '../state/types.ts';
-import { switchClient } from '../tmux/sessions.ts';
+import { switchClient, listPanesResult, capturePanePlain } from '../tmux/sessions.ts';
 import { tmux } from '../tmux/ipc.ts';
 import { readFreshSegmentCache, writeSegmentCache } from '../state/segment-cache.ts';
-import { runStatus, formatStatusLine, resolveStatusLineSegment } from './status.ts';
+import { readFreshAgentSnapshot } from '../state/snapshot-cache.ts';
+import { runStatus, runStatusJson, formatStatusLine, resolveStatusLineSegment } from './status.ts';
+import { runList } from './list.ts';
+import { runWatch } from './watch.ts';
+import { parseCaptureArgs, runCapture } from './capture.ts';
+import { SCHEMA_VERSION } from './schema.ts';
 import { runSidebar } from './sidebar.ts';
 import { runNext } from './next.ts';
 import { runSend } from './send.ts';
@@ -23,7 +35,8 @@ import { runDoctor } from './doctor.ts';
 import { runReconcile } from './reconcile.ts';
 import { runExplain } from './explain.ts';
 import { runStatusLineInject, runStatusLineRemove, emitWindowColors, rollupEnabled } from './statusline.ts';
-import { runWait } from './wait.ts';
+import { runWait, parseWaitArgs } from './wait.ts';
+import type { Selectable } from '../state/selector.ts';
 
 const VERSION: string = packageJson.version;
 
@@ -52,9 +65,16 @@ export function printHelp(): number {
       `    ${C.idle}fleet next${C.reset}                       ${C.gray}Jump to next waiting agent${C.reset}`,
       `    ${C.idle}fleet sidebar${C.reset}                    ${C.gray}Toggle the ☰ sidebar split${C.reset}`,
       `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
-      `    ${C.idle}fleet wait${C.reset} <session> --state <s> ${C.gray}Block until agent reaches state${C.reset}`,
+      `    ${C.idle}fleet wait${C.reset} <sel> --state <s>     ${C.gray}Block until agent reaches state${C.reset}`,
       `    ${C.idle}fleet explain${C.reset} <session>          ${C.gray}Trace how a session's state was decided${C.reset}`,
       `    ${C.idle}fleet reconcile${C.reset} [--dry-run]      ${C.gray}Sweep orphan status files${C.reset}`,
+      '',
+      `  ${C.bold}Observe${C.reset}  ${C.dim}— machine-readable (${SCHEMA_VERSION})${C.reset}`,
+      `    ${C.idle}fleet list${C.reset} [--json]              ${C.gray}List every agent${C.reset}`,
+      `    ${C.idle}fleet status${C.reset} --json [<sel>]      ${C.gray}Query agent state as JSON${C.reset}`,
+      `    ${C.idle}fleet watch${C.reset} [<sel>] --jsonl      ${C.gray}Stream state changes as JSON Lines${C.reset}`,
+      `    ${C.idle}fleet capture${C.reset} --pane <id>        ${C.gray}Print a pane's buffer (read-only)${C.reset}`,
+      `    ${C.dim}selectors: %pane  @window  session  session:window${C.reset}`,
       '',
       `  ${C.bold}Plugin${C.reset}`,
       `    ${C.idle}fleet install${C.reset}                    ${C.gray}Register as Claude Code plugin${C.reset}`,
@@ -82,6 +102,15 @@ export function printHelp(): number {
 // tmux() swallows "not in tmux" into a non-zero exit.
 function refreshTmuxStatus(): void {
   tmux(['refresh-client', '-S']);
+}
+
+// Query live state first. Machine-readable observers may fall back to the
+// running TUI's last known-good snapshot when tmux is temporarily unavailable;
+// getLastTmuxOk() remains false so the envelope reports stale_data honestly.
+function observableStates(dirs: AgentDir[]): ReturnType<typeof fullRefreshStates> {
+  const live = fullRefreshStates(dirs);
+  if (getLastTmuxOk()) return live;
+  return readFreshAgentSnapshot() ?? live;
 }
 
 export async function handleCli(args: string[]): Promise<number | null> {
@@ -117,10 +146,70 @@ export async function handleCli(args: string[]): Promise<number | null> {
         if (rollupEnabled()) emitWindowColors(states);
         return 0;
       }
-      const states = fullRefreshStates(dirs);
+      const json = args.includes('--json');
+      const states = json ? observableStates(dirs) : fullRefreshStates(dirs);
+      if (json) {
+        const { stdout, code } = runStatusJson(args.slice(1), states, getLastTmuxOk(), Date.now());
+        process.stdout.write(stdout + '\n');
+        return code;
+      }
       const output = runStatus(args.slice(1), states);
       if (output.length > 0) process.stdout.write(output + '\n');
       return 0;
+    }
+    case 'list': {
+      const json = args.includes('--json');
+      const states = json ? observableStates(dirs) : fullRefreshStates(dirs);
+      const { stdout, code } = runList(args.slice(1), states, getLastTmuxOk(), Date.now());
+      if (stdout.length > 0) process.stdout.write(stdout + '\n');
+      return code;
+    }
+    case 'watch': {
+      // Read-only change stream. A stop flag flips on SIGINT so the loop drains
+      // its current sleep and returns cleanly (timers/listeners torn down),
+      // never writing status files or acknowledging anything.
+      // Positional args are selectors; --jsonl (the wire format) and any other
+      // flags are dropped. watch always emits JSON Lines.
+      const selectors = args.slice(1).filter((a) => !a.startsWith('--'));
+      let stop = false;
+      const onSig = () => {
+        stop = true;
+      };
+      process.once('SIGINT', onSig);
+      process.once('SIGTERM', onSig);
+      try {
+        return await runWatch({
+          selectors,
+          getStates: () => observableStates(dirs),
+          tmuxOk: () => getLastTmuxOk(),
+          emit: (line) => process.stdout.write(line + '\n'),
+          sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+          now: () => Date.now(),
+          stop: () => stop,
+        });
+      } finally {
+        process.removeListener('SIGINT', onSig);
+        process.removeListener('SIGTERM', onSig);
+      }
+    }
+    case 'capture': {
+      // Read-only pane capture: resolve the selector against the live pane list
+      // (no state refresh, no scraping), then capture plain text. Never writes.
+      const { ok, panes } = listPanesResult();
+      const selectable: Selectable[] = panes.map((p) => ({
+        paneId: p.paneId,
+        windowId: p.windowId,
+        session: p.sessionName,
+        window: p.windowName,
+      }));
+      return runCapture(parseCaptureArgs(args.slice(1)), {
+        panes: selectable,
+        capture: capturePanePlain,
+        tmuxOk: ok,
+        now: Date.now(),
+        out: (s) => process.stdout.write(s),
+        err: (s) => process.stderr.write(s),
+      });
     }
     case 'next': {
       const states = fullRefreshStates(dirs);
@@ -235,13 +324,14 @@ export async function handleCli(args: string[]): Promise<number | null> {
       return 1;
     }
     case 'wait': {
-      const stateIdx = args.indexOf('--state');
-      const timeoutIdx = args.indexOf('--timeout');
+      const parsed = parseWaitArgs(args.slice(1));
       return await runWait({
-        session: args[1],
-        stateArg: stateIdx >= 0 ? args[stateIdx + 1] : undefined,
-        timeoutArg: timeoutIdx >= 0 ? args[timeoutIdx + 1] : undefined,
+        selectors: parsed.selectors,
+        stateArgs: parsed.stateArgs,
+        timeoutArg: parsed.timeoutArg,
+        any: parsed.any,
         getStates: () => fullRefreshStates(dirs),
+        tmuxOk: () => getLastTmuxOk(),
         sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
         now: () => Date.now(),
       });

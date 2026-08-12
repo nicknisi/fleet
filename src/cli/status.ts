@@ -9,6 +9,8 @@ import {
   windowLabel,
   type AgentState,
 } from '../state/types.ts';
+import { resolveSelector } from '../state/selector.ts';
+import { buildEnvelope, classifyOutcome, isAgent, outcomeExitCode } from './schema.ts';
 
 export function formatAge(ts: number): string {
   return formatAgeDelta(Math.floor(Date.now() / 1000) - ts);
@@ -134,6 +136,32 @@ export function resolveStatusLineSegment(
 ): { segment: string; hit: boolean } {
   if (cached !== null) return { segment: cached, hit: true };
   return { segment: computeLive(), hit: false };
+}
+
+export interface RunStatusJsonResult {
+  stdout: string;
+  code: number;
+}
+
+// `fleet status --json [selector]` — the machine-readable status query. With no
+// selector it reports every agent; with one it reports just the matched agents
+// (pane id, window id, bare session, or session:window). Pure: the router hands
+// in the refreshed states, whether tmux answered, and the clock.
+export function runStatusJson(args: string[], states: AgentState[], tmuxOk: boolean, now: number): RunStatusJsonResult {
+  const selector = args.filter((a) => !a.startsWith('--'))[0] ?? null;
+  const allAgents = states.filter(isAgent);
+
+  const matched = selector === null ? allAgents : resolveSelector(selector, states).matches.filter(isAgent);
+
+  const outcome = classifyOutcome({
+    tmuxOk,
+    totalAgents: allAgents.length,
+    selectorApplied: selector !== null,
+    matchedAgents: matched.length,
+  });
+
+  const envelope = buildEnvelope({ agents: matched, outcome, selector, now });
+  return { stdout: JSON.stringify(envelope), code: outcomeExitCode(outcome) };
 }
 
 export function runStatus(args: string[], states: AgentState[]): string {
