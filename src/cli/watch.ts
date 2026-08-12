@@ -56,11 +56,12 @@ export function diffStates(
   prev: Map<string, string>,
   agents: AgentState[],
   now: number,
+  groupAgents: AgentState[] = agents,
 ): { changes: ChangeLine[]; next: Map<string, string> } {
   const next = new Map<string, string>();
   const changes: ChangeLine[] = [];
   const byPane = new Map<string, AgentState>();
-  const groups = computeRepoGroups(agents);
+  const groups = computeRepoGroups(groupAgents);
   for (const a of agents) byPane.set(a.paneId, a);
 
   for (const a of agents) {
@@ -176,7 +177,7 @@ export async function runWatch(opts: RunWatchOptions): Promise<number> {
       continue;
     }
 
-    const { changes, next } = diffStates(prev, agents, opts.now());
+    const { changes, next } = diffStates(prev, agents, opts.now(), states.filter(isAgent));
     for (const change of changes) opts.emit(JSON.stringify(change));
     prev = next;
   }

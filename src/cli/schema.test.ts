@@ -155,14 +155,14 @@ describe('buildEnvelope repo siblings', () => {
     diffstat: { files: 0, added: 0, removed: 0 },
   });
 
-  test('computes sibling counts across the reported agents', () => {
+  test('computes other-worktree sibling counts across the reported agents', () => {
     const env = buildEnvelope({
       agents: [makeState({ paneId: '%1', git: meta('/r/a') }), makeState({ paneId: '%2', git: meta('/r/b') })],
       outcome: 'ok',
       selector: null,
       now: 1,
     });
-    expect(env.agents.every((a) => a.repoSiblingCount === 2)).toBe(true);
+    expect(env.agents.every((a) => a.repoSiblingCount === 1)).toBe(true);
   });
 });
 

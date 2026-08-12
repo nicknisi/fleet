@@ -593,7 +593,7 @@ async function launchTui(): Promise<number> {
             case 'd':
               // Read-only state-provenance overlay for the selected agent —
               // renders the StateDecision already attached by the last refresh
-              // (no live re-scrape), so it agrees with `fleet explain`/--json.
+              // (no live re-scrape), so it agrees with --json observers.
               if (app.selectedState()) app.mode = TuiMode.DECISION;
               break;
             case '/':

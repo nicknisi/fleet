@@ -88,7 +88,7 @@ describe('runStatusJson — selector', () => {
       makeState({ paneId: '%11', git: git('/repo-wt') }),
     ];
     const env = parse(runStatusJson(['%10'], siblings, true, 1).stdout);
-    expect(env.agents[0]!.repoSiblingCount).toBe(2);
+    expect(env.agents[0]!.repoSiblingCount).toBe(1);
   });
 
   test('session:window narrows on both components', () => {

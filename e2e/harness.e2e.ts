@@ -539,6 +539,53 @@ suite('capture (compiled binary)', () => {
 });
 
 suite('watch (compiled binary, bounded subprocess)', () => {
+  test('emits a real change line after a hook-state transition', async () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'working' });
+
+    const proc = Bun.spawn({
+      cmd: [BIN, 'watch', pane],
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: { ...process.env, TMUX: tmuxEnv, TMUX_TMPDIR: root, XDG_CONFIG_HOME: configDir },
+    });
+    const reader = proc.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buffered = '';
+    const nextLine = async (): Promise<string> => {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const remaining = Math.max(1, deadline - Date.now());
+        const result = await Promise.race([
+          reader.read().then(({ done, value }) => ({ done, value })),
+          sleep(remaining).then(() => ({ done: true, value: undefined })),
+        ]);
+        if (result.done || result.value === undefined) break;
+        buffered += decoder.decode(result.value, { stream: true });
+        const newline = buffered.indexOf('\n');
+        if (newline >= 0) {
+          const line = buffered.slice(0, newline);
+          buffered = buffered.slice(newline + 1);
+          return line;
+        }
+      }
+      throw new Error('timed out waiting for fleet watch output');
+    };
+
+    const snapshot = JSON.parse(await nextLine());
+    expect(snapshot.type).toBe('snapshot');
+    writeStatus(pane, name, { state: 'done', ts: nowSec() + 1 });
+    const change = JSON.parse(await nextLine());
+    expect(change.type).toBe('change');
+    expect(change.pane).toBe(pane);
+    expect(change.from).toBe('BUSY');
+    expect(change.to).toBe('DONE');
+
+    proc.kill('SIGTERM');
+    await proc.exited;
+    await reader.cancel().catch(() => {});
+  });
+
   test('emits an initial snapshot then terminates cleanly on SIGTERM', async () => {
     const { name, pane } = newSession();
     writeStatus(pane, name, { state: 'permit' });
@@ -621,7 +668,7 @@ gitSuite('git metadata (compiled binary)', () => {
     expect(agent.git.untracked).toBeGreaterThanOrEqual(1);
     expect(agent.git.diffstat.files).toBeGreaterThanOrEqual(1);
     expect(agent.branch).toBe('main'); // preserved legacy field
-    expect(agent.repoSiblingCount).toBeGreaterThanOrEqual(1);
+    expect(agent.repoSiblingCount).toBe(0);
 
     tm(['kill-session', '-t', name]);
   });
@@ -641,8 +688,8 @@ gitSuite('git metadata (compiled binary)', () => {
     const bv = env.agents.find((x: { pane: string }) => x.pane === b.pane);
     expect(av.git.repoId).toBe(bv.git.repoId); // same common dir
     expect(av.git.worktreeRoot).not.toBe(bv.git.worktreeRoot); // distinct worktrees
-    expect(av.repoSiblingCount).toBe(2);
-    expect(bv.repoSiblingCount).toBe(2);
+    expect(av.repoSiblingCount).toBe(1);
+    expect(bv.repoSiblingCount).toBe(1);
 
     tm(['kill-session', '-t', a.name]);
     tm(['kill-session', '-t', b.name]);

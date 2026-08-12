@@ -171,7 +171,7 @@ export function parseNumstat(stdout: string): GitDiffstat {
 function git(cwd: string, args: string[]): { ok: boolean; stdout: string } {
   try {
     const proc = Bun.spawnSync({
-      cmd: ['git', '-C', cwd, ...args],
+      cmd: ['git', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args],
       stdout: 'pipe',
       stderr: 'ignore',
       // Observation must not refresh/write the user's index or contend on
@@ -212,7 +212,7 @@ export function readGitMetadata(cwd: string): GitMetadata | null {
 
   // Diff vs HEAD captures staged + unstaged changes. Fails (and stays zero) on
   // an unborn branch with no commits — the rest of the metadata is still valid.
-  const nd = git(cwd, ['diff', '--numstat', 'HEAD']);
+  const nd = git(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', 'HEAD']);
   const diffstat = nd.ok ? parseNumstat(nd.stdout) : { files: 0, added: 0, removed: 0 };
 
   let commonDir = identity.commonDir;

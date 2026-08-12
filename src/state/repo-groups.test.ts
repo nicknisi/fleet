@@ -77,7 +77,7 @@ describe('siblingWorktreeCount', () => {
   test('returns the group worktree count for a member', () => {
     const states = [state('%1', meta('/r/.git', '/r')), state('%2', meta('/r/.git', '/r-wt'))];
     const groups = computeRepoGroups(states);
-    expect(siblingWorktreeCount(states[0]!, groups)).toBe(2);
+    expect(siblingWorktreeCount(states[0]!, groups)).toBe(1);
   });
 
   test('0 for a pane with no git metadata', () => {

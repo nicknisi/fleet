@@ -8,6 +8,7 @@ import { C } from '../terminal/colors.ts';
 import { AgentRegistry } from '../agents/registry.ts';
 import type { AgentDir } from '../agents/config.ts';
 import {
+  refreshStates,
   fullRefreshStates,
   acknowledgePane,
   acknowledgeAllReady,
@@ -107,10 +108,13 @@ function refreshTmuxStatus(): void {
 // Query live state first. Machine-readable observers may fall back to the
 // running TUI's last known-good snapshot when tmux is temporarily unavailable;
 // getLastTmuxOk() remains false so the envelope reports stale_data honestly.
-function observableStates(dirs: AgentDir[]): ReturnType<typeof fullRefreshStates> {
-  const live = fullRefreshStates(dirs);
+function withStaleFallback(live: ReturnType<typeof fullRefreshStates>): ReturnType<typeof fullRefreshStates> {
   if (getLastTmuxOk()) return live;
   return readFreshAgentSnapshot() ?? live;
+}
+
+function observableStates(dirs: AgentDir[]): ReturnType<typeof fullRefreshStates> {
+  return withStaleFallback(fullRefreshStates(dirs));
 }
 
 export async function handleCli(args: string[]): Promise<number | null> {
@@ -177,10 +181,15 @@ export async function handleCli(args: string[]): Promise<number | null> {
       };
       process.once('SIGINT', onSig);
       process.once('SIGTERM', onSig);
+      let watchCachesWarm = false;
       try {
         return await runWatch({
           selectors,
-          getStates: () => observableStates(dirs),
+          getStates: () => {
+            const live = watchCachesWarm ? refreshStates(dirs) : fullRefreshStates(dirs);
+            watchCachesWarm = getLastTmuxOk();
+            return withStaleFallback(live);
+          },
           tmuxOk: () => getLastTmuxOk(),
           emit: (line) => process.stdout.write(line + '\n'),
           sleep: (ms) => new Promise((r) => setTimeout(r, ms)),

@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-import { rmSync, utimesSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, utimesSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AgentStatus, type AgentState } from './types.ts';
 import {
   __resetSnapshotCacheForTests,
@@ -9,6 +11,8 @@ import {
 } from './snapshot-cache.ts';
 
 const previousTmux = process.env.TMUX;
+const previousTmpdir = process.env.TMPDIR;
+let testTmpdir = '';
 const state: AgentState = {
   paneId: '%42',
   paneNum: 42,
@@ -27,16 +31,26 @@ const state: AgentState = {
   tracking: 'hook',
 };
 
+beforeEach(() => {
+  testTmpdir = mkdtempSync(join(tmpdir(), 'fleet-snapshot-test-'));
+  process.env.TMPDIR = testTmpdir;
+  process.env.TMUX = '/tmp/fleet-snapshot-test.sock,123,0';
+  __resetSnapshotCacheForTests();
+});
+
 afterEach(() => {
-  rmSync(snapshotCacheFilePath(), { force: true });
+  rmSync(testTmpdir, { recursive: true, force: true });
   __resetSnapshotCacheForTests();
   if (previousTmux === undefined) delete process.env.TMUX;
   else process.env.TMUX = previousTmux;
+  if (previousTmpdir === undefined) delete process.env.TMPDIR;
+  else process.env.TMPDIR = previousTmpdir;
 });
 
 describe('agent snapshot cache', () => {
-  test('is scoped by tmux socket', () => {
+  test('is scoped by private temp dir and tmux socket', () => {
     process.env.TMUX = '/tmp/private.sock,123,0';
+    expect(snapshotCacheFilePath().startsWith(testTmpdir)).toBe(true);
     expect(snapshotCacheFilePath()).toContain('private.sock');
   });
 

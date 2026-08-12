@@ -140,11 +140,12 @@ Below 48 columns — like that narrow sidebar — Fleet automatically reflows th
 
 Press `d` on any agent to open a **read-only state-provenance overlay**: the
 final state, how Fleet tracked the pane (hook / discovery / shell), the
-hook/event/scrape candidates with ages, the winning source, the reason, the
-matched detection rule id, decision timestamps, and whether the working-timeout
-fired. It renders the same fused `StateDecision` the last refresh already
-attached — no live re-scrape — so it always agrees with `fleet explain` and the
-`--json` observers. Press any key to close.
+hook/event/scrape candidates (with hook/event ages), the winning source, the
+reason, matched detection rule id, decision timestamps, and whether the
+working-timeout fired. It renders the fused `StateDecision` the last refresh
+already attached — no live re-scrape — so it agrees with the `--json` observers.
+`fleet explain` deliberately re-scrapes the current screen and may be newer.
+Press any key to close.
 
 Press `g` to toggle an **opt-in repo-group view**: agents that are sibling
 worktrees of the same repository (they share a git common dir) group under a
@@ -155,8 +156,8 @@ regroup.
 
 Press `o` on a **workmux-managed** agent to focus it via `workmux open`. Fleet
 never depends on workmux: the key is only offered when workmux is installed and
-claims the pane, and simply does nothing otherwise. (Core detection works
-identically with or without workmux.)
+claims the pane; managed open failures appear as a bounded tmux message. (Core
+detection works identically with or without workmux.)
 
 You can also **click** a session row to select it; clicking a `ready` agent acknowledges it in place (see [Acknowledge](#agent-states)).
 
@@ -168,8 +169,8 @@ Fleet tracks seven states, sorted by urgency. The icon and color tell you what's
 | ---- | ----------- | --------------------------------------------------------------- |
 | `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt)                           |
 | `?`  | **asking**  | Agent asked you a question (`AskUserQuestion`)                  |
-| `◉`  | **working** | Thinking or running tools                                       |
 | `●`  | **ready**   | Turn ended — your move (finished, or asked in prose); green dot |
+| `◉`  | **working** | Thinking or running tools                                       |
 | `●`  | **idle**    | Up but no recent activity (blue dot)                            |
 | `■`  | **shell**   | No agent running (hidden by default)                            |
 | `○`  | **down**    | No live process (hidden by default)                             |
@@ -404,7 +405,7 @@ fast-tick subprocesses):
     "worktreeRoot": "/home/u/proj-feature",
     "branch": "feature",
     "detached": false,
-    "head": "a1b2c3\u2026",
+    "head": "a1b2c3d4e5f6789012345678901234567890abcd",
     "dirty": true,
     "staged": 1,
     "unstaged": 2,
@@ -414,14 +415,15 @@ fast-tick subprocesses):
     "upstream": "origin/feature",
     "diffstat": { "files": 2, "added": 40, "removed": 5 }
   },
-  "repoSiblingCount": 2,
+  "repoSiblingCount": 1,
   "workmux": { "managed": true, "handle": "proj-feature", "path": "/home/u/proj-feature" }
 }
 ```
 
 `repoId` is the absolute git common dir, shared by every linked worktree of a
-repo — so `repoSiblingCount` reports how many sibling worktrees appear in the
-same listing. The legacy `branch` and `project` fields are preserved unchanged.
+repo — so `repoSiblingCount` reports how many other sibling worktrees appear in
+the same listing (the current worktree is excluded). The legacy `branch` and
+`project` fields are preserved unchanged.
 `workmux` is `null` unless workmux is installed and claims the pane; fleet's core
 detection never depends on it.
 
@@ -572,7 +574,8 @@ Each hook script sources `hooks/lib.sh` which handles status file writes, JSONL 
 The TUI separates cheap and expensive operations:
 
 - **Every 500ms:** Re-read `.status` files + one `tmux list-panes` call + JSONL last-line read. No subprocesses beyond that.
-- **Every 5s:** Refresh read-only git metadata (bounded `git` argv spawns per unique pane cwd — identity, worktree root, branch/dirty/ahead-behind, diffstat), port detection (`lsof`), pane scraping (`tmux capture-pane` per pane, ~50ms each), and one global `workmux status --json` spawn when workmux is installed. Zero fast-tick subprocesses.
+- **Every 5s:** Refresh port detection (`lsof`), pane scraping (`tmux capture-pane` per pane, ~50ms each), and one global `workmux status --json` spawn when workmux is installed.
+- **Every 10s:** Refresh read-only git metadata with bounded, lock-free `git` argv spawns per unique pane cwd (identity, worktree root, branch/dirty/ahead-behind, diffstat). Zero git/workmux subprocesses on the fast tick.
 - **On keypress:** Zero subprocess calls. Just redraws from cached state.
 - **On switch:** Scrapes the target pane and corrects the status file before switching. Stale states are fixed the moment you navigate to them.
 - **During send/filter:** All refresh timers pause. The event loop is yours.
@@ -615,7 +618,7 @@ Fleet is a zero-dependency Bun project.
 bun install              # Install dev dependencies
 bun run dev              # Run without compiling
 bun run build            # Compile to standalone binary (dist/fleet)
-bun test                 # Run tests (457 tests, ~150ms)
+bun test                 # Run tests (921 tests)
 bun run typecheck        # tsc --noEmit
 bun run lint             # oxlint
 bun run format           # oxfmt
@@ -627,7 +630,7 @@ bun run format:check     # oxfmt --check
 Tests are collocated (`*.test.ts` next to source). The state engine, ANSI utilities, TUI model, and CLI commands are unit-tested. Tmux-dependent code has integration-style tests that gracefully degrade outside tmux.
 
 ```bash
-bun test                 # 457 tests, ~150ms
+bun test                 # Full unit suite
 bun test src/state/      # State engine only
 bun test src/terminal/   # Terminal primitives only
 bun test src/tui/        # TUI model only

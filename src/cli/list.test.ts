@@ -43,6 +43,18 @@ describe('runList — human', () => {
     expect(lines[1]).toContain('idle');
   });
 
+  test('strips terminal controls from human labels', () => {
+    const { stdout } = runList(
+      [],
+      [makeState({ session: '\u001b]52;c;payload\u0007session\nspoof', window: 'main' })],
+      true,
+      1000,
+    );
+    expect(stdout).not.toContain('\u001b');
+    expect(stdout).not.toContain('\nspoof');
+    expect(stdout).toContain('session spoof');
+  });
+
   test('drops shell panes from the roster', () => {
     const { stdout } = runList(
       [],

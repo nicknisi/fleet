@@ -1,10 +1,18 @@
 import { compareStatus, displayName, STATUS_DISPLAY, sessionLabel, type AgentState } from '../state/types.ts';
+import { stripAnsi } from '../terminal/ansi.ts';
 import { EXIT } from './exit-codes.ts';
 import { buildEnvelope, classifyOutcome, isAgent, outcomeExitCode, type Outcome } from './schema.ts';
 
 export interface RunListResult {
   stdout: string;
   code: number;
+}
+
+function safeTerminalText(value: string): string {
+  return Array.from(stripAnsi(value), (char) => {
+    const code = char.charCodeAt(0);
+    return code < 32 || (code >= 127 && code <= 159) ? ' ' : char;
+  }).join('');
 }
 
 // Human-readable roster: one line per agent, most-urgent first, columns padded
@@ -18,7 +26,9 @@ function renderHuman(agents: AgentState[], outcome: Outcome): string {
   const lines: string[] = [];
   for (const s of sorted) {
     const d = STATUS_DISPLAY[s.status];
-    lines.push(`${d.icon} ${d.label.padEnd(8)} ${s.paneId.padEnd(6)} ${displayName(s).padEnd(24)} ${sessionLabel(s)}`);
+    const name = safeTerminalText(displayName(s));
+    const location = safeTerminalText(sessionLabel(s));
+    lines.push(`${d.icon} ${d.label.padEnd(8)} ${s.paneId.padEnd(6)} ${name.padEnd(24)} ${location}`);
   }
   return lines.join('\n');
 }

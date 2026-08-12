@@ -48,10 +48,9 @@ export function repoLabelFromId(repoId: string): string {
   return base;
 }
 
-// The number of sibling worktrees for a given pane's repo (distinct worktree
-// roots sharing its repoId), or 0 when the pane has no git metadata. Used by the
-// JSON view and the repo-group header.
+// The number of OTHER worktrees for a given pane's repo (self excluded), or 0
+// when the pane has no git metadata / no siblings. Used by the JSON view.
 export function siblingWorktreeCount(state: AgentState, groups: Map<string, RepoGroup>): number {
   if (!state.git) return 0;
-  return groups.get(state.git.repoId)?.worktreeCount ?? 0;
+  return Math.max(0, (groups.get(state.git.repoId)?.worktreeCount ?? 1) - 1);
 }
