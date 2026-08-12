@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { piPackageEntryMatches } from './install-pi.ts';
 
 describe('piPackageEntryMatches', () => {
@@ -15,7 +17,7 @@ describe('piPackageEntryMatches', () => {
   });
 
   test("matches pi's normalized relative local-package source", () => {
-    const devDir = '/Users/nicknisi/Developer/fleet/hooks/pi';
+    const devDir = join(homedir(), 'Developer', 'fleet', 'hooks', 'pi');
     expect(piPackageEntryMatches('../../Developer/fleet/hooks/pi', devDir)).toBe(true);
     expect(piPackageEntryMatches({ source: '../../Developer/fleet/hooks/pi' }, devDir)).toBe(true);
   });
