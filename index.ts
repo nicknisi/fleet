@@ -24,7 +24,7 @@ import { readClientFocus } from './src/tmux/clients.ts';
 import { deliverDesktop } from './src/notify/deliver.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import type { AgentDir } from './src/agents/config.ts';
-import { switchClient, killPane, displayMessage } from './src/tmux/sessions.ts';
+import { switchClient, killPane } from './src/tmux/sessions.ts';
 import { TmuxControlClient } from './src/tmux/control.ts';
 import { shouldAttemptControl, type ControlLatch } from './src/tmux/control-router.ts';
 import { sendKeys, sendKeyNames, sendRawKey } from './src/tmux/send.ts';
@@ -33,7 +33,6 @@ import { formatStatusLine } from './src/cli/status.ts';
 import { runNext } from './src/cli/next.ts';
 import { emitWindowColors, rollupEnabled } from './src/cli/statusline.ts';
 import { handleCli } from './src/cli/router.ts';
-import { workmuxOpen } from './src/adapters/workmux.ts';
 import {
   refreshStates,
   fullRefreshStates,
@@ -575,21 +574,6 @@ async function launchTui(): Promise<number> {
               // ordering/navigation is unchanged until pressed.
               app.toggleRepoGroupMode();
               break;
-            case 'o': {
-              // Jump via workmux — only offered for workmux-managed agents. The
-              // handle was already resolved on the slow tick; invoke argv-safe.
-              // Unmanaged agents omit the action. A managed action that fails
-              // surfaces a bounded tmux message instead of becoming a dead key.
-              const sel = app.selectedState();
-              if (sel?.workmux) {
-                const result = workmuxOpen(sel.workmux.handle);
-                if (result.code !== 0) {
-                  const detail = (result.stderr.trim() || `exit ${result.code}`).replace(/\s+/g, ' ').slice(0, 160);
-                  displayMessage(`fleet: workmux open failed (${detail})`);
-                }
-              }
-              break;
-            }
             case 'd':
               // Read-only state-provenance overlay for the selected agent —
               // renders the StateDecision already attached by the last refresh

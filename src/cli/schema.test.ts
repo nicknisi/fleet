@@ -104,10 +104,9 @@ describe('toAgentView', () => {
     expect(v.eventTs).toBe(950);
   });
 
-  test('git metadata and workmux enrichment flow through additively (null by default)', () => {
+  test('git metadata flows through additively (null by default)', () => {
     const v = toAgentView(makeState({}));
     expect(v.git).toBeNull();
-    expect(v.workmux).toBeNull();
     expect(v.repoSiblingCount).toBe(0);
     // Existing project/branch fields are preserved.
     expect(v.branch).toBe('main');

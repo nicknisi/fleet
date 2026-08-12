@@ -36,7 +36,6 @@ function state(paneId: string, git: GitMetadata | null): AgentState {
     project: '~/p',
     branch: 'main',
     git,
-    workmux: null,
     ports: [],
     ts: 0,
     agentType: 'claude',

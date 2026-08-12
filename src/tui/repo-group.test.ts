@@ -36,7 +36,6 @@ function agent(paneId: string, session: string, status: AgentStatus, git: GitMet
     project: `~/p/${session}`,
     branch: git?.branch ?? null,
     git,
-    workmux: null,
     ports: [],
     ts: 0,
     agentType: 'claude',

@@ -13,7 +13,6 @@ import {
   type StateDecision,
 } from '../state/types.ts';
 import type { GitMetadata } from '../state/git-metadata.ts';
-import type { WorkmuxEnrichment } from '../adapters/workmux.ts';
 import { computeRepoGroups, siblingWorktreeCount } from '../state/repo-groups.ts';
 import { EXIT, type ExitCode } from './exit-codes.ts';
 
@@ -67,8 +66,6 @@ export interface AgentView {
   // Distinct sibling worktrees sharing this pane's repository id (0 when the
   // pane has no git metadata). Computed across the reported agent set.
   repoSiblingCount: number;
-  // --- Additive (v1) workmux enrichment. null when unmanaged/absent. --------
-  workmux: WorkmuxEnrichment | null;
 }
 
 export interface Envelope {
@@ -118,7 +115,6 @@ export function toAgentView(state: AgentState, repoSiblingCount = 0): AgentView 
     ports: state.ports,
     git: state.git ?? null,
     repoSiblingCount,
-    workmux: state.workmux ?? null,
   };
 }
 

@@ -133,7 +133,6 @@ Below 48 columns — like that narrow sidebar — Fleet automatically reflows th
 | `x`                        | Kill selected session (confirms first)     |
 | `R`                        | Rename selected session                    |
 | `g`                        | Toggle repo-group view (sibling worktrees) |
-| `o`                        | Open via workmux (managed agents only)     |
 | `d`                        | State provenance overlay (why this state?) |
 | `?`                        | Help overlay                               |
 | `q` or `Esc`               | Quit (or clear filter)                     |
@@ -153,11 +152,6 @@ single repo header instead of grouping by tmux session. It is **off by default**
 default ordering and navigation are unchanged until you press `g`, and toggling
 keeps the same agent selected so your cursor position is stable across the
 regroup.
-
-Press `o` on a **workmux-managed** agent to focus it via `workmux open`. Fleet
-never depends on workmux: the key is only offered when workmux is installed and
-claims the pane; managed open failures appear as a bounded tmux message. (Core
-detection works identically with or without workmux.)
 
 You can also **click** a session row to select it; clicking a `ready` agent acknowledges it in place (see [Acknowledge](#agent-states)).
 
@@ -353,7 +347,6 @@ Fleet also works as a non-interactive CLI for scripting and tmux integration.
 | `fleet status --json [<sel>]`             | Query agent state as JSON, optionally narrowed by a selector.                         |
 | `fleet watch [<sel>...] --jsonl`          | Stream state changes as JSON Lines (read-only) until interrupted.                     |
 | `fleet capture --pane <sel>`              | Print a pane's current buffer as plain text (read-only). `--json` to wrap it.         |
-| `fleet workmux-open <selector>`           | Focus a workmux-managed agent via `workmux open` (read-only; needs workmux).          |
 | `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.             |
 | `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.                  |
 | `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.                  |
@@ -415,8 +408,7 @@ fast-tick subprocesses):
     "upstream": "origin/feature",
     "diffstat": { "files": 2, "added": 40, "removed": 5 }
   },
-  "repoSiblingCount": 1,
-  "workmux": { "managed": true, "handle": "proj-feature", "path": "/home/u/proj-feature" }
+  "repoSiblingCount": 1
 }
 ```
 
@@ -424,8 +416,6 @@ fast-tick subprocesses):
 repo — so `repoSiblingCount` reports how many other sibling worktrees appear in
 the same listing (the current worktree is excluded). The legacy `branch` and
 `project` fields are preserved unchanged.
-`workmux` is `null` unless workmux is installed and claims the pane; fleet's core
-detection never depends on it.
 
 **Outcomes** (the `outcome` field, and what drives exit codes):
 
@@ -574,8 +564,8 @@ Each hook script sources `hooks/lib.sh` which handles status file writes, JSONL 
 The TUI separates cheap and expensive operations:
 
 - **Every 500ms:** Re-read `.status` files + one `tmux list-panes` call + JSONL last-line read. No subprocesses beyond that.
-- **Every 5s:** Refresh port detection (`lsof`), pane scraping (`tmux capture-pane` per pane, ~50ms each), and one global `workmux status --json` spawn when workmux is installed.
-- **Every 10s:** Refresh read-only git metadata with bounded, lock-free `git` argv spawns per unique pane cwd (identity, worktree root, branch/dirty/ahead-behind, diffstat). Zero git/workmux subprocesses on the fast tick.
+- **Every 5s:** Refresh port detection (`lsof`) and pane scraping (`tmux capture-pane` per pane, ~50ms each).
+- **Every 10s:** Refresh read-only git metadata with bounded, lock-free `git` argv spawns per unique pane cwd (identity, worktree root, branch/dirty/ahead-behind, diffstat). Zero git subprocesses on the fast tick.
 - **On keypress:** Zero subprocess calls. Just redraws from cached state.
 - **On switch:** Scrapes the target pane and corrects the status file before switching. Stale states are fixed the moment you navigate to them.
 - **During send/filter:** All refresh timers pause. The event loop is yours.
