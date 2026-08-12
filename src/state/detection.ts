@@ -73,6 +73,16 @@ export function getCompiledRegex(rule: DetectionRule): RegExp | null {
 
 // --- override validation (schema only; JSON.parse already ran) ---
 const VALID_STATES: ReadonlySet<string> = new Set(['PERMIT', 'QUESTION', 'BUSY', 'IDLE']);
+const SAFE_REGEX_FLAGS = /^[imsu]*$/;
+const MAX_RULE_ID_LENGTH = 128;
+const MAX_PATTERN_LENGTH = 1024;
+
+function hasControlCharacters(value: string): boolean {
+  return Array.from(value).some((char) => {
+    const code = char.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
+}
 
 // Answer-key arrays from overrides: keep only non-empty strings; an empty or
 // non-array value is treated as absent (fall through to the next default),
@@ -83,14 +93,47 @@ function validateKeys(raw: unknown): string[] | undefined {
   return keys.length > 0 ? keys : undefined;
 }
 
-function validateRules(raw: unknown[]): DetectionRule[] {
+// Drop rules that reuse an id already seen, keeping the FIRST occurrence so
+// first-match ordering is preserved. Built-ins have unique ids, so this only
+// bites malformed overrides (e.g. an appendRules id colliding with a base rule).
+function dedupeRules(rules: DetectionRule[], label: string): DetectionRule[] {
+  const seen = new Set<string>();
+  const out: DetectionRule[] = [];
+  for (const r of rules) {
+    if (seen.has(r.id)) {
+      warn(`detection: duplicate ${label} id "${r.id}" — keeping the first, dropping the rest`);
+      continue;
+    }
+    seen.add(r.id);
+    out.push(r);
+  }
+  return out;
+}
+
+function validateRules(raw: unknown[], label = 'rule'): DetectionRule[] {
   const rules: DetectionRule[] = [];
   for (const r of raw) {
     if (typeof r !== 'object' || r === null) continue;
     const rule = r as Record<string, unknown>;
     if (typeof rule.id !== 'string' || typeof rule.pattern !== 'string') continue;
+    if (
+      rule.id.length === 0 ||
+      rule.id.length > MAX_RULE_ID_LENGTH ||
+      hasControlCharacters(rule.id) ||
+      rule.pattern.length > MAX_PATTERN_LENGTH
+    ) {
+      warn(`detection: rejecting ${label} with unsafe id or oversized pattern`);
+      continue;
+    }
     if (typeof rule.state !== 'string' || !VALID_STATES.has(rule.state)) continue;
     const flags = typeof rule.flags === 'string' ? rule.flags : undefined;
+    // Cached RegExp objects must be stateless across ticks. Global/sticky flags
+    // mutate lastIndex on test(), causing alternating matches; reject all flags
+    // outside the safe, non-stateful set (and duplicate flag strings).
+    if (flags && (!SAFE_REGEX_FLAGS.test(flags) || new Set(flags).size !== flags.length)) {
+      warn(`detection: rejecting ${label} "${rule.id}" with unsafe regex flags "${flags}"`);
+      continue;
+    }
     const approveKeys = validateKeys(rule.approveKeys);
     const denyKeys = validateKeys(rule.denyKeys);
     const candidate: DetectionRule = {
@@ -105,7 +148,7 @@ function validateRules(raw: unknown[]): DetectionRule[] {
     if (getCompiledRegex(candidate) === null) continue;
     rules.push(candidate);
   }
-  return rules;
+  return dedupeRules(rules, label);
 }
 
 function validateManifest(raw: unknown, agent: string): DetectionManifest {
@@ -141,6 +184,117 @@ export const WORKING_GLYPH_PATTERN = '[\\u2800-\\u28FF]';
 // Anchored so a braille char deeper in a title can't false-positive. Shared by
 // the claude and codex title rules.
 const WORKING_TITLE_PATTERN = `^${WORKING_GLYPH_PATTERN} `;
+
+// --- schemaVersion:1 override envelopes -------------------------------------
+// A legacy override (no `schemaVersion`) still replaces the built-in WHOLESALE
+// (validateManifest). A `schemaVersion: 1` envelope instead INHERITS a built-in
+// (`extends`, default the same agent) and applies explicit, stable-id operations
+// on top of it — appendRules / replaceRules (in-place, by id) / disableRules for
+// the screen rules, the *TitleRules variants for title rules, plus scalar
+// overrides (linesFromBottom, promptMarker, approveKeys, denyKeys). Everything
+// degrades safely: an unknown schemaVersion or an unknown `extends` warns and
+// falls back to the built-in rather than throwing.
+export const SUPPORTED_SCHEMA_VERSION = 1;
+
+interface RuleOpKeys {
+  append: string;
+  replace: string;
+  disable: string;
+}
+
+// Apply the three rule operations to a base rule list, preserving first-match
+// ordering: replaceRules swaps a rule in place by id, disableRules removes by
+// id, appendRules adds to the end. Unknown target ids for replace/disable warn
+// and are skipped (never throw). The combined result is de-duplicated so an
+// appended id colliding with a base id can't shadow ordering.
+function applyRuleOps(
+  base: DetectionRule[],
+  m: Record<string, unknown>,
+  keys: RuleOpKeys,
+  label: string,
+): DetectionRule[] {
+  let rules = [...base];
+
+  const replaceRaw = m[keys.replace];
+  if (Array.isArray(replaceRaw)) {
+    for (const rep of validateRules(replaceRaw, label)) {
+      const idx = rules.findIndex((r) => r.id === rep.id);
+      if (idx === -1) {
+        warn(`detection: ${keys.replace} id "${rep.id}" matches no base ${label} — ignored`);
+        continue;
+      }
+      rules[idx] = rep;
+    }
+  }
+
+  const disableRaw = m[keys.disable];
+  if (Array.isArray(disableRaw)) {
+    const ids = new Set(disableRaw.filter((x): x is string => typeof x === 'string' && x.length > 0));
+    for (const id of ids) {
+      if (!rules.some((r) => r.id === id))
+        warn(`detection: ${keys.disable} id "${id}" matches no base ${label} — ignored`);
+    }
+    rules = rules.filter((r) => !ids.has(r.id));
+  }
+
+  const appendRaw = m[keys.append];
+  if (Array.isArray(appendRaw)) rules.push(...validateRules(appendRaw, label));
+
+  return dedupeRules(rules, label);
+}
+
+// Resolve a `schemaVersion:1` envelope against the built-ins. Returns null when
+// the schema is unrecognized so the caller falls back to the built-in.
+function resolveSchemaOverride(m: Record<string, unknown>, agent: string): DetectionManifest | null {
+  if (m.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+    warn(
+      `detection: unknown schemaVersion ${JSON.stringify(m.schemaVersion)} in override for "${agent}" — using built-in`,
+    );
+    return null;
+  }
+
+  // `extends` selects which built-in to inherit; default is the agent's own.
+  // An unknown target warns and falls back to the agent's own built-in.
+  let baseAgent = agent;
+  if (m.extends !== undefined) {
+    if (typeof m.extends === 'string' && BUILTINS[m.extends]) {
+      baseAgent = m.extends;
+    } else {
+      warn(
+        `detection: unknown extends ${JSON.stringify(m.extends)} in override for "${agent}" — inheriting "${agent}" built-in`,
+      );
+    }
+  }
+  const base: DetectionManifest = BUILTINS[baseAgent] ??
+    BUILTINS[agent] ?? { agent, linesFromBottom: DEFAULT_LINES_FROM_BOTTOM, promptMarker: '', rules: [] };
+
+  const rules = applyRuleOps(
+    base.rules,
+    m,
+    { append: 'appendRules', replace: 'replaceRules', disable: 'disableRules' },
+    'rule',
+  );
+  const titleRules = applyRuleOps(
+    base.titleRules ?? [],
+    m,
+    { append: 'appendTitleRules', replace: 'replaceTitleRules', disable: 'disableTitleRules' },
+    'title rule',
+  );
+
+  const approveKeys = validateKeys(m.approveKeys) ?? base.approveKeys;
+  const denyKeys = validateKeys(m.denyKeys) ?? base.denyKeys;
+
+  return {
+    agent,
+    linesFromBottom:
+      typeof m.linesFromBottom === 'number' && m.linesFromBottom > 0 ? m.linesFromBottom : base.linesFromBottom,
+    promptMarker: typeof m.promptMarker === 'string' ? m.promptMarker : base.promptMarker,
+    rules,
+    ...(titleRules.length > 0 ? { titleRules } : {}),
+    ...(approveKeys ? { approveKeys } : {}),
+    ...(denyKeys ? { denyKeys } : {}),
+  };
+}
 
 // --- the embedded built-in `claude` manifest ---
 // Each rule id, pattern, flag, and state is a direct translation of the literal
@@ -317,7 +471,13 @@ export function loadDetectionManifest(agent: string): DetectionManifest {
   if (existsSync(overridePath)) {
     try {
       const parsed: unknown = JSON.parse(readFileSync(overridePath, 'utf-8'));
-      resolved = validateManifest(parsed, agent); // override REPLACES built-in
+      if (typeof parsed === 'object' && parsed !== null && 'schemaVersion' in parsed) {
+        // schemaVersion:1 envelope — INHERIT the built-in and apply operations.
+        // An unrecognized schema returns null; fall back to the built-in.
+        resolved = resolveSchemaOverride(parsed as Record<string, unknown>, agent) ?? builtin;
+      } else {
+        resolved = validateManifest(parsed, agent); // legacy override REPLACES built-in wholesale
+      }
     } catch (err) {
       warn(`detection: ignoring malformed override ${overridePath} — ${String(err)}; using built-in`);
       resolved = builtin;

@@ -197,6 +197,25 @@ describe('upsertAgentEntry / removeAgentEntry', () => {
     expect(readFileSync(p, 'utf8')).toBe(after1);
   });
 
+  test('repairs a stale statusDir in place without duplicating the agent', () => {
+    const p = join(workDir, 'agents.json');
+    writeFileSync(
+      p,
+      JSON.stringify({
+        agents: [
+          { name: 'claude', statusDir: '~/.cache/claude-status' },
+          { name: 'codex', statusDir: '/stale/codex-status' },
+        ],
+      }),
+    );
+
+    upsertAgentEntry(p, { name: 'codex', statusDir: '~/.cache/codex-status' });
+    const doc = readJson<AgentsDoc>(p);
+    expect(doc.agents.filter((agent) => agent.name === 'codex')).toEqual([
+      { name: 'codex', statusDir: '~/.cache/codex-status' },
+    ]);
+  });
+
   test('synthesizes from the seed when agents.json is missing (does not drop claude)', () => {
     const p = join(workDir, 'agents.json');
     upsertAgentEntry(p, { name: 'codex', statusDir: '~/.cache/codex-status' }, [

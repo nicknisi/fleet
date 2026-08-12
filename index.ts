@@ -458,7 +458,8 @@ async function launchTui(): Promise<number> {
         return;
       }
 
-      if (app.mode === TuiMode.HELP) {
+      if (app.mode === TuiMode.HELP || app.mode === TuiMode.DECISION) {
+        // Read-only overlays close on any key, returning to the dashboard.
         app.mode = TuiMode.DASHBOARD;
         needsRender = true;
         return;
@@ -566,6 +567,12 @@ async function launchTui(): Promise<number> {
             }
             case '?':
               app.mode = TuiMode.HELP;
+              break;
+            case 'd':
+              // Read-only state-provenance overlay for the selected agent —
+              // renders the StateDecision already attached by the last refresh
+              // (no live re-scrape), so it agrees with `fleet explain`/--json.
+              if (app.selectedState()) app.mode = TuiMode.DECISION;
               break;
             case '/':
               app.setFilter('');

@@ -5,8 +5,9 @@ import { renderSendMode } from './send.ts';
 import { renderRenameMode } from './rename.ts';
 import { renderKillConfirm } from './kill.ts';
 import { renderHelp } from './help.ts';
+import { renderDecision } from './decision.ts';
 import { C } from '../terminal/colors.ts';
-import { visibleLength } from '../terminal/ansi.ts';
+import { truncateAnsi, visibleLength } from '../terminal/ansi.ts';
 import type { TerminalSize } from '../terminal/terminal.ts';
 
 export function render(app: TuiApp, size: TerminalSize): string {
@@ -50,10 +51,13 @@ export function render(app: TuiApp, size: TerminalSize): string {
     }
   })();
 
-  if (app.mode === TuiMode.HELP) {
-    const helpLines = renderHelp();
+  if (app.mode === TuiMode.HELP || app.mode === TuiMode.DECISION) {
+    // Full-screen read-only overlay: help, or the state-provenance panel for
+    // the selected agent (falls back to help's blank frame if nothing selected).
+    const selected = app.selectedState();
+    const overlayLines = app.mode === TuiMode.DECISION && selected ? renderDecision(selected) : renderHelp();
     for (let i = 0; i < contentRows; i++) {
-      out.push((helpLines[i] ?? '') + '\x1b[K\r\n');
+      out.push(truncateAnsi(overlayLines[i] ?? '', cols) + '\x1b[K\r\n');
       linesWritten++;
     }
   } else if (modalLines) {

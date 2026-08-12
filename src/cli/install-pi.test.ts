@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { piPackageEntryMatches } from './install-pi.ts';
+import { piPackageEntryMatches, upsertPiPackageEntry } from './install-pi.ts';
 
 describe('piPackageEntryMatches', () => {
   const dir = '/opt/homebrew/opt/fleet/hooks/pi';
@@ -27,5 +27,21 @@ describe('piPackageEntryMatches', () => {
     expect(piPackageEntryMatches({ path: dir }, dir)).toBe(false);
     expect(piPackageEntryMatches([dir], dir)).toBe(false);
     expect(piPackageEntryMatches(null, dir)).toBe(false);
+  });
+});
+
+describe('upsertPiPackageEntry', () => {
+  const dir = '/opt/homebrew/opt/fleet/hooks/pi';
+
+  test('does not duplicate an existing absolute or normalized-relative entry', () => {
+    expect(upsertPiPackageEntry([dir], dir)).toEqual([dir]);
+    const relative = '../../Developer/fleet/hooks/pi';
+    const devDir = join(homedir(), 'Developer', 'fleet', 'hooks', 'pi');
+    expect(upsertPiPackageEntry([relative], devDir)).toEqual([relative]);
+  });
+
+  test('adds the canonical relative source for a new package', () => {
+    const devDir = join(homedir(), 'Developer', 'fleet', 'hooks', 'pi');
+    expect(upsertPiPackageEntry([], devDir)).toEqual(['../../Developer/fleet/hooks/pi']);
   });
 });

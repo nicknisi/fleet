@@ -166,10 +166,9 @@ interface AgentsDoc {
   agents?: AgentDir[];
 }
 
-// Add `entry` if absent, preserving every existing agent. When agents.json does
-// not exist, `seed` (the currently resolved dirs) supplies the baseline so the
-// naive write doesn't drop claude — loadAgentDirs would otherwise early-return an
-// array that excludes it.
+// Add `entry` if absent, or repair its statusDir in place when stale, while
+// preserving every other agent and the existing order. When agents.json does
+// not exist, `seed` supplies the baseline so the write doesn't drop claude.
 export function upsertAgentEntry(path: string, entry: AgentDir, seed: AgentDir[] = []): void {
   let agents: AgentDir[] = [...seed];
   if (existsSync(path)) {
@@ -180,7 +179,9 @@ export function upsertAgentEntry(path: string, entry: AgentDir, seed: AgentDir[]
       // Malformed — keep the seed rather than clobbering with just the new entry.
     }
   }
-  if (!agents.some((a) => a.name === entry.name)) agents.push(entry);
+  const existing = agents.findIndex((agent) => agent.name === entry.name);
+  if (existing === -1) agents.push(entry);
+  else agents[existing] = entry;
   writeFileSync(path, JSON.stringify({ agents }, null, 2) + '\n');
 }
 

@@ -12,6 +12,7 @@ export const TuiMode = {
   SEND: 'SEND',
   RENAME: 'RENAME',
   HELP: 'HELP',
+  DECISION: 'DECISION',
   PASSTHROUGH: 'PASSTHROUGH',
   CONFIRM_KILL: 'CONFIRM_KILL',
 } as const;
