@@ -274,24 +274,108 @@ Environment variables `FLEET_THEME` (`light`/`dark`) and `NO_COLOR` are honored 
 
 Fleet also works as a non-interactive CLI for scripting and tmux integration.
 
-| Command                                   | Description                                                                        |
-| ----------------------------------------- | ---------------------------------------------------------------------------------- |
-| `fleet status [--tmux] <session>`         | Query agent state. `--tmux` outputs a tmux format string for status bars.          |
-| `fleet status --statusline`               | Render a full multi-agent status line for tmux's second row.                       |
-| `fleet next`                              | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE).   |
-| `fleet switch <pane-id>`                  | Acknowledge a ready agent and switch to it (used by the statusline click binding). |
-| `fleet ack <pane-id>`                     | Acknowledge a ready agent in place (clear it from the attention tier, no switch).  |
-| `fleet send <session> <prompt>`           | Send a prompt to a session. Refuses unsafe states unless `--force`.                |
-| `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.          |
-| `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.               |
-| `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.               |
-| `fleet install codex`                     | Wire fleet into Codex's `hooks.json` + `config.toml` (preserves your own hooks).   |
-| `fleet install pi`                        | Wire fleet into pi as a package extension (preserves your own packages).           |
-| `fleet uninstall`                         | Remove plugin registration + tmux status row.                                      |
-| `fleet uninstall codex`                   | Remove fleet's Codex hooks + config (leaves your own Codex hooks intact).          |
-| `fleet uninstall pi`                      | Remove fleet's pi extension + registration.                                        |
-| `fleet statusline --inject`               | Manually add the second tmux status row.                                           |
-| `fleet statusline --remove`               | Manually remove the second tmux status row.                                        |
+| Command                                   | Description                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------------- |
+| `fleet status [--tmux] <session>`         | Query agent state. `--tmux` outputs a tmux format string for status bars.             |
+| `fleet status --statusline`               | Render a full multi-agent status line for tmux's second row.                          |
+| `fleet next`                              | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE).      |
+| `fleet switch <pane-id>`                  | Acknowledge a ready agent and switch to it (used by the statusline click binding).    |
+| `fleet ack <pane-id>`                     | Acknowledge a ready agent in place (clear it from the attention tier, no switch).     |
+| `fleet send <session> <prompt>`           | Send a prompt to a session. Refuses unsafe states unless `--force`.                   |
+| `fleet wait <sel...> --state <s>`         | Block until agent(s) reach a state. See [Scripting & JSON API](#scripting--json-api). |
+| `fleet list [--json]`                     | List every agent (human roster, or the versioned JSON envelope).                      |
+| `fleet status --json [<sel>]`             | Query agent state as JSON, optionally narrowed by a selector.                         |
+| `fleet watch [<sel>...] --jsonl`          | Stream state changes as JSON Lines (read-only) until interrupted.                     |
+| `fleet capture --pane <sel>`              | Print a pane's current buffer as plain text (read-only). `--json` to wrap it.         |
+| `fleet doctor`                            | Check tmux version, plugin installation, status directories, hook health.             |
+| `fleet reconcile [--dry-run] [--verbose]` | Remove orphan status files for dead panes, fix stale working states.                  |
+| `fleet install`                           | Register Fleet as a Claude Code plugin + add second tmux status row.                  |
+| `fleet install codex`                     | Wire fleet into Codex's `hooks.json` + `config.toml` (preserves your own hooks).      |
+| `fleet install pi`                        | Wire fleet into pi as a package extension (preserves your own packages).              |
+| `fleet uninstall`                         | Remove plugin registration + tmux status row.                                         |
+| `fleet uninstall codex`                   | Remove fleet's Codex hooks + config (leaves your own Codex hooks intact).             |
+| `fleet uninstall pi`                      | Remove fleet's pi extension + registration.                                           |
+| `fleet statusline --inject`               | Manually add the second tmux status row.                                              |
+| `fleet statusline --remove`               | Manually remove the second tmux status row.                                           |
+
+### Scripting & JSON API
+
+The observability verbs (`list`, `status --json`, `watch`, `capture`, `wait`) are a stable, read-only surface for orchestration. They only read tmux and agent state — they never write status files, acknowledge, or mutate anything.
+
+**Selectors** — one grammar across every verb (first rule that fits wins):
+
+| Selector          | Matches                        | Example     |
+| ----------------- | ------------------------------ | ----------- |
+| `%<n>`            | a tmux pane id                 | `%42`       |
+| `@<n>`            | every pane in a tmux window id | `@5`        |
+| `<session>:<win>` | a session **and** window name  | `api:build` |
+| `<session>`       | every pane in a session        | `api`       |
+
+**JSON envelope** — agent-listing verbs (`list`, `status`, and watch snapshots) share one versioned shape. `capture --json` uses a command-specific payload with the same `schema`, `outcome`, `queriedAt`, and `selector` base fields:
+
+```json
+{
+  "schema": "fleet.observe/v1",
+  "outcome": "ok",
+  "queriedAt": 1737064800000,
+  "selector": "api",
+  "count": 1,
+  "agents": [{ "pane": "%42", "session": "api", "status": "PERMIT", "...": "..." }]
+}
+```
+
+`watch --jsonl` emits one `type:"snapshot"` envelope, then one `type:"change"` line per transition (`{pane, from, to, agent}`; `from:null` on appearance, `to:null` on disappearance). `capture --json` returns `{schema, outcome, queriedAt, selector, pane, session, lines}`; failures replace the capture fields with `error`.
+
+**Outcomes** (the `outcome` field, and what drives exit codes):
+
+| Outcome            | Meaning                                                    |
+| ------------------ | ---------------------------------------------------------- |
+| `ok`               | every requested agent resolved cleanly                     |
+| `no_agents`        | tmux answered, but no agents are present at all            |
+| `no_match`         | a selector was given and matched nothing (agents exist)    |
+| `ambiguous`        | a selector matched multiple panes where one was required   |
+| `stale_data`       | tmux is unavailable; a prior snapshot is being reported    |
+| `tmux_unavailable` | tmux could not be queried and no cached data was available |
+
+**Exit codes** — scripts pipe on these; the numeric values are part of the contract:
+
+| Code  | Name             | When                                                            |
+| ----- | ---------------- | --------------------------------------------------------------- |
+| `0`   | OK               | success (`ok`, `no_agents`, and `stale_data` still exit 0)      |
+| `1`   | USAGE            | bad or missing arguments                                        |
+| `2`   | NO_MATCH         | a selector matched no agent                                     |
+| `3`   | AMBIGUOUS        | `capture` selector matched multiple panes                       |
+| `4`   | TMUX_UNAVAILABLE | tmux could not be queried                                       |
+| `124` | TIMEOUT          | a bounded `wait` crossed its deadline (`timeout(1)` convention) |
+
+**`fleet wait`** blocks until the target state is reached, polling on the dashboard's refresh cadence:
+
+```bash
+# Block until any pane in session `api` is ready, giving up after 5 minutes
+fleet wait api --state ready --timeout 300
+
+# Wait for BOTH sessions to finish (default is ALL selectors)
+fleet wait api db --state ready
+
+# Wait for the FIRST of several to need you, then jump to it
+fleet wait api db --state waiting --state asking --any && fleet next
+```
+
+States accept display labels or raw names: `ready` (DONE), `waiting` (PERMIT), `asking` (QUESTION), `working` (BUSY), `idle`. Repeat `--state` to accept any of several; pass multiple selectors and `--any` to succeed on the first match instead of all. A selector that matches nothing exits `2`; in `--any` mode, missing selectors are ignored while another selector is still live.
+
+Hook-less `DONE` is observation-relative: long-running `watch`/`wait` processes can see a discovered agent transition from working to ready, while a cold one-shot `status` has no prior frame and reports that same prompt as idle. The JSON `tracking` and `timestampKind` fields make that distinction explicit.
+
+```bash
+# Live change stream for a session, one JSON object per line
+fleet watch api --jsonl
+
+# One-shot machine-readable snapshot of everything
+fleet list --json | jq '.agents[] | select(.needsAttention)'
+
+# Read a pane's screen without touching it
+fleet capture --pane %42 --lines 100
+fleet capture --pane %42 --json | jq '.lines'
+```
 
 ### Tmux Status Bar Integration
 

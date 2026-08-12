@@ -19,7 +19,7 @@ import { join } from 'node:path';
 // fall back to 'default' outside tmux. Embedding the socket keeps caches from
 // two distinct tmux servers from colliding, and the uid keeps them from
 // colliding across users on a shared tmpdir.
-function tmuxSocketId(): string {
+export function tmuxSocketId(): string {
   const tmux = process.env.TMUX;
   if (!tmux || tmux.length === 0) return 'default';
   const firstField = tmux.split(',')[0] ?? '';

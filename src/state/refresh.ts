@@ -19,7 +19,13 @@ import {
 } from './scraper.ts';
 import { loadDetectionManifest } from './detection.ts';
 import { loadRenames } from './rename.ts';
-import { AgentStatus, extractClaudeName, type AgentState, type ResolvedHookStatus } from './types.ts';
+import {
+  AgentStatus,
+  extractClaudeName,
+  type AgentState,
+  type ResolvedHookStatus,
+  type StateDecision,
+} from './types.ts';
 import type { AgentDir } from '../agents/config.ts';
 import {
   parsePsTable,
@@ -49,6 +55,11 @@ export function shortenPath(path: string): string {
 const branchCache = new Map<string, string | null>();
 let portCache = new Map<string, number[]>();
 const scrapeCache = new Map<string, AgentStatus | null>();
+// Parallel to scrapeCache: the matched scraper rule id for each pane's cached
+// scrape (null when nothing matched). Kept beside the status so the
+// observability API can report why the cached scrape slot read what it did,
+// without changing the fusion's status output.
+const scrapeRuleCache = new Map<string, string | null>();
 // When the scrape cache was last rebuilt (epoch seconds). A hook/event write
 // newer than this means the screen has changed since the snapshot — the cached
 // read is stale and must not mask the fresher signal.
@@ -116,6 +127,9 @@ export function verifyPaneState(state: AgentState, statusDirs: string[]): void {
         });
         writeFileAtomic(file, updated + '\n');
         scrapeCache.set(state.paneId, scraped);
+        // scrapePane discards the rule id, so the correction path can't attribute
+        // a rule — clear any stale one so the cache stays consistent.
+        scrapeRuleCache.set(state.paneId, null);
         return;
       }
     } catch {}
@@ -255,13 +269,19 @@ export function refreshSlowCachesWithCapture(
     const lines = captureCache.get(p.paneId);
     if (!lines) {
       scrapeCache.set(p.paneId, null);
+      scrapeRuleCache.set(p.paneId, null);
       continue;
     }
     const agent = paneAgent.get(p.paneId)?.agent ?? discoveryCache.get(p.paneId)?.agentType ?? 'claude';
-    scrapeCache.set(p.paneId, detectFromPaneContent(lines, loadDetectionManifest(agent)).status);
+    const detected = detectFromPaneContent(lines, loadDetectionManifest(agent));
+    scrapeCache.set(p.paneId, detected.status);
+    scrapeRuleCache.set(p.paneId, detected.ruleId);
   }
   for (const paneId of scrapeCache.keys()) {
-    if (!seen.has(paneId)) scrapeCache.delete(paneId);
+    if (!seen.has(paneId)) {
+      scrapeCache.delete(paneId);
+      scrapeRuleCache.delete(paneId);
+    }
   }
   scrapeCacheTs = Math.floor(Date.now() / 1000);
 
@@ -298,6 +318,8 @@ export function refreshStates(
     let tool: string | null = null;
     let ts = Math.floor(Date.now() / 1000);
     let agentType = ''; // shell pane: honestly no agent (cards.ts filters it out)
+    let tracking: 'hook' | 'discovery' | 'shell' = 'shell';
+    let decision: StateDecision | undefined;
 
     if (hook) {
       // Read events from the WINNING hook's own dir (not a first-match scan
@@ -310,13 +332,16 @@ export function refreshStates(
       tool = hook.tool || null;
       ts = hook.ts;
       agentType = hook.agent;
+      tracking = 'hook';
 
       // The pane title is re-read every fast tick, so a title-rule match (codex's
       // "Action Required", a braille working spinner) is both fresher and cheaper
       // than the ~5s-stale scrape cache — when it fires, it takes the scrape slot
       // in the fusion; the screen scrape covers the ticks where the title is
-      // silent.
-      const titleStatus = detectFromTitle(pane.paneTitle, loadDetectionManifest(hook.agent)).status;
+      // silent. The rule id rides along so the observability API can report why
+      // the scrape slot read what it did.
+      const titleResult = detectFromTitle(pane.paneTitle, loadDetectionManifest(hook.agent));
+      const titleStatus = titleResult.status;
 
       // The cached scrape is a snapshot from the last slow tick. A hook/event
       // write since then means the screen has changed (a prompt was answered, a
@@ -325,13 +350,21 @@ export function refreshStates(
       const scrapeFresh = Math.max(hook.ts, eventTs ?? 0) <= scrapeCacheTs;
       const cachedScrape = scrapeFresh ? (scrapeCache.get(pane.paneId) ?? null) : null;
 
-      status = fuseState({
+      const fused = fuseState({
         hookState: hook.state,
         hookTs: hook.ts,
         eventStatus,
         eventTs,
         scrapeStatus: titleStatus ?? cachedScrape,
-      }).status;
+        // The title's rule id wins when it fired; otherwise attribute the cached
+        // scrape's own rule id (retained in scrapeRuleCache) so a cached
+        // PERMIT/QUESTION/BUSY read is traceable too. Only the status feeds the
+        // fusion, so this doesn't change what state is decided.
+        scrapeRuleId:
+          titleStatus !== null ? titleResult.ruleId : scrapeFresh ? (scrapeRuleCache.get(pane.paneId) ?? null) : null,
+      });
+      status = fused.status;
+      decision = fused.decision;
     } else {
       // No winning hook. Before falling to SHELL, check hook-less discovery: an
       // allowlisted process in this pane surfaces as a synthetic agent, fusing
@@ -342,18 +375,45 @@ export function refreshStates(
       const disc = discoveryCache.get(pane.paneId);
       if (disc) {
         const manifest = loadDetectionManifest(disc.agentType);
+        const titleResult = detectFromTitle(pane.paneTitle, manifest);
+        const cachedScrape = scrapeCache.get(pane.paneId) ?? null;
+        const scrapeStatus = titleResult.status ?? cachedScrape;
+        const scrapeRuleId =
+          titleResult.status !== null ? titleResult.ruleId : (scrapeRuleCache.get(pane.paneId) ?? null);
         status = resolveDiscoveredStatus(
           pane.paneId,
           {
             glyphWorking: disc.working,
-            scrape: scrapeCache.get(pane.paneId) ?? null,
-            title: detectFromTitle(pane.paneTitle, manifest).status,
+            scrape: cachedScrape,
+            title: titleResult.status,
             focused: pane.focused,
           },
           discoveryDone,
           ts,
         );
+        const visualStatus = scrapeStatus ?? (disc.working ? AgentStatus.BUSY : null);
+        const visualWinner = visualStatus === null ? 'default' : 'scrape';
+        const visualReason =
+          status === AgentStatus.DONE
+            ? 'discovered agent transitioned from working to idle while unfocused'
+            : scrapeStatus !== null
+              ? 'discovered from a live pane or title rule'
+              : disc.working
+                ? 'discovered process showed a live working glyph'
+                : 'discovered process had no active prompt or working signal';
+        decision = {
+          final: status,
+          candidates: { hook: null, event: null, scrape: visualStatus },
+          hookTs: 0,
+          eventTs: null,
+          now: ts,
+          winner: status === AgentStatus.DONE ? 'default' : visualWinner,
+          reason: visualReason,
+          workingTimeoutFired: false,
+          scrapeRuleId,
+        };
         agentType = disc.agentType;
+        tracking = 'discovery';
       } else {
         status = AgentStatus.SHELL;
       }
@@ -374,7 +434,9 @@ export function refreshStates(
       ports: portCache.get(pane.paneId) ?? [],
       ts,
       agentType,
+      tracking,
       paneTitle: pane.paneTitle,
+      decision,
     });
   }
 
