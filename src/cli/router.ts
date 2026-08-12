@@ -27,10 +27,8 @@ import { SCHEMA_VERSION } from './schema.ts';
 import { runSidebar } from './sidebar.ts';
 import { runNext } from './next.ts';
 import { runSend } from './send.ts';
-import { runInstall, runUninstall } from './install.ts';
 import { runNotificationOpen } from './notification-open.ts';
-import { runInstallCodex, runUninstallCodex } from './install-codex.ts';
-import { runInstallPi, runUninstallPi } from './install-pi.ts';
+import { runIntegrationInstall, runIntegrationUninstall } from '../agents/integrations.ts';
 import { runDoctor } from './doctor.ts';
 import { runReconcile } from './reconcile.ts';
 import { runExplain } from './explain.ts';
@@ -294,13 +292,12 @@ export async function handleCli(args: string[]): Promise<number | null> {
       return runExplain(session, states, statusDirs, showSnapshot);
     }
     case 'install':
-      if (args[1] === 'codex') return runInstallCodex();
-      if (args[1] === 'pi') return runInstallPi();
-      return runInstall();
+      // Registry-driven: bare `install` == claude (the default integration);
+      // a known key (codex/pi) dispatches to its descriptor; an unknown key is
+      // rejected explicitly rather than silently installing claude.
+      return runIntegrationInstall(args[1]);
     case 'uninstall':
-      if (args[1] === 'codex') return runUninstallCodex();
-      if (args[1] === 'pi') return runUninstallPi();
-      return runUninstall();
+      return runIntegrationUninstall(args[1]);
     case 'notification-open': {
       return runNotificationOpen(args.slice(1));
     }

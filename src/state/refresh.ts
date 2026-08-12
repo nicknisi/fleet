@@ -51,6 +51,38 @@ export function shortenPath(path: string): string {
   return path;
 }
 
+export function discoveredDecision(
+  status: AgentStatus,
+  workingGlyph: boolean,
+  scrapeStatus: AgentStatus | null,
+  scrapeRuleId: string | null,
+  now: number,
+): StateDecision {
+  const scrapeWon = scrapeStatus !== null && scrapeStatus === status;
+  const reason =
+    status === AgentStatus.DONE
+      ? 'discovered agent transitioned from working to idle while unfocused'
+      : scrapeWon
+        ? 'discovered from a live pane or title rule'
+        : workingGlyph
+          ? 'discovered process showed a live working glyph'
+          : 'discovered process had no active prompt or working signal';
+  return {
+    final: status,
+    // The process-scan glyph has no hook/event/scrape slot. Keep actual scrape
+    // evidence honest and use winner=default + an explicit reason when the
+    // glyph, rather than a rule, determined BUSY.
+    candidates: { hook: null, event: null, scrape: scrapeStatus },
+    hookTs: 0,
+    eventTs: null,
+    now,
+    winner: scrapeWon ? 'scrape' : 'default',
+    reason,
+    workingTimeoutFired: false,
+    scrapeRuleId,
+  };
+}
+
 // Slow caches (git branches, ports, scrape) — refreshed every SLOW_REFRESH_MS
 const branchCache = new Map<string, string | null>();
 let portCache = new Map<string, number[]>();
@@ -391,27 +423,7 @@ export function refreshStates(
           discoveryDone,
           ts,
         );
-        const visualStatus = scrapeStatus ?? (disc.working ? AgentStatus.BUSY : null);
-        const visualWinner = visualStatus === null ? 'default' : 'scrape';
-        const visualReason =
-          status === AgentStatus.DONE
-            ? 'discovered agent transitioned from working to idle while unfocused'
-            : scrapeStatus !== null
-              ? 'discovered from a live pane or title rule'
-              : disc.working
-                ? 'discovered process showed a live working glyph'
-                : 'discovered process had no active prompt or working signal';
-        decision = {
-          final: status,
-          candidates: { hook: null, event: null, scrape: visualStatus },
-          hookTs: 0,
-          eventTs: null,
-          now: ts,
-          winner: status === AgentStatus.DONE ? 'default' : visualWinner,
-          reason: visualReason,
-          workingTimeoutFired: false,
-          scrapeRuleId,
-        };
+        decision = discoveredDecision(status, disc.working, scrapeStatus, scrapeRuleId, ts);
         agentType = disc.agentType;
         tracking = 'discovery';
       } else {

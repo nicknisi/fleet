@@ -65,9 +65,9 @@ export function piPackageEntryMatches(entry: unknown, packageDir: string): boole
   return typeof source === 'string' && matches(source);
 }
 
-function upsertPiPackageEntry(packages: unknown[], packageDir: string): unknown[] {
+export function upsertPiPackageEntry(packages: unknown[], packageDir: string): unknown[] {
   if (packages.some((entry) => piPackageEntryMatches(entry, packageDir))) return packages;
-  return [...packages, packageDir];
+  return [...packages, canonicalPiPackageSource(packageDir)];
 }
 
 function removePiPackageEntry(packages: unknown[], packageDir: string): unknown[] {
@@ -126,7 +126,7 @@ export function runInstallPi(): number {
   const settingsPath = piSettingsPath();
   const doc = readPiSettings(settingsPath) ?? {};
   const packages = Array.isArray(doc.packages) ? doc.packages : [];
-  doc.packages = upsertPiPackageEntry(packages, canonicalPiPackageSource(packageDir));
+  doc.packages = upsertPiPackageEntry(packages, packageDir);
   writePiSettings(settingsPath, doc);
 
   // Migrate away from the old ~/.pi/agent/extensions/fleet-pi.ts symlink so pi

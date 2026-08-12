@@ -551,3 +551,226 @@ test('an unknown agent with no override yields an empty manifest and warns', () 
   // Even with content the built-in would recognize, an empty manifest detects nothing.
   expect(detectFromPaneContent(['[y/n]', '❯'], m)).toEqual({ status: null, ruleId: null });
 });
+
+// 12. schemaVersion:1 override envelopes — explicit built-in inheritance.
+//     A legacy (no-schema) override still replaces wholesale (tested above); an
+//     envelope inherits a built-in and applies stable-id operations on top.
+describe('schemaVersion:1 override envelopes', () => {
+  test('appendRules adds to the built-in and preserves first-match ordering', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({
+        schemaVersion: 1,
+        appendRules: [{ id: 'permit.custom-tool', pattern: 'approve MyTool\\?', flags: 'i', state: 'PERMIT' }],
+      }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    // Built-in rules survive, appended rule lands at the end.
+    expect(m.rules.map((r) => r.id)).toContain('permit.yn');
+    expect(m.rules.at(-1)!.id).toBe('permit.custom-tool');
+    // Built-in permit still fires (first match wins on its own frame).
+    expect(detectFromPaneContent(['Allow Edit? [y/n]'], m)).toEqual({
+      status: AgentStatus.PERMIT,
+      ruleId: 'permit.yn',
+    });
+    // Appended rule fires on its own frame.
+    expect(detectFromPaneContent(['approve MyTool?'], m).ruleId).toBe('permit.custom-tool');
+  });
+
+  test('replaceRules swaps a rule in place by id, keeping its position', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({
+        schemaVersion: 1,
+        replaceRules: [{ id: 'permit.yn', pattern: 'YESNO', state: 'QUESTION' }],
+      }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    const idx = m.rules.findIndex((r) => r.id === 'permit.yn');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    // Same id, same slot, new pattern + state.
+    expect(m.rules[idx]!.state).toBe('QUESTION');
+    expect(detectFromPaneContent(['YESNO'], m)).toEqual({ status: AgentStatus.QUESTION, ruleId: 'permit.yn' });
+    // Old [y/n] pattern no longer classified by that rule.
+    expect(detectFromPaneContent(['Allow Edit? [y/n]'], m).ruleId).not.toBe('permit.yn');
+  });
+
+  test('disableRules removes a built-in rule by id', () => {
+    const cfg = writeOverride('claude', JSON.stringify({ schemaVersion: 1, disableRules: ['permit.yn'] }));
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    expect(m.rules.some((r) => r.id === 'permit.yn')).toBe(false);
+    // Other built-in permit rules remain.
+    expect(m.rules.some((r) => r.id === 'permit.do-you-want')).toBe(true);
+  });
+
+  test('title rule operations mirror the screen-rule operations', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({
+        schemaVersion: 1,
+        disableTitleRules: ['busy.title-spinner'],
+        appendTitleRules: [{ id: 'permit.title-blocked', pattern: 'Needs Input', state: 'PERMIT' }],
+      }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    expect(m.titleRules!.map((r) => r.id)).toEqual(['permit.title-blocked']);
+    expect(detectFromTitle('Needs Input now', m)).toEqual({
+      status: AgentStatus.PERMIT,
+      ruleId: 'permit.title-blocked',
+    });
+  });
+
+  test('scalar overrides layer on top of the inherited built-in', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({ schemaVersion: 1, linesFromBottom: 3, promptMarker: '$$', approveKeys: ['z'] }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    expect(m.linesFromBottom).toBe(3);
+    expect(m.promptMarker).toBe('$$');
+    expect(m.approveKeys).toEqual(['z']);
+    // A scalar not supplied keeps the built-in value.
+    expect(m.denyKeys).toEqual(CLAUDE_MANIFEST.denyKeys);
+    // Rules are unchanged from the built-in.
+    expect(m.rules.map((r) => r.id)).toEqual(CLAUDE_MANIFEST.rules.map((r) => r.id));
+  });
+
+  test('extends inherits a DIFFERENT built-in', () => {
+    const cfg = writeOverride('pi', JSON.stringify({ schemaVersion: 1, extends: 'claude' }));
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('pi');
+    expect(m.agent).toBe('pi');
+    // Inherited claude's rules.
+    expect(m.rules.map((r) => r.id)).toEqual(CLAUDE_MANIFEST.rules.map((r) => r.id));
+  });
+
+  test('an unknown schemaVersion warns and falls back to the built-in', () => {
+    const cfg = writeOverride('claude', JSON.stringify({ schemaVersion: 99, disableRules: ['permit.yn'] }));
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    expect(m).toBe(CLAUDE_MANIFEST); // exact built-in, operations ignored
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  test('an unknown extends warns and inherits the agent\u2019s own built-in', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({ schemaVersion: 1, extends: 'nope', disableRules: ['permit.yn'] }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    // Fell back to claude's own built-in as the base, still applied the op.
+    expect(m.rules.some((r) => r.id === 'permit.yn')).toBe(false);
+    expect(m.rules.some((r) => r.id === 'permit.do-you-want')).toBe(true);
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  test('replaceRules targeting a missing id warns and is ignored', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({ schemaVersion: 1, replaceRules: [{ id: 'no.such.rule', pattern: 'X', state: 'BUSY' }] }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    expect(m.rules.some((r) => r.id === 'no.such.rule')).toBe(false);
+    expect(m.rules.map((r) => r.id)).toEqual(CLAUDE_MANIFEST.rules.map((r) => r.id));
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  test('an appended rule with a duplicate id is dropped (first-match kept)', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({ schemaVersion: 1, appendRules: [{ id: 'permit.yn', pattern: 'DUP', state: 'BUSY' }] }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    // Only one permit.yn, the original built-in one (its position preserved).
+    expect(m.rules.filter((r) => r.id === 'permit.yn')).toHaveLength(1);
+    expect(m.rules.find((r) => r.id === 'permit.yn')!.state).toBe('PERMIT');
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  test('stateful global/sticky regex flags are rejected', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({
+        schemaVersion: 1,
+        appendRules: [
+          { id: 'unsafe.global', pattern: 'HELLO', flags: 'gi', state: 'BUSY' },
+          { id: 'safe.casefold', pattern: 'WORLD', flags: 'i', state: 'BUSY' },
+        ],
+      }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    expect(m.rules.some((r) => r.id === 'unsafe.global')).toBe(false);
+    expect(m.rules.some((r) => r.id === 'safe.casefold')).toBe(true);
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  test('control characters in ids and oversized patterns are rejected', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({
+        schemaVersion: 1,
+        appendRules: [
+          { id: 'bad\nrow', pattern: 'HELLO', state: 'BUSY' },
+          { id: 'too.long', pattern: 'x'.repeat(1025), state: 'BUSY' },
+        ],
+      }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    expect(m.rules.some((r) => r.id === 'bad\nrow')).toBe(false);
+    expect(m.rules.some((r) => r.id === 'too.long')).toBe(false);
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  test('an envelope with a bad-regex appended rule drops only that rule', () => {
+    const cfg = writeOverride(
+      'claude',
+      JSON.stringify({
+        schemaVersion: 1,
+        appendRules: [
+          { id: 'bad', pattern: '(', state: 'BUSY' },
+          { id: 'good', pattern: 'HELLO', state: 'QUESTION' },
+        ],
+      }),
+    );
+    process.env.XDG_CONFIG_HOME = cfg;
+    __resetManifestCache();
+
+    const m = loadDetectionManifest('claude');
+    expect(m.rules.some((r) => r.id === 'bad')).toBe(false);
+    expect(m.rules.some((r) => r.id === 'good')).toBe(true);
+  });
+});

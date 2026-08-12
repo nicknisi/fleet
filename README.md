@@ -120,20 +120,29 @@ Below 48 columns — like that narrow sidebar — Fleet automatically reflows th
 
 ### Keybindings
 
-| Key                        | Action                                 |
-| -------------------------- | -------------------------------------- |
-| `j` / `k` or `Up` / `Down` | Navigate sessions                      |
-| `Enter`                    | Switch to selected session             |
-| `n`                        | Jump to next waiting agent (cycles)    |
-| `p`                        | Toggle preview pane                    |
-| `s`                        | Send prompt to selected session        |
-| `i`                        | Enter passthrough (preview mode)       |
-| `y`                        | Approve permission prompt (preview)    |
-| `/`                        | Filter sessions by name or project     |
-| `x`                        | Kill selected session (confirms first) |
-| `R`                        | Rename selected session                |
-| `?`                        | Help overlay                           |
-| `q` or `Esc`               | Quit (or clear filter)                 |
+| Key                        | Action                                     |
+| -------------------------- | ------------------------------------------ |
+| `j` / `k` or `Up` / `Down` | Navigate sessions                          |
+| `Enter`                    | Switch to selected session                 |
+| `n`                        | Jump to next waiting agent (cycles)        |
+| `p`                        | Toggle preview pane                        |
+| `s`                        | Send prompt to selected session            |
+| `i`                        | Enter passthrough (preview mode)           |
+| `y`                        | Approve permission prompt (preview)        |
+| `/`                        | Filter sessions by name or project         |
+| `x`                        | Kill selected session (confirms first)     |
+| `R`                        | Rename selected session                    |
+| `d`                        | State provenance overlay (why this state?) |
+| `?`                        | Help overlay                               |
+| `q` or `Esc`               | Quit (or clear filter)                     |
+
+Press `d` on any agent to open a **read-only state-provenance overlay**: the
+final state, how Fleet tracked the pane (hook / discovery / shell), the
+hook/event/scrape candidates with ages, the winning source, the reason, the
+matched detection rule id, decision timestamps, and whether the working-timeout
+fired. It renders the same fused `StateDecision` the last refresh already
+attached — no live re-scrape — so it always agrees with `fleet explain` and the
+`--json` observers. Press any key to close.
 
 You can also **click** a session row to select it; clicking a `ready` agent acknowledges it in place (see [Acknowledge](#agent-states)).
 
@@ -269,6 +278,48 @@ Beyond the theme chain above, Fleet reads a handful of tmux user options — set
 | `@fleet_discover_idle_secs` | `3`           | Grace period (seconds) before a discovered agent flips working → idle, absorbing a single spinner-less frame.                                                                           |
 
 Environment variables `FLEET_THEME` (`light`/`dark`) and `NO_COLOR` are honored too — see [Theming](#theming).
+
+### Custom detection
+
+Each agent classifies its pane against a built-in **detection manifest** (ordered
+regex rules, first match wins). You can tune one per agent by dropping a JSON file
+at `~/.config/fleet/detection/<agent>.json` (respects `XDG_CONFIG_HOME`). Two
+formats are supported:
+
+**1. Override envelope (recommended)** — `schemaVersion: 1`. Inherits a built-in
+and applies explicit, stable-id operations on top of it, so you keep Fleet's
+field-tested rules and only change what you name:
+
+```jsonc
+{
+  "schemaVersion": 1,
+  // Which built-in to inherit. Optional — defaults to this file's own agent.
+  "extends": "claude",
+  // Scalar overrides (each optional; omitted keys keep the inherited value):
+  "linesFromBottom": 15,
+  "promptMarker": "❯",
+  "approveKeys": ["1"],
+  "denyKeys": ["Escape"],
+  // Screen-rule operations (all optional):
+  "appendRules": [{ "id": "permit.my-tool", "pattern": "approve MyTool\\?", "flags": "i", "state": "PERMIT" }],
+  "replaceRules": [{ "id": "permit.yn", "pattern": "\\[y/n\\]", "state": "PERMIT" }], // swap in place, by id
+  "disableRules": ["permit.tab-to-amend"], // remove by id
+  // Title-rule operations mirror the screen ones:
+  "appendTitleRules": [],
+  "replaceTitleRules": [],
+  "disableTitleRules": [],
+}
+```
+
+Rule `state` must be one of `PERMIT`, `QUESTION`, `BUSY`, `IDLE`. `id`s are
+stable and must be unique; a duplicate or bad-regex rule is dropped with a
+warning (its siblings survive), and `replaceRules`/`disableRules` ids that match
+no base rule warn and are ignored. First-match ordering (base rules, then
+appended rules) is preserved. An unknown `schemaVersion` or `extends` warns and
+falls back to the built-in — detection never throws.
+
+**2. Legacy override** — a file with **no** `schemaVersion` replaces the built-in
+manifest **wholesale** (the pre-existing behavior; nothing is inherited).
 
 ## CLI Commands
 
