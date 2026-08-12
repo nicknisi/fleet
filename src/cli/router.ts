@@ -8,6 +8,7 @@ import { C } from '../terminal/colors.ts';
 import { AgentRegistry } from '../agents/registry.ts';
 import type { AgentDir } from '../agents/config.ts';
 import {
+  refreshStates,
   fullRefreshStates,
   acknowledgePane,
   acknowledgeAllReady,
@@ -34,6 +35,7 @@ import { runReconcile } from './reconcile.ts';
 import { runExplain } from './explain.ts';
 import { runStatusLineInject, runStatusLineRemove, emitWindowColors, rollupEnabled } from './statusline.ts';
 import { runWait, parseWaitArgs } from './wait.ts';
+import { workmuxOpenCli } from './workmux-open.ts';
 import type { Selectable } from '../state/selector.ts';
 
 const VERSION: string = packageJson.version;
@@ -65,6 +67,7 @@ export function printHelp(): number {
       `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
       `    ${C.idle}fleet wait${C.reset} <sel> --state <s>     ${C.gray}Block until agent reaches state${C.reset}`,
       `    ${C.idle}fleet explain${C.reset} <session>          ${C.gray}Trace how a session's state was decided${C.reset}`,
+      `    ${C.idle}fleet workmux-open${C.reset} <selector>     ${C.gray}Focus a workmux-managed agent${C.reset}`,
       `    ${C.idle}fleet reconcile${C.reset} [--dry-run]      ${C.gray}Sweep orphan status files${C.reset}`,
       '',
       `  ${C.bold}Observe${C.reset}  ${C.dim}— machine-readable (${SCHEMA_VERSION})${C.reset}`,
@@ -105,10 +108,13 @@ function refreshTmuxStatus(): void {
 // Query live state first. Machine-readable observers may fall back to the
 // running TUI's last known-good snapshot when tmux is temporarily unavailable;
 // getLastTmuxOk() remains false so the envelope reports stale_data honestly.
-function observableStates(dirs: AgentDir[]): ReturnType<typeof fullRefreshStates> {
-  const live = fullRefreshStates(dirs);
+function withStaleFallback(live: ReturnType<typeof fullRefreshStates>): ReturnType<typeof fullRefreshStates> {
   if (getLastTmuxOk()) return live;
   return readFreshAgentSnapshot() ?? live;
+}
+
+function observableStates(dirs: AgentDir[]): ReturnType<typeof fullRefreshStates> {
+  return withStaleFallback(fullRefreshStates(dirs));
 }
 
 export async function handleCli(args: string[]): Promise<number | null> {
@@ -175,10 +181,15 @@ export async function handleCli(args: string[]): Promise<number | null> {
       };
       process.once('SIGINT', onSig);
       process.once('SIGTERM', onSig);
+      let watchCachesWarm = false;
       try {
         return await runWatch({
           selectors,
-          getStates: () => observableStates(dirs),
+          getStates: () => {
+            const live = watchCachesWarm ? refreshStates(dirs) : fullRefreshStates(dirs);
+            watchCachesWarm = getLastTmuxOk();
+            return withStaleFallback(live);
+          },
           tmuxOk: () => getLastTmuxOk(),
           emit: (line) => process.stdout.write(line + '\n'),
           sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
@@ -319,6 +330,13 @@ export async function handleCli(args: string[]): Promise<number | null> {
       }
       process.stderr.write('Usage: fleet statusline --inject [--force] | --remove\n');
       return 1;
+    }
+    case 'workmux-open': {
+      // Read-only: resolve the selector to an already-enriched agent and ask
+      // workmux to focus it. Clear nonzero diagnostic when workmux is absent or
+      // the pane isn't workmux-managed. Never mutates git/worktree state.
+      const states = fullRefreshStates(dirs);
+      return workmuxOpenCli(args.slice(1), states);
     }
     case 'wait': {
       const parsed = parseWaitArgs(args.slice(1));

@@ -103,6 +103,67 @@ describe('toAgentView', () => {
     expect(v.hookTs).toBe(900);
     expect(v.eventTs).toBe(950);
   });
+
+  test('git metadata and workmux enrichment flow through additively (null by default)', () => {
+    const v = toAgentView(makeState({}));
+    expect(v.git).toBeNull();
+    expect(v.workmux).toBeNull();
+    expect(v.repoSiblingCount).toBe(0);
+    // Existing project/branch fields are preserved.
+    expect(v.branch).toBe('main');
+    expect(v.project).toBe('~/Developer/test');
+  });
+
+  test('git metadata is passed through when present', () => {
+    const git = {
+      repoId: '/r/.git',
+      commonDir: '/r/.git',
+      worktreeRoot: '/r',
+      branch: 'feat',
+      detached: false,
+      head: 'abc',
+      dirty: true,
+      staged: 1,
+      unstaged: 2,
+      untracked: 3,
+      ahead: 4,
+      behind: 5,
+      upstream: 'origin/feat',
+      diffstat: { files: 2, added: 9, removed: 1 },
+    };
+    const v = toAgentView(makeState({ git }), 2);
+    expect(v.git).toEqual(git);
+    expect(v.repoSiblingCount).toBe(2);
+  });
+});
+
+describe('buildEnvelope repo siblings', () => {
+  const meta = (worktreeRoot: string) => ({
+    repoId: '/r/.git',
+    commonDir: '/r/.git',
+    worktreeRoot,
+    branch: 'main',
+    detached: false,
+    head: 'abc',
+    dirty: false,
+    staged: 0,
+    unstaged: 0,
+    untracked: 0,
+    ahead: 0,
+    behind: 0,
+    upstream: null,
+    diffstat: { files: 0, added: 0, removed: 0 },
+  });
+
+  test('computes other-worktree sibling counts across the reported agents', () => {
+    const env = buildEnvelope({
+      agents: [makeState({ paneId: '%1', git: meta('/r/a') }), makeState({ paneId: '%2', git: meta('/r/b') })],
+      outcome: 'ok',
+      selector: null,
+      now: 1,
+    });
+    expect(env.agents.every((a) => a.repoSiblingCount === 1)).toBe(true);
+  });
 });
 
 describe('classifyOutcome', () => {

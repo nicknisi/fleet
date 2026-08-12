@@ -69,6 +69,29 @@ describe('diffStates', () => {
     expect(changes[0]!.schema).toBe(SCHEMA_VERSION);
   });
 
+  test('a filtered change keeps sibling count from the unfiltered roster', () => {
+    const git = (worktreeRoot: string) => ({
+      repoId: '/repo/.git',
+      commonDir: '/repo/.git',
+      worktreeRoot,
+      branch: 'main',
+      detached: false,
+      head: 'abc',
+      dirty: false,
+      staged: 0,
+      unstaged: 0,
+      untracked: 0,
+      ahead: 0,
+      behind: 0,
+      upstream: null,
+      diffstat: { files: 0, added: 0, removed: 0 },
+    });
+    const selected = makeState({ paneId: '%1', status: AgentStatus.DONE, git: git('/repo') });
+    const sibling = makeState({ paneId: '%2', git: git('/repo-wt') });
+    const { changes } = diffStates(new Map([['%1', AgentStatus.BUSY]]), [selected], 20, [selected, sibling]);
+    expect(changes[0]!.agent?.repoSiblingCount).toBe(1);
+  });
+
   test('a disappearance emits to: null with a null agent view', () => {
     const prev = new Map([['%1', AgentStatus.BUSY as string]]);
     const { changes, next } = diffStates(prev, [], 30);

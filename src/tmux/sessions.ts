@@ -124,14 +124,3 @@ export function killPane(paneId: string): void {
 export function displayMessage(msg: string, durationMs: number = 3000): void {
   tmux(['display-message', '-d', String(durationMs), msg]);
 }
-
-export function gitBranch(path: string): string | null {
-  const proc = Bun.spawnSync({
-    cmd: ['git', '-C', path, 'rev-parse', '--abbrev-ref', 'HEAD'],
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  if (proc.exitCode !== 0) return null;
-  const branch = proc.stdout.toString().trim();
-  return branch.length > 0 ? branch : null;
-}

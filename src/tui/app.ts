@@ -1,7 +1,9 @@
 import { AgentStatus, compareStatus, windowLabel, type AgentState } from '../state/types.ts';
+import { repoLabelFromId } from '../state/repo-groups.ts';
 
 // A rendered dashboard line: sessions with 2+ agents get a header row followed
-// by grouped (indented, window-named) agent rows; singletons render inline.
+// by grouped (indented, window-named) agent rows; singletons render inline. In
+// repo-group mode the grouping key is a repository id instead of a session.
 export type DashboardRow =
   | { kind: 'header'; session: string; label: string; count: number; aggregate: AgentStatus }
   | { kind: 'agent'; state: AgentState; grouped: boolean };
@@ -53,6 +55,10 @@ export class TuiApp {
   dragging: boolean = false;
   hoverPaneId: string | null = null;
   pulsePhase: boolean = false;
+  // Opt-in repo-group view: groups panes by their git repository id (sibling
+  // worktrees) instead of by tmux session. Off by default so ordering and
+  // navigation are unchanged until the user presses `g`.
+  repoGroupMode: boolean = false;
   private lastClickPaneId: string | null = null;
   private lastClickTs: number = 0;
   // visibleStates()/dashboardRows() are pure over (states, filter) but consumed
@@ -64,6 +70,40 @@ export class TuiApp {
   private invalidateViews(): void {
     this.visibleCache = null;
     this.rowsCache = null;
+  }
+
+  // The key each pane is grouped under. Session by default; the git repository
+  // id in repo-group mode (falling back to session for panes with no git
+  // metadata, so ungrouped panes still render). Membership never changes with
+  // the mode — only the grouping key — so selection stays stable across a toggle.
+  private groupKey(s: AgentState): string {
+    if (this.repoGroupMode && s.git) return `repo:${s.git.repoId}`;
+    return `session:${s.session}`;
+  }
+
+  // Display label + whether this is a repo group, derived from a group's first
+  // (most-urgent) member.
+  private groupLabel(member: AgentState): { label: string; isRepo: boolean } {
+    if (this.repoGroupMode && member.git) {
+      return { label: repoLabelFromId(member.git.repoId), isRepo: true };
+    }
+    return { label: member.customName ?? member.session, isRepo: false };
+  }
+
+  // Toggle the repo-group view, preserving the selected pane across the reorder
+  // so navigation position is stable (the same agent stays selected).
+  toggleRepoGroupMode(): void {
+    const selectedPaneId = this.selectedState()?.paneId ?? null;
+    this.repoGroupMode = !this.repoGroupMode;
+    this.invalidateViews();
+    if (selectedPaneId) {
+      const idx = this.visibleStates().findIndex((s) => s.paneId === selectedPaneId);
+      if (idx >= 0) {
+        this.selectedIndex = idx;
+        return;
+      }
+    }
+    this.clampSelection();
   }
 
   updateStates(newStates: AgentState[]): void {
@@ -107,9 +147,10 @@ export class TuiApp {
 
     const groups = new Map<string, AgentState[]>();
     for (const s of filtered) {
-      const members = groups.get(s.session);
+      const key = this.groupKey(s);
+      const members = groups.get(key);
       if (members) members.push(s);
-      else groups.set(s.session, [s]);
+      else groups.set(key, [s]);
     }
 
     const out: AgentState[] = [];
@@ -131,17 +172,18 @@ export class TuiApp {
     const rows: DashboardRow[] = [];
     let i = 0;
     while (i < states.length) {
-      const session = states[i]!.session;
+      const key = this.groupKey(states[i]!);
       let j = i;
-      while (j < states.length && states[j]!.session === session) j++;
+      while (j < states.length && this.groupKey(states[j]!) === key) j++;
       const members = states.slice(i, j);
       if (members.length === 1) {
         rows.push({ kind: 'agent', state: members[0]!, grouped: false });
       } else {
+        const { label } = this.groupLabel(members[0]!);
         rows.push({
           kind: 'header',
-          session,
-          label: members[0]!.customName ?? session,
+          session: members[0]!.session,
+          label,
           count: members.length,
           aggregate: members[0]!.status,
         });

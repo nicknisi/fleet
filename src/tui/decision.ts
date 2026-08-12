@@ -4,9 +4,9 @@ import { AgentStatus, STATUS_DISPLAY, formatAgeDelta, sessionLabel, type AgentSt
 
 // Read-only provenance overlay ("why is this agent in this state?"). It renders
 // the StateDecision ALREADY ATTACHED to the AgentState by refreshStates — the
-// exact same object `fleet explain` traces and the JSON observers expose — so
-// the TUI and the machine-readable output can never disagree. It performs NO
-// live re-scrape: a `d` press is a pure read of what the last refresh decided.
+// exact same object the JSON observers expose, so the TUI and machine-readable
+// output agree. `fleet explain` intentionally re-scrapes live and may be newer.
+// A `d` press performs no I/O: it reads what the last refresh decided.
 
 function enumOrNone(s: AgentStatus | null): string {
   return s ?? 'none';

@@ -66,6 +66,31 @@ describe('runStatusJson — selector', () => {
     expect(env.agents[0]!.session).toBe('db');
   });
 
+  test('pane selector keeps sibling count from the unfiltered roster', () => {
+    const git = (worktreeRoot: string) => ({
+      repoId: '/repo/.git',
+      commonDir: '/repo/.git',
+      worktreeRoot,
+      branch: 'main',
+      detached: false,
+      head: 'abc',
+      dirty: false,
+      staged: 0,
+      unstaged: 0,
+      untracked: 0,
+      ahead: 0,
+      behind: 0,
+      upstream: null,
+      diffstat: { files: 0, added: 0, removed: 0 },
+    });
+    const siblings = [
+      makeState({ paneId: '%10', git: git('/repo') }),
+      makeState({ paneId: '%11', git: git('/repo-wt') }),
+    ];
+    const env = parse(runStatusJson(['%10'], siblings, true, 1).stdout);
+    expect(env.agents[0]!.repoSiblingCount).toBe(1);
+  });
+
   test('session:window narrows on both components', () => {
     const env = parse(runStatusJson(['api:build'], world, true, 1).stdout);
     expect(env.count).toBe(1);
