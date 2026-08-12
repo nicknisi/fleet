@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.22.0](https://github.com/nicknisi/fleet/compare/v0.21.0...v0.22.0) (2026-08-12)
+
+
+### Features
+
+* add read-only worktree context ([#63](https://github.com/nicknisi/fleet/issues/63)) ([e5fe643](https://github.com/nicknisi/fleet/commit/e5fe643b686c0e82309870aa66e3ee1e46a65209))
+* add versioned observability API ([#61](https://github.com/nicknisi/fleet/issues/61)) ([4b5f818](https://github.com/nicknisi/fleet/commit/4b5f818a909891b48dc53fccf896b67e3c6941a4))
+* deepen detection provenance ([#62](https://github.com/nicknisi/fleet/issues/62)) ([a825aa9](https://github.com/nicknisi/fleet/commit/a825aa939b7dc5e46fffcb222715f2286a6ee28b))
+* harden fleet observability foundation ([#60](https://github.com/nicknisi/fleet/issues/60)) ([91bfdfa](https://github.com/nicknisi/fleet/commit/91bfdfad33ea4ea4649dcd86cc1e3c4dfcf2ce76))
+
 ## [0.21.0](https://github.com/nicknisi/fleet/compare/v0.20.1...v0.21.0) (2026-08-11)
 
 
