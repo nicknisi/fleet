@@ -4,11 +4,8 @@ import { join } from 'node:path';
 import { CLAUDE_STATUS_DIR, loadAgentDirs } from './config.ts';
 
 describe('loadAgentDirs', () => {
-  test('returns array of agent dirs', () => {
-    const dirs = loadAgentDirs();
-    expect(Array.isArray(dirs)).toBe(true);
-    // Should find at least claude-status on this machine
-    expect(dirs.length).toBeGreaterThan(0);
+  test('returns an array even on a clean machine with no status directories', () => {
+    expect(Array.isArray(loadAgentDirs())).toBe(true);
   });
 
   test('each dir has name and statusDir', () => {
