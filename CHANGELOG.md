@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.22.2](https://github.com/nicknisi/fleet/compare/v0.22.1...v0.22.2) (2026-08-21)
+
+
+### Bug Fixes
+
+* **release:** publish Linux ARM64 binaries ([#68](https://github.com/nicknisi/fleet/issues/68)) ([3e6ba79](https://github.com/nicknisi/fleet/commit/3e6ba79f9089ae629adaa16eaebf638fc2aea72b))
+* **release:** update Homebrew for Linux ARM64 ([#70](https://github.com/nicknisi/fleet/issues/70)) ([baa85b0](https://github.com/nicknisi/fleet/commit/baa85b098c15e904ca02adacdf987b7e8ab73f66))
+
 ## [0.22.1](https://github.com/nicknisi/fleet/compare/v0.22.0...v0.22.1) (2026-08-12)
 
 
