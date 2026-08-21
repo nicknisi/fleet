@@ -124,6 +124,7 @@ jobs:
           SHA_ARM64=$(shasum -a 256 fleet-darwin-arm64.tar.gz | cut -d' ' -f1)
           SHA_X86_64=$(shasum -a 256 fleet-darwin-x86_64.tar.gz | cut -d' ' -f1)
           SHA_LINUX=$(shasum -a 256 fleet-linux-x86_64.tar.gz | cut -d' ' -f1)
+          SHA_LINUX_ARM64=$(shasum -a 256 fleet-linux-arm64.tar.gz | cut -d' ' -f1)
           cd tap
           sed -i "s/version \".*\"/version \"${VER}\"/" Formula/fleet.rb
           python3 -c "
@@ -134,6 +135,7 @@ jobs:
               'fleet-darwin-arm64.tar.gz': '${SHA_ARM64}',
               'fleet-darwin-x86_64.tar.gz': '${SHA_X86_64}',
               'fleet-linux-x86_64.tar.gz': '${SHA_LINUX}',
+              'fleet-linux-arm64.tar.gz': '${SHA_LINUX_ARM64}',
           }
           for asset, sha in shas.items():
               pattern = r'(' + re.escape(asset) + r'.*\n\s*sha256 \")([a-fA-F0-9]+|PLACEHOLDER_\w+)(\")'
