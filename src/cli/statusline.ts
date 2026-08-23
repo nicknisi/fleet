@@ -177,17 +177,14 @@ export function isStatusLineInjected(): boolean {
 }
 
 // install.ts persists a `run-shell "fleet statusline --inject"` line so a fresh
-// tmux server gets row 2 — which also means this runs on every `source-file`,
-// where it is nearly always a no-op that only announced itself. Skip the work
-// and the message when the server already matches; --force re-applies anyway.
+// tmux server gets row 2 — which also means this runs on every `source-file`.
+// Silent even when it re-applies: tmux shows run-shell stdout in view mode, and
+// a reload that re-asserts row 2 over a conf line that reset `status` is not
+// news. Skip the work when the server already matches; --force re-applies.
 export function runStatusLineInject(force = false): number {
   if (!force && isStatusLineInjected()) return 0;
 
-  const code = runCommands(buildInjectCommands());
-  if (code === 0) {
-    process.stdout.write('Fleet status line injected. tmux will now render `fleet status --statusline` on row 2.\n');
-  }
-  return code;
+  return runCommands(buildInjectCommands());
 }
 
 export function runStatusLineRemove(): number {
