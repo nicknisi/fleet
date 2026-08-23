@@ -404,11 +404,10 @@ export async function refreshSlowCachesAsync(
     ? mapLimited([...paths], SLOW_SPAWN_LIMIT, async (path) => ({ path, meta: await readGitMetadataAsync(path) }))
     : null;
   const psP = readPsTableAsync();
-  const capP = mapLimited(
-    panes,
-    SLOW_SPAWN_LIMIT,
-    async (p) => ({ paneId: p.paneId, lines: await captureFn(p.paneId) }),
-  );
+  const capP = mapLimited(panes, SLOW_SPAWN_LIMIT, async (p) => ({
+    paneId: p.paneId,
+    lines: await captureFn(p.paneId),
+  }));
 
   const psTable = await psP;
   const { ppidByPid } = parsePsTable(psTable);

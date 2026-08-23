@@ -9,11 +9,7 @@ const LSOF_ARGS = ['lsof', '-iTCP', '-sTCP:LISTEN', '-n', '-P', '-F', 'pn'];
 
 // Parse lsof -F pn output into pane-port pairs (pure; shared by the sync and
 // async detectPorts).
-function parseLsofPorts(
-  stdout: string,
-  panePids: Map<number, string>,
-  ppidByPid: Map<number, number>,
-): PanePort[] {
+function parseLsofPorts(stdout: string, panePids: Map<number, string>, ppidByPid: Map<number, number>): PanePort[] {
   const results: PanePort[] = [];
   let currentPid = -1;
 

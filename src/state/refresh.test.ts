@@ -36,13 +36,17 @@ describe('mapLimited', () => {
   test('never exceeds the concurrency limit', async () => {
     let active = 0;
     let peak = 0;
-    const out = await mapLimited(Array.from({ length: 20 }, (_, i) => i), 3, async (n) => {
-      active++;
-      peak = Math.max(peak, active);
-      await delay(5);
-      active--;
-      return n;
-    });
+    const out = await mapLimited(
+      Array.from({ length: 20 }, (_, i) => i),
+      3,
+      async (n) => {
+        active++;
+        peak = Math.max(peak, active);
+        await delay(5);
+        active--;
+        return n;
+      },
+    );
     expect(peak).toBe(3);
     expect(out).toHaveLength(20);
   });
