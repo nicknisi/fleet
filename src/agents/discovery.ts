@@ -324,6 +324,18 @@ export function readPsTable(): string[] {
   }
 }
 
+// Async twin for the TUI slow tick: same table, non-blocking fork.
+export async function readPsTableAsync(): Promise<string[]> {
+  try {
+    const p = Bun.spawn({ cmd: ['ps', '-eo', 'pid=,ppid=,comm='], stdout: 'pipe', stderr: 'ignore' });
+    const [stdout, exitCode] = await Promise.all([new Response(p.stdout).text(), p.exited]);
+    if (exitCode !== 0) return [];
+    return stdout.split('\n');
+  } catch {
+    return [];
+  }
+}
+
 // Thin I/O wrapper the slow loop calls. `captures` are the per-pane lines already
 // taken for the scrape cache this tick (paneId -> captured lines), and `panePids`
 // + `psTable` come from the caller's single list-panes + ps pass, so discovery

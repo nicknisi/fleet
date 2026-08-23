@@ -26,6 +26,28 @@ export function tmux(args: string[]): TmuxResult {
   }
 }
 
+// Async twin of tmux() for the TUI's tick paths: same TmuxResult shape, but
+// the fork doesn't block the event loop. stderr is read because tmuxOrThrow
+// callers surface it as the error message.
+export async function tmuxAsync(args: string[]): Promise<TmuxResult> {
+  try {
+    const proc = Bun.spawn({
+      cmd: ['tmux', ...args],
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: process.env,
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { exitCode, stdout, stderr };
+  } catch (err) {
+    return { exitCode: -1, stdout: '', stderr: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export function tmuxOrNull(args: string[]): string | null {
   const result = tmux(args);
   if (result.exitCode !== 0) return null;

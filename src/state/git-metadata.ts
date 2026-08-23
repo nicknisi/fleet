@@ -190,16 +190,29 @@ function git(cwd: string, args: string[]): GitResult {
   }
 }
 
-// Read the full metadata for a single cwd. Three bounded git spawns:
-//   rev-parse (identity + worktree root), status v2 (branch/dirty/ahead-behind),
-//   diff --numstat (diffstat). null on non-git/failure of the identity probe.
-export function readGitMetadata(cwd: string): GitMetadata | null {
-  const rp = git(cwd, ['rev-parse', '--git-common-dir', '--show-toplevel']);
-  if (!rp.ok) return null;
+// Async twin of git() for the TUI slow tick — same argv, non-blocking fork.
+async function gitAsync(cwd: string, args: string[]): Promise<GitResult> {
+  try {
+    const proc = Bun.spawn({
+      cmd: ['git', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args],
+      stdout: 'pipe',
+      stderr: 'ignore',
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+    });
+    const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    if (exitCode !== 0) return { ok: false, stdout: '' };
+    return { ok: true, stdout };
+  } catch {
+    return { ok: false, stdout: '' };
+  }
+}
+
+// Shared assembly for the sync/async reads: identity gate, then each probe
+// parsed with its failure default. null on non-git/failed identity.
+function buildGitMetadata(cwd: string, rp: GitResult, st: GitResult, nd: GitResult): GitMetadata | null {
   const identity = parseRevParse(rp.stdout, cwd);
   if (!identity) return null;
 
-  const st = git(cwd, ['status', '--porcelain=v2', '--branch']);
   const status = st.ok
     ? parseStatusV2(st.stdout)
     : {
@@ -217,7 +230,6 @@ export function readGitMetadata(cwd: string): GitMetadata | null {
 
   // Diff vs HEAD captures staged + unstaged changes. Fails (and stays zero) on
   // an unborn branch with no commits — the rest of the metadata is still valid.
-  const nd = git(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', 'HEAD']);
   const diffstat = nd.ok ? parseNumstat(nd.stdout) : { files: 0, added: 0, removed: 0 };
 
   let commonDir = identity.commonDir;
@@ -243,6 +255,29 @@ export function readGitMetadata(cwd: string): GitMetadata | null {
     upstream: status.upstream,
     diffstat,
   };
+}
+
+// Read the full metadata for a single cwd. Three bounded git spawns:
+//   rev-parse (identity + worktree root), status v2 (branch/dirty/ahead-behind),
+//   diff --numstat (diffstat). null on non-git/failure of the identity probe.
+export function readGitMetadata(cwd: string): GitMetadata | null {
+  const rp = git(cwd, ['rev-parse', '--git-common-dir', '--show-toplevel']);
+  if (!rp.ok) return null;
+  const st = git(cwd, ['status', '--porcelain=v2', '--branch']);
+  const nd = git(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', 'HEAD']);
+  return buildGitMetadata(cwd, rp, st, nd);
+}
+
+// Async variant for the TUI slow tick: identity probe first (non-git dirs pay
+// one spawn, not three), then status + diffstat concurrently.
+export async function readGitMetadataAsync(cwd: string): Promise<GitMetadata | null> {
+  const rp = await gitAsync(cwd, ['rev-parse', '--git-common-dir', '--show-toplevel']);
+  if (!rp.ok) return null;
+  const [st, nd] = await Promise.all([
+    gitAsync(cwd, ['status', '--porcelain=v2', '--branch']),
+    gitAsync(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', 'HEAD']),
+  ]);
+  return buildGitMetadata(cwd, rp, st, nd);
 }
 
 // The branch label the legacy `state.branch` field carried: the branch name, or

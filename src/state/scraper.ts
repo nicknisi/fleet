@@ -1,5 +1,6 @@
 import { AgentStatus, type DetectResult } from './types.ts';
-import { capturePane } from '../tmux/sessions.ts';
+import { capturePane, processCaptureOutput } from '../tmux/sessions.ts';
+import { tmuxAsync } from '../tmux/ipc.ts';
 import { capturePaneVia, type ControlReadClient } from '../tmux/control-adapter.ts';
 import {
   CLAUDE_MANIFEST,
@@ -74,6 +75,14 @@ export function capturePaneLines(paneId: string): string[] {
   } catch {
     return [];
   }
+}
+
+// Async twin for the TUI slow tick: same window, same empty-on-failure
+// degrade, but the fork doesn't block the event loop.
+export async function capturePaneLinesAsync(paneId: string): Promise<string[]> {
+  const result = await tmuxAsync(['capture-pane', '-e', '-p', '-t', paneId]);
+  if (result.exitCode !== 0) return [];
+  return processCaptureOutput(result.stdout, SCRAPE_LINES);
 }
 
 // Control-mode variant of capturePaneLines: same SCRAPE_LINES window and
