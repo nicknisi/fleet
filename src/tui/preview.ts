@@ -4,6 +4,29 @@ import { AgentStatus, STATUS_DISPLAY, whereLabel, type AgentState } from '../sta
 import { capturePane } from '../tmux/sessions.ts';
 import { chip } from './layouts/shared.ts';
 
+// render() runs per frame (keystrokes, mouse-motion hover, the 500ms BUSY
+// pulse), and each capturePane is a blocking tmux spawn. A short TTL caps that
+// at ~2 spawns/sec per pane; frames between refreshes reuse the last lines.
+const PREVIEW_TTL_MS = 400;
+const previewCaptureCache = new Map<string, { at: number; maxLines: number; lines: string[] }>();
+
+// TTL-gated pane capture. `now`/`fetch` injected for tests; fetch does the
+// real spawn. A cached capture larger than the request serves its tail.
+export function captureForPreview(
+  paneId: string,
+  maxLines: number,
+  now: number,
+  fetch: (paneId: string, maxLines: number) => string[] = capturePane,
+): string[] {
+  const hit = previewCaptureCache.get(paneId);
+  if (hit && now - hit.at < PREVIEW_TTL_MS && hit.maxLines >= maxLines) {
+    return hit.lines.slice(-maxLines);
+  }
+  const lines = fetch(paneId, maxLines);
+  previewCaptureCache.set(paneId, { at: now, maxLines, lines });
+  return lines;
+}
+
 export function previewActions(state: AgentState): string {
   switch (state.status) {
     case AgentStatus.PERMIT:
@@ -44,7 +67,7 @@ export function renderPreview(
 
   let paneLines: string[];
   try {
-    paneLines = capturePane(state.paneId, maxContentLines);
+    paneLines = captureForPreview(state.paneId, maxContentLines, Date.now());
   } catch {
     lines.push(`${C.gray}Preview unavailable${C.reset}`);
     return lines;

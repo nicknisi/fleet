@@ -11,9 +11,10 @@ mock.module('../tmux/sessions.ts', () => ({
 }));
 
 let renderPreview: typeof import('./preview.ts').renderPreview;
+let captureForPreview: typeof import('./preview.ts').captureForPreview;
 
 beforeAll(async () => {
-  ({ renderPreview } = await import('./preview.ts'));
+  ({ renderPreview, captureForPreview } = await import('./preview.ts'));
 });
 
 const makeState = (status: AgentStatus): AgentState => ({
@@ -72,5 +73,38 @@ describe('renderPreview title', () => {
     const lines = renderPreview({ ...makeState(AgentStatus.DONE), window: 'test' }, 80, 20);
     expect(lines[0]).toContain('test · READY');
     expect(lines[0]).not.toContain('[');
+  });
+});
+
+describe('captureForPreview', () => {
+  const linesOf = (n: number) => Array.from({ length: n }, (_, i) => `l${i}`);
+
+  test('reuses the capture within the TTL', () => {
+    let calls = 0;
+    const fetch = () => {
+      calls++;
+      return ['x'];
+    };
+    captureForPreview('%t1', 10, 1000, fetch);
+    captureForPreview('%t1', 10, 1200, fetch);
+    expect(calls).toBe(1);
+  });
+
+  test('refetches after the TTL or for a larger window', () => {
+    let calls = 0;
+    const fetch = (_id: string, n: number) => {
+      calls++;
+      return linesOf(n);
+    };
+    captureForPreview('%t2', 10, 1000, fetch);
+    captureForPreview('%t2', 10, 1500, fetch); // TTL expired
+    captureForPreview('%t2', 20, 1600, fetch); // larger than the cached window
+    expect(calls).toBe(3);
+  });
+
+  test('serves a smaller window as the tail of the cached capture', () => {
+    const fetch = (_id: string, n: number) => linesOf(n);
+    captureForPreview('%t3', 10, 1000, fetch);
+    expect(captureForPreview('%t3', 3, 1100, fetch)).toEqual(['l7', 'l8', 'l9']);
   });
 });
