@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.22.4](https://github.com/nicknisi/fleet/compare/v0.22.3...v0.22.4) (2026-08-23)
+
+
+### Performance Improvements
+
+* cut blocking tmux spawns and file reads on the TUI hot path ([#73](https://github.com/nicknisi/fleet/issues/73)) ([5fc7a55](https://github.com/nicknisi/fleet/commit/5fc7a55b58073ef0f81451abd2bbbfb23029b59a))
+* make the TUI tick paths non-blocking under load ([#75](https://github.com/nicknisi/fleet/issues/75)) ([329bfc0](https://github.com/nicknisi/fleet/commit/329bfc0e5847baac25212404d44633175a8a020c))
+
 ## [0.22.3](https://github.com/nicknisi/fleet/compare/v0.22.2...v0.22.3) (2026-08-23)
 
 
