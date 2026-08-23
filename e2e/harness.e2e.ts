@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { loadAgentDirs, type AgentDir } from '../src/agents/config.ts';
+import type { JsonObject } from '../src/json.ts';
 import { fullRefreshStates, fullRefreshStatesTui } from '../src/state/refresh.ts';
 import { TmuxControlClient } from '../src/tmux/control.ts';
 import { resolvePermitKeys } from '../src/state/permit-keys.ts';
@@ -52,7 +53,18 @@ let tmuxEnv = '';
 let dirs: AgentDir[] = [];
 const savedEnv: Record<string, string | undefined> = {};
 
-function tm(args: string[]): { code: number; stdout: string; stderr: string } {
+interface ProcResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+interface SessionInfo {
+  name: string;
+  pane: string;
+}
+
+function tm(args: string[]): ProcResult {
   const p = Bun.spawnSync({ cmd: ['tmux', '-S', sock, ...args], stdout: 'pipe', stderr: 'pipe' });
   return { code: p.exitCode ?? -1, stdout: p.stdout.toString(), stderr: p.stderr.toString() };
 }
@@ -61,7 +73,7 @@ const tmOut = (args: string[]) => tm(args).stdout.trim();
 // Spawn the compiled binary against the private server, with the temp XDG home
 // so it reads our agents.json. TMUX carries the socket in its first comma-field,
 // which is exactly how tmux resolves the server when no -L/-S is passed.
-function fleet(args: string[], env: Record<string, string> = {}): { code: number; stdout: string; stderr: string } {
+function fleet(args: string[], env: Record<string, string> = {}): ProcResult {
   const p = Bun.spawnSync({
     cmd: [BIN, ...args],
     stdout: 'pipe',
@@ -74,7 +86,7 @@ function fleet(args: string[], env: Record<string, string> = {}): { code: number
 let sessionSeq = 0;
 // Create an isolated session and return [sessionName, paneId]. Fixed geometry
 // keeps scraped screens deterministic across machines.
-function newSession(): { name: string; pane: string } {
+function newSession(): SessionInfo {
   const name = `e2e${++sessionSeq}`;
   tm(['new-session', '-d', '-s', name, '-x', '120', '-y', '40']);
   const pane = tmOut(['list-panes', '-t', name, '-F', '#{pane_id}']).split('\n')[0]!;
@@ -83,7 +95,7 @@ function newSession(): { name: string; pane: string } {
 
 // Same, but with the pane's start directory set to `dir` so pane_current_path
 // (and thus git metadata) resolves against a known worktree.
-function newSessionIn(dir: string): { name: string; pane: string } {
+function newSessionIn(dir: string): SessionInfo {
   const name = `e2e${++sessionSeq}`;
   tm(['new-session', '-d', '-s', name, '-x', '120', '-y', '40', '-c', dir]);
   const pane = tmOut(['list-panes', '-t', name, '-F', '#{pane_id}']).split('\n')[0]!;
@@ -115,7 +127,7 @@ function eventsPath(pane: string): string {
 }
 
 // Write a hook .status file keyed to a real pane id (what hooks/lib.sh writes).
-function writeStatus(pane: string, session: string, fields: Record<string, unknown> = {}): void {
+function writeStatus(pane: string, session: string, fields: JsonObject = {}): void {
   const data = { state: 'idle', pane, session, tool: '', ts: nowSec(), tmux_pid: 0, ...fields };
   writeFileSync(statusPath(pane), JSON.stringify(data) + '\n');
 }
@@ -306,6 +318,7 @@ suite('pane presence reconciliation (Present | Absent | Unknown)', () => {
     writeStatus(pane, name, { state: 'working', ts: nowSec() - 181 });
     const r = fleet(['reconcile']);
     expect(r.code).toBe(0);
+    // SAFETY: reconcile rewrote this status file above; it carries the state key.
     const updated = JSON.parse(readFileSync(statusPath(pane), 'utf-8')) as { state: string };
     expect(updated.state).toBe('idle');
   });

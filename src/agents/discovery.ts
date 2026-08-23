@@ -51,14 +51,23 @@ export function normalizeComm(comm: string): string {
 }
 
 // Parse `ps -eo pid=,ppid=,comm=` lines into pid->comm and pid->ppid maps. The
+// A discovery pass's output: the agents found plus the debounce map to persist
+// for the next tick.
+export interface DiscoveryScan {
+  agents: DiscoveredAgent[];
+  lastWorking: Map<string, number>;
+}
+
 // `=` suffixes suppress headers, so every non-blank line is a record: leading
 // pad, right-aligned pid, ppid, then comm (which may itself contain spaces or a
 // path, so it is the whole remainder of the line). comm is normalized at parse
 // time so callers compare against bare command names.
-export function parsePsTable(psTable: string[]): {
+interface PsTable {
   commByPid: Map<number, string>;
   ppidByPid: Map<number, number>;
-} {
+}
+
+export function parsePsTable(psTable: string[]): PsTable {
   const commByPid = new Map<number, string>();
   const ppidByPid = new Map<number, number>();
   for (const line of psTable) {
@@ -116,7 +125,7 @@ export function discoverAgents(
   panePids: Map<number, string>,
   captures: Map<string, string>,
   opts: DiscoveryOpts,
-): { agents: DiscoveredAgent[]; lastWorking: Map<string, number> } {
+): DiscoveryScan {
   const agents: DiscoveredAgent[] = [];
   const nextLastWorking = new Map<string, number>();
 
@@ -328,7 +337,7 @@ export function scanDiscovered(
   lastWorking: Map<string, number>,
   now: number,
   config?: DiscoveryConfig,
-): { agents: DiscoveredAgent[]; lastWorking: Map<string, number> } {
+): DiscoveryScan {
   const cfg = config ?? readDiscoveryConfig();
   if (!cfg.enabled) return { agents: [], lastWorking: new Map() };
 

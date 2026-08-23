@@ -26,7 +26,7 @@ export const SIDEBAR_RANGE = '__sidebar__';
 // (working, needs nothing from you), then idle, shells, and dead panes. Keeping
 // every attention state above BUSY means "needs you" is always sorted, tinted,
 // and surfaced ahead of quiet background work.
-const PRIORITY: Record<AgentStatus, number> = {
+const PRIORITY = {
   [AgentStatus.PERMIT]: 0,
   [AgentStatus.QUESTION]: 1,
   [AgentStatus.DONE]: 2,
@@ -34,7 +34,7 @@ const PRIORITY: Record<AgentStatus, number> = {
   [AgentStatus.IDLE]: 4,
   [AgentStatus.SHELL]: 5,
   [AgentStatus.DOWN]: 6,
-};
+} satisfies Record<AgentStatus, number>;
 
 export function statusPriority(status: AgentStatus): number {
   return PRIORITY[status];
@@ -74,7 +74,7 @@ export function formatAgeDelta(deltaSecs: number): string {
 // terminal's own palette so they stay readable on light and dark themes alike.
 // The in-app TUI ignores this field and colors state via getStateColor()/the C
 // palette instead.
-export const STATUS_DISPLAY: Record<AgentStatus, { icon: string; label: string; color: string }> = {
+export const STATUS_DISPLAY = {
   [AgentStatus.PERMIT]: { icon: '⚠', label: 'waiting', color: 'yellow' },
   [AgentStatus.QUESTION]: { icon: '?', label: 'asking', color: 'magenta' },
   [AgentStatus.DONE]: { icon: '●', label: 'ready', color: 'green' },
@@ -82,7 +82,7 @@ export const STATUS_DISPLAY: Record<AgentStatus, { icon: string; label: string; 
   [AgentStatus.IDLE]: { icon: '●', label: 'idle', color: 'blue' },
   [AgentStatus.SHELL]: { icon: '■', label: 'shell', color: 'brightblack' },
   [AgentStatus.DOWN]: { icon: '○', label: 'down', color: 'brightblack' },
-};
+} satisfies Record<AgentStatus, { icon: string; label: string; color: string }>;
 
 import type { GitMetadata } from './git-metadata.ts';
 

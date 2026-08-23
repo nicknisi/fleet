@@ -230,7 +230,7 @@ describe('outcomeExitCode', () => {
       'stale_data',
       'unknown',
     ];
-    for (const o of outcomes) expect(typeof outcomeExitCode(o)).toBe('number');
+    for (const o of outcomes) expect(outcomeExitCode(o)).toEqual(expect.any(Number));
   });
 });
 

@@ -5,6 +5,7 @@ import { clearPaneTitle, restore, setPaneTitle } from './terminal.ts';
 function captureWrites(fn: () => void): string[] {
   const writes: string[] = [];
   const original = process.stdout.write.bind(process.stdout);
+  // SAFETY: the wrapper implements the single-argument write() call shape used under test.
   process.stdout.write = ((chunk: string | Uint8Array) => {
     writes.push(String(chunk));
     return true;

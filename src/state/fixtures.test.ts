@@ -24,12 +24,12 @@ import { AgentStatus } from './types.ts';
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
-const EXPECTED_TO_STATUS: Record<string, AgentStatus> = {
+const EXPECTED_TO_STATUS = {
   permit: AgentStatus.PERMIT,
   question: AgentStatus.QUESTION,
   busy: AgentStatus.BUSY,
   idle: AgentStatus.IDLE,
-};
+} satisfies Record<string, AgentStatus>;
 
 interface FixtureCase {
   file: string;
@@ -45,8 +45,11 @@ function discoverFixtures(): FixtureCase[] {
     const parts = stem.split('-');
     const agent = parts[0]!;
     const expectedSlug = parts[1]!;
-    const expected = EXPECTED_TO_STATUS[expectedSlug];
-    if (!expected) throw new Error(`fixture "${file}" has no recognized expected state in its name`);
+    if (!Object.hasOwn(EXPECTED_TO_STATUS, expectedSlug)) {
+      throw new Error(`fixture "${file}" has no recognized expected state in its name`);
+    }
+    // SAFETY: the Object.hasOwn check above proves expectedSlug is a key of EXPECTED_TO_STATUS.
+    const expected = EXPECTED_TO_STATUS[expectedSlug as keyof typeof EXPECTED_TO_STATUS];
     cases.push({ file, agent, expected });
   }
   return cases;

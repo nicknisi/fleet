@@ -18,7 +18,16 @@ export type StateColorKey = 'permit' | 'question' | 'done' | 'busy' | 'idle' | '
 export type AnsiColor = { kind: 'ansi'; code: number };
 export type RgbColor = { kind: 'rgb'; r: number; g: number; b: number };
 export type ThemeColor = AnsiColor | RgbColor;
-export type StatePalette = Record<StateColorKey, ThemeColor>;
+// Named owner contract for a complete palette: one ThemeColor per agent state.
+export interface StatePalette {
+  permit: ThemeColor;
+  question: ThemeColor;
+  done: ThemeColor;
+  busy: ThemeColor;
+  idle: ThemeColor;
+  shell: ThemeColor;
+  down: ThemeColor;
+}
 
 const rgb = (r: number, g: number, b: number): RgbColor => ({ kind: 'rgb', r, g, b });
 

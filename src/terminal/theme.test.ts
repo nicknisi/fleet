@@ -136,8 +136,7 @@ describe('custom state palettes', () => {
 
   for (const key of Object.keys(paletteSource.colors)) {
     test(`rejects a palette missing ${key}`, () => {
-      const colors = { ...paletteSource.colors } as Record<string, unknown>;
-      delete colors[key];
+      const colors = Object.fromEntries(Object.entries(paletteSource.colors).filter(([k]) => k !== key));
       expect(() => parseStatePalette({ colors })).toThrow(`missing color "${key}"`);
     });
   }

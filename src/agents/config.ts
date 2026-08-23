@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { isJsonObject, isString, type JsonObject, type JsonValue } from '../json.ts';
+
 export interface AgentDir {
   name: string;
   statusDir: string;
@@ -32,19 +34,14 @@ export function loadAgentDirs(): AgentDir[] {
   const newConfig = join(configDir, 'fleet', 'agents.json');
   if (existsSync(newConfig)) {
     try {
-      const data = JSON.parse(readFileSync(newConfig, 'utf-8')) as { agents?: unknown[] };
-      if (data.agents && Array.isArray(data.agents)) {
-        if (data.agents.length === 0) return []; // deliberately empty — no fallback
+      // SAFETY: JSON.parse returns any; JsonValue is the sound type of any JSON document.
+      const parsed = JSON.parse(readFileSync(newConfig, 'utf-8')) as JsonValue;
+      if (isJsonObject(parsed) && Array.isArray(parsed.agents)) {
+        if (parsed.agents.length === 0) return []; // deliberately empty — no fallback
         // Per-entry validation: one malformed entry must not discard the whole
         // file (the catch below would silently drop every valid agent).
-        const valid = data.agents
-          .filter(
-            (a): a is AgentDir =>
-              typeof a === 'object' &&
-              a !== null &&
-              typeof (a as AgentDir).name === 'string' &&
-              typeof (a as AgentDir).statusDir === 'string',
-          )
+        const valid = parsed.agents
+          .filter((a): a is AgentDir & JsonObject => isJsonObject(a) && isString(a.name) && isString(a.statusDir))
           .map((a) => ({
             name: a.name,
             statusDir: a.statusDir.replace(/^~/, HOME),

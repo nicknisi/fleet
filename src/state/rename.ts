@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+import { isJsonObject, isString, type JsonValue } from '../json.ts';
+
 // Rename store lives under the XDG cache root (mirrors the ~/.cache/<name>-status
 // convention in config.ts) so a user rename survives a fleet restart.
 export function renamesPath(): string {
@@ -15,10 +17,11 @@ export function loadRenames(path: string = renamesPath()): Map<string, string> {
   const out = new Map<string, string>();
   if (!existsSync(path)) return out;
   try {
-    const data = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
-    if (data && typeof data === 'object' && !Array.isArray(data)) {
+    // SAFETY: JSON.parse returns any; JsonValue is the sound type of any JSON document.
+    const data = JSON.parse(readFileSync(path, 'utf-8')) as JsonValue;
+    if (isJsonObject(data)) {
       for (const [k, v] of Object.entries(data)) {
-        if (typeof v === 'string' && v.length > 0) out.set(k, v);
+        if (isString(v) && v.length > 0) out.set(k, v);
       }
     }
   } catch {

@@ -1,4 +1,5 @@
 import { openSync, readSync, closeSync, statSync } from 'node:fs';
+import { isJsonObject, type JsonValue } from '../json.ts';
 import { AgentStatus, type EventEntry } from './types.ts';
 
 const TAIL_BYTES = 8192;
@@ -8,7 +9,9 @@ export function parseEventLog(content: string): EventEntry[] {
   for (const line of content.split('\n')) {
     if (line.length === 0) continue;
     try {
-      const data = JSON.parse(line) as Record<string, unknown>;
+      // SAFETY: JSON.parse returns any; JsonValue is the sound type of any JSON document.
+      const data = JSON.parse(line) as JsonValue;
+      if (!isJsonObject(data)) continue;
       entries.push({
         event: String(data.event ?? ''),
         ts: Number(data.ts ?? 0),

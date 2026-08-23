@@ -30,7 +30,7 @@ export function tmuxSocketId(): string {
 }
 
 export function cacheFilePath(): string {
-  const uid = typeof process.getuid === 'function' ? process.getuid() : 0;
+  const uid = process.getuid?.() ?? 0;
   return join(tmpdir(), `fleet-statusline-${uid}-${tmuxSocketId()}.cache`);
 }
 

@@ -52,12 +52,17 @@ export function selectAgents(states: AgentState[], selectors: string[]): AgentSt
 // Pure diff: compare the previous per-pane status map to the current agents and
 // return one change line per pane whose status changed, appeared, or vanished.
 // Returns the change lines plus the next status map to carry forward.
+export interface StatesDiff {
+  changes: ChangeLine[];
+  next: Map<string, string>;
+}
+
 export function diffStates(
   prev: Map<string, string>,
   agents: AgentState[],
   now: number,
   groupAgents: AgentState[] = agents,
-): { changes: ChangeLine[]; next: Map<string, string> } {
+): StatesDiff {
   const next = new Map<string, string>();
   const changes: ChangeLine[] = [];
   const byPane = new Map<string, AgentState>();

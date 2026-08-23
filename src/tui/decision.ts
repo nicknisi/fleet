@@ -12,7 +12,7 @@ function enumOrNone(s: AgentStatus | null): string {
   return s ?? 'none';
 }
 
-function safeText(value: unknown, maxLength = 240): string {
+function safeText(value: string | null | undefined, maxLength = 240): string {
   const clean = Array.from(stripAnsi(String(value ?? '')), (char) => {
     const code = char.charCodeAt(0);
     return code < 32 || code === 127 ? ' ' : char;

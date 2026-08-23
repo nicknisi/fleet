@@ -4,6 +4,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import piDefault, { buildPiStatusLine, fleetPiLabel, isPiQuestionTool } from './fleet-pi.ts';
 import { parseStatusFile } from '../../src/state/hooks.ts';
+import type { JsonValue } from '../../src/json.ts';
+
+// Handlers the extension registers, captured by the mock pi below so tests can
+// fire them. Event payloads are JSON-shaped (pi serializes tool args as JSON).
+interface HandlerMap {
+  [event: string]: (event?: JsonValue) => void;
+}
+
+interface SavedEnv {
+  TMUX: string | undefined;
+  TMUX_PANE: string | undefined;
+  FLEET_PI_STATUS_DIR: string | undefined;
+}
 
 describe('fleetPiLabel', () => {
   test('bash: collapses whitespace and truncates to 48 chars', () => {
@@ -67,7 +80,7 @@ describe('buildPiStatusLine', () => {
 
 describe('extension event wiring', () => {
   let statusDir: string;
-  let saved: Record<string, string | undefined>;
+  let saved: SavedEnv;
 
   beforeEach(() => {
     statusDir = mkdtempSync(join(tmpdir(), 'fleet-pi-test-'));
@@ -88,21 +101,23 @@ describe('extension event wiring', () => {
   });
 
   // Capture the handlers the extension registers so the test can fire them.
-  function loadWithTmux(pane: string): Record<string, (e?: unknown) => void> {
+  function loadWithTmux(pane: string): HandlerMap {
     process.env.TMUX = '/tmp/fake-tmux,1,0';
     process.env.TMUX_PANE = pane;
-    const handlers: Record<string, (e?: unknown) => void> = {};
+    const handlers: HandlerMap = {};
     const mockPi = {
-      on(event: string, handler: (e?: unknown) => void): void {
+      on(event: string, handler: (event?: JsonValue) => void): void {
         handlers[event] = handler;
       },
       events: {
-        on(event: string, handler: (e?: unknown) => void): void {
+        on(event: string, handler: (event?: JsonValue) => void): void {
           handlers[event] = handler;
         },
       },
     };
-    piDefault(mockPi as unknown as Parameters<typeof piDefault>[0]);
+    // SAFETY: mockPi implements only the on()/events surface piDefault touches; the
+    // captured handler type is deliberately looser than pi's per-event handler types.
+    piDefault(mockPi as Parameters<typeof piDefault>[0]);
     return handlers;
   }
 
@@ -170,13 +185,14 @@ describe('extension event wiring', () => {
   test('outside tmux: registers no handlers and writes nothing', () => {
     delete process.env.TMUX;
     process.env.TMUX_PANE = '%1';
-    const handlers: Record<string, (e?: unknown) => void> = {};
+    const handlers: HandlerMap = {};
     const mockPi = {
-      on(event: string, handler: (e?: unknown) => void): void {
+      on(event: string, handler: (event?: JsonValue) => void): void {
         handlers[event] = handler;
       },
     };
-    piDefault(mockPi as unknown as Parameters<typeof piDefault>[0]);
+    // SAFETY: mockPi implements only the on() surface piDefault touches.
+    piDefault(mockPi as Parameters<typeof piDefault>[0]);
     expect(Object.keys(handlers)).toHaveLength(0);
     // status dir stays empty
     writeFileSync(join(statusDir, 'sentinel'), 'x'); // prove the dir is otherwise empty of .status

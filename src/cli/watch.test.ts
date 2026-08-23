@@ -53,13 +53,13 @@ describe('diffStates', () => {
   });
 
   test('an unchanged status emits nothing', () => {
-    const prev = new Map([['%1', AgentStatus.BUSY as string]]);
+    const prev = new Map<string, string>([['%1', AgentStatus.BUSY]]);
     const { changes } = diffStates(prev, [makeState({ paneId: '%1', status: AgentStatus.BUSY })], 10);
     expect(changes).toHaveLength(0);
   });
 
   test('a status change emits one line with from/to and the full agent view', () => {
-    const prev = new Map([['%1', AgentStatus.BUSY as string]]);
+    const prev = new Map<string, string>([['%1', AgentStatus.BUSY]]);
     const { changes } = diffStates(prev, [makeState({ paneId: '%1', status: AgentStatus.DONE })], 20);
     expect(changes).toHaveLength(1);
     expect(changes[0]!.from).toBe(AgentStatus.BUSY);
@@ -93,7 +93,7 @@ describe('diffStates', () => {
   });
 
   test('a disappearance emits to: null with a null agent view', () => {
-    const prev = new Map([['%1', AgentStatus.BUSY as string]]);
+    const prev = new Map<string, string>([['%1', AgentStatus.BUSY]]);
     const { changes, next } = diffStates(prev, [], 30);
     expect(changes).toHaveLength(1);
     expect(changes[0]!.from).toBe(AgentStatus.BUSY);
@@ -160,6 +160,7 @@ describe('runWatch', () => {
 
   test('emits a disappearance change when a pane vanishes', async () => {
     const lines = await drive([[makeState({ paneId: '%1', status: AgentStatus.BUSY })], []]);
+    // SAFETY: the find predicate above selects l.type === 'change', which is exactly ChangeLine.
     const change = lines.find((l) => l.type === 'change') as ChangeLine;
     expect(change.to).toBeNull();
     expect(change.pane).toBe('%1');

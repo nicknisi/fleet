@@ -29,9 +29,10 @@
     "check:deps": "bun run scripts/check-no-runtime-deps.ts"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.79.0",
     "@types/bun": "latest",
     "oxfmt": "^0.47.0",
-    "oxlint": "^1.62.0"
+    "oxlint": "1.79.0"
   },
   "peerDependencies": {
     "typescript": "^5"

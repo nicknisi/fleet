@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, existsSync, statSync, watch, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import type { HookStatus, ResolvedHookStatus } from './types.ts';
+import { isJsonObject, type JsonValue } from '../json.ts';
 import type { AgentDir } from '../agents/config.ts';
 
 // The `.status` / `.events.jsonl` filename convention, named once. Keyed by the
@@ -27,7 +28,10 @@ export function writeFileAtomic(path: string, content: string): void {
 
 export function parseStatusFile(content: string): HookStatus | null {
   try {
-    const data = JSON.parse(content) as Record<string, unknown>;
+    // SAFETY: JSON.parse returns any; JsonValue is the sound type of any JSON document.
+    const parsed = JSON.parse(content) as JsonValue;
+    if (!isJsonObject(parsed)) return null;
+    const data = parsed;
     return {
       state: String(data.state ?? 'idle'),
       pane: String(data.pane ?? ''),

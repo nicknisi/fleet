@@ -1,6 +1,7 @@
 import { chmodSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isJsonObject, isString, type JsonValue } from '../json.ts';
 import { tmuxSocketId } from './segment-cache.ts';
 import { AgentStatus, type AgentState } from './types.ts';
 
@@ -10,7 +11,7 @@ let lastPayload = '';
 let lastWriteMs = 0;
 
 function cacheDirPath(): string {
-  const uid = typeof process.getuid === 'function' ? process.getuid() : 0;
+  const uid = process.getuid?.() ?? 0;
   return join(tmpdir(), `fleet-${uid}`);
 }
 
@@ -19,7 +20,7 @@ function ensurePrivateCacheDir(): boolean {
     const dir = cacheDirPath();
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const stat = lstatSync(dir);
-    const uid = typeof process.getuid === 'function' ? process.getuid() : stat.uid;
+    const uid = process.getuid?.() ?? stat.uid;
     if (!stat.isDirectory() || stat.uid !== uid) return false;
     chmodSync(dir, 0o700);
     return true;
@@ -51,15 +52,15 @@ export function writeAgentSnapshot(states: AgentState[], now = Date.now()): void
   }
 }
 
-function isAgentState(value: unknown): value is AgentState {
-  if (typeof value !== 'object' || value === null) return false;
-  const state = value as Partial<AgentState>;
+function isAgentState(value: JsonValue | undefined): value is AgentState & JsonValue {
+  if (!isJsonObject(value)) return false;
   return (
-    typeof state.paneId === 'string' &&
-    typeof state.session === 'string' &&
-    typeof state.window === 'string' &&
-    typeof state.agentType === 'string' &&
-    Object.values(AgentStatus).includes(state.status as AgentStatus)
+    isString(value.paneId) &&
+    isString(value.session) &&
+    isString(value.window) &&
+    isString(value.agentType) &&
+    // SAFETY: includes() only reads membership; a non-AgentStatus value returns false.
+    Object.values(AgentStatus).includes(value.status as AgentStatus)
   );
 }
 
@@ -71,11 +72,13 @@ export function readFreshAgentSnapshot(maxAgeSecs = 300): AgentState[] | null {
     if (!ensurePrivateCacheDir()) return null;
     const path = snapshotCacheFilePath();
     const stat = lstatSync(path);
-    const uid = typeof process.getuid === 'function' ? process.getuid() : stat.uid;
+    const uid = process.getuid?.() ?? stat.uid;
     if (!stat.isFile() || stat.uid !== uid) return null;
     const ageSecs = (Date.now() - stat.mtimeMs) / 1000;
     if (ageSecs > maxAgeSecs) return null;
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { version?: unknown; states?: unknown };
+    // SAFETY: JSON.parse returns any; JsonValue is the sound type of any JSON document.
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as JsonValue;
+    if (!isJsonObject(parsed)) return null;
     if (parsed.version !== CACHE_VERSION || !Array.isArray(parsed.states)) return null;
     if (!parsed.states.every(isAgentState)) return null;
     return parsed.states;

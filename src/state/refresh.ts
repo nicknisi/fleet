@@ -10,6 +10,7 @@ import { fuseState, hookStateForStatus } from './engine.ts';
 import { readAllStatusDirs, statusFilePath, eventsFilePath, writeFileAtomic } from './hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './events.ts';
 import { acknowledgePlan } from './acknowledge.ts';
+import { isJsonObject, type JsonObject, type JsonValue } from '../json.ts';
 import {
   detectFromPaneContent,
   detectFromTitle,
@@ -185,9 +186,12 @@ export function acknowledgePane(paneId: string, statusDirs: string[]): void {
   const now = Math.floor(Date.now() / 1000);
   for (const dir of statusDirs) {
     const statusFile = statusFilePath(dir, paneId);
-    let current: Record<string, unknown>;
+    let current: JsonObject;
     try {
-      current = JSON.parse(readFileSync(statusFile, 'utf-8')) as Record<string, unknown>;
+      // SAFETY: JSON.parse returns any; JsonValue is the sound type of any JSON document.
+      const parsed = JSON.parse(readFileSync(statusFile, 'utf-8')) as JsonValue;
+      if (!isJsonObject(parsed)) continue;
+      current = parsed;
     } catch {
       continue;
     }

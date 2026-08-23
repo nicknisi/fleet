@@ -18,7 +18,13 @@ let smokeHome = '';
 
 // Every case runs with tmux unreachable so the binary's degrade-gracefully
 // paths are what's exercised (and nothing depends on a live server).
-function run(args: string[]): { code: number; stdout: string; stderr: string } {
+interface ProcResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+function run(args: string[]): ProcResult {
   const proc = Bun.spawnSync({
     cmd: [BIN, ...args],
     stdout: 'pipe',

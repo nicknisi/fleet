@@ -23,10 +23,12 @@ export interface Notification {
 // drops out naturally (no stale entries, no unbounded growth). A transition only
 // fires when the pane's prior status was BUSY — a pane first observed already
 // stopped has no BUSY predecessor and never false-fires (the arming condition).
-export function decideNotifications(
-  states: AgentState[],
-  previous: Map<string, AgentStatus>,
-): { candidates: Notification[]; previous: Map<string, AgentStatus> } {
+interface NotificationDecision {
+  candidates: Notification[];
+  previous: Map<string, AgentStatus>;
+}
+
+export function decideNotifications(states: AgentState[], previous: Map<string, AgentStatus>): NotificationDecision {
   const next = new Map<string, AgentStatus>();
   const candidates: Notification[] = [];
   for (const s of states) {

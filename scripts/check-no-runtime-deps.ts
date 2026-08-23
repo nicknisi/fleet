@@ -6,6 +6,8 @@
 
 import pkg from '../package.json' with { type: 'json' };
 
+// SAFETY: pkg is this repo's own package.json via a JSON import; the guard below
+// only reads these four keys, so the manifest just needs their names.
 const manifest = pkg as {
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;

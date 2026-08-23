@@ -41,13 +41,28 @@ import { join } from 'node:path';
 // pi's real handler signature is (event, ctx) => void | Promise<void>; narrower
 // handlers (fewer params, void return) are assignable, so these compile against
 // pi's real `on` at load time. See pi's docs/extensions.md for the full surface.
-interface PiToolExecutionStartEvent {
-  toolName: string;
-  args: unknown;
+//
+// Local copy of fleet's JsonValue boundary type (src/json.ts): this file is
+// loaded standalone by pi and imports nothing from fleet (see header), so the
+// type is duplicated here rather than imported.
+type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+type JsonObject = { [key: string]: JsonValue };
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-interface PiToolEvent {
-  toolName: string;
+
+function isString(value: JsonValue | undefined): value is string {
+  return typeof value === 'string';
 }
+
+type PiToolExecutionStartEvent = {
+  toolName: string;
+  args: JsonValue;
+};
+type PiToolEvent = {
+  toolName: string;
+};
 interface PiExtensionAPI {
   on(event: 'session_start' | 'agent_start' | 'agent_end' | 'session_shutdown', handler: () => void): void;
   on(event: 'tool_execution_start', handler: (event: PiToolExecutionStartEvent) => void): void;
@@ -73,9 +88,9 @@ export function isPiQuestionTool(toolName: string): boolean {
   return normalized === 'askuserquestion' || normalized === 'ask_user_question';
 }
 
-export function fleetPiLabel(toolName: string, args: unknown): string {
-  const a = (args ?? {}) as Record<string, unknown>;
-  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+export function fleetPiLabel(toolName: string, args: JsonValue | undefined): string {
+  const a: JsonObject = isJsonObject(args) ? args : {};
+  const str = (v: JsonValue | undefined): string => (isString(v) ? v : '');
   const cap = toolName ? toolName.charAt(0).toUpperCase() + toolName.slice(1) : '';
   if (toolName === 'bash') {
     const cmd = str(a.command).replace(/\s+/g, ' ').trim().slice(0, 48);

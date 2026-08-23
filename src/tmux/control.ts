@@ -35,9 +35,19 @@ export function attachArgs(tmuxEnv: string | undefined): string[] {
   return args;
 }
 
+/** Environment map as read from process.env. */
+export interface EnvMap {
+  [key: string]: string | undefined;
+}
+
+/** Environment map with no undefined values. */
+export interface CleanEnv {
+  [key: string]: string;
+}
+
 /** Copy `env` without TMUX (a control client must not look nested). */
-export function childEnv(env: Record<string, string | undefined>): Record<string, string> {
-  const out: Record<string, string> = {};
+export function childEnv(env: EnvMap): CleanEnv {
+  const out: CleanEnv = {};
   for (const [k, v] of Object.entries(env)) {
     if (k === 'TMUX') continue;
     if (v !== undefined) out[k] = v;
@@ -78,7 +88,7 @@ export interface TmuxControlClientOptions {
 
 interface PendingSlot {
   resolve: (body: string) => void;
-  reject: (err: unknown) => void;
+  reject: (err: TmuxControlError) => void;
 }
 
 export class TmuxControlClient {
@@ -106,7 +116,7 @@ export class TmuxControlClient {
   /** Spawn the control client, consume the greeting block, run a sync probe. */
   async connect(): Promise<void> {
     const args = attachArgs(process.env.TMUX);
-    const env = childEnv(process.env as Record<string, string | undefined>);
+    const env = childEnv(process.env);
     const proc = Bun.spawn({
       cmd: args,
       stdin: 'pipe',
@@ -208,7 +218,7 @@ export class TmuxControlClient {
       () => {},
       () => {},
     );
-    return next as Promise<T>;
+    return next;
   }
 
   private runSerialized(cmd: string): Promise<string> {
