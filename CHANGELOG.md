@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.3](https://github.com/nicknisi/fleet/compare/v0.22.2...v0.22.3) (2026-08-23)
+
+
+### Bug Fixes
+
+* stay silent when the statusline inject runs on tmux conf reloads ([#71](https://github.com/nicknisi/fleet/issues/71)) ([6cc2e44](https://github.com/nicknisi/fleet/commit/6cc2e44661fbcadb197dba9894658bf28d049e25))
+
 ## [0.22.2](https://github.com/nicknisi/fleet/compare/v0.22.1...v0.22.2) (2026-08-21)
 
 
