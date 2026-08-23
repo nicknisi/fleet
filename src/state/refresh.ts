@@ -16,6 +16,7 @@ import {
   detectFromTitle,
   scrapePane,
   capturePaneLines,
+  capturePaneLinesAsync,
   capturePaneLinesVia,
 } from './scraper.ts';
 import { loadDetectionManifest } from './detection.ts';
@@ -32,18 +33,19 @@ import {
   parsePsTable,
   pruneDoneTracking,
   readPsTable,
+  readPsTableAsync,
   resolveDiscoveredStatus,
   scanDiscovered,
   type DiscoveredAgent,
   type DoneTracking,
 } from '../agents/discovery.ts';
-import { listPanesResult, type ListPanesResult, type PaneInfo } from '../tmux/sessions.ts';
-import { readGitMetadata, branchLabel, type GitMetadata } from './git-metadata.ts';
+import { listPanesResult, listPanesResultAsync, type ListPanesResult, type PaneInfo } from '../tmux/sessions.ts';
+import { readGitMetadata, readGitMetadataAsync, branchLabel, type GitMetadata } from './git-metadata.ts';
 import type { TmuxControlClient } from '../tmux/control.ts';
 import { listPanesResultVia } from '../tmux/control-adapter.ts';
 import { flipControlDead, type ControlLatch } from '../tmux/control-router.ts';
 import { tmuxOrNull } from '../tmux/ipc.ts';
-import { detectPorts } from '../tmux/ports.ts';
+import { detectPorts, detectPortsAsync, type PanePort } from '../tmux/ports.ts';
 
 export function shortenPath(path: string): string {
   const home = Bun.env.HOME ?? '';
@@ -233,46 +235,65 @@ export function refreshSlowCaches(panes: PaneInfo[], hookStatuses: ResolvedHookS
   refreshSlowCachesWithCapture(panes, hookStatuses, capturePaneLines);
 }
 
-// Same scan as refreshSlowCaches, but the per-pane capture is supplied by the
-// caller. The fork path passes capturePaneLines (sync); the control-mode TUI
-// path pre-fetches every pane via the control client, then passes a sync
-// lookup into the cache so the rest of the slow-tick work (git, ports,
-// discovery, classification) runs unchanged and shared between both paths.
-export function refreshSlowCachesWithCapture(
-  panes: PaneInfo[],
-  hookStatuses: ResolvedHookStatus[],
-  captureFn: (paneId: string) => string[],
-): void {
-  const paths = new Set<string>();
-  for (const p of panes) paths.add(p.currentPath);
-  const nowMs = Date.now();
-  if (
+// ponytail: fixed cap on concurrent slow-tick spawns — an unbounded
+// Promise.all would fire N captures + 3×paths git forks at once, spiking
+// process creation exactly when the box is already loaded. Raise only if slow
+// ticks measurably lag with many panes.
+const SLOW_SPAWN_LIMIT = 8;
+
+// Bounded parallel map. The index pull (i++) is synchronous between awaits, so
+// each item is claimed exactly once; result order matches input order.
+export async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (i < items.length) {
+        const idx = i++;
+        out[idx] = await fn(items[idx]!);
+      }
+    }),
+  );
+  return out;
+}
+
+// The git-cache refresh gate, shared by the sync/async slow ticks: TTL
+// expired, or the pane path set changed.
+function gitRefreshDue(paths: Set<string>, nowMs: number): boolean {
+  return (
     nowMs - gitMetadataUpdatedAt >= GIT_METADATA_REFRESH_MS ||
     paths.size !== gitMetadataCache.size ||
     [...paths].some((path) => !gitMetadataCache.has(path))
-  ) {
-    gitMetadataCache.clear();
-    for (const path of paths) gitMetadataCache.set(path, readGitMetadata(path));
-    gitMetadataUpdatedAt = nowMs;
-  }
+  );
+}
 
-  // One pane_pid map (from the caller's list-panes) and one ps pass, shared by
-  // port detection and hook-less discovery — no extra tmux/ps spawns.
+// One pane_pid map from the caller's list-panes, shared by port detection and
+// hook-less discovery — no extra tmux/ps spawns.
+function panePidMap(panes: PaneInfo[]): Map<number, string> {
   const panePids = new Map<number, string>();
   for (const p of panes) {
     if (!Number.isNaN(p.panePid)) panePids.set(p.panePid, p.paneId);
   }
-  const psTable = readPsTable();
-  const { ppidByPid } = parsePsTable(psTable);
+  return panePids;
+}
+
+// Everything after the gather: writes portCache, runs hook-less discovery,
+// classifies each capture exactly once, prunes. Shared by the sync and async
+// slow ticks so both paths produce identical cache state from the same inputs.
+function applySlowCaches(
+  panes: PaneInfo[],
+  hookStatuses: ResolvedHookStatus[],
+  gather: { psTable: string[]; ports: PanePort[]; captureCache: Map<string, string[]> },
+): void {
+  const { psTable, ports, captureCache } = gather;
+  const panePids = panePidMap(panes);
 
   const newPorts = new Map<string, number[]>();
-  try {
-    for (const pp of detectPorts(panePids, ppidByPid)) {
-      const existing = newPorts.get(pp.paneId) ?? [];
-      existing.push(pp.port);
-      newPorts.set(pp.paneId, existing);
-    }
-  } catch {}
+  for (const pp of ports) {
+    const existing = newPorts.get(pp.paneId) ?? [];
+    existing.push(pp.port);
+    newPorts.set(pp.paneId, existing);
+  }
   portCache = newPorts;
 
   // Which agent owns each pane, so the scraper picks that agent's detection
@@ -282,15 +303,6 @@ export function refreshSlowCachesWithCapture(
   for (const h of hookStatuses) {
     const prev = paneAgent.get(h.pane);
     if (!prev || h.ts > prev.ts) paneAgent.set(h.pane, { agent: h.agent, ts: h.ts });
-  }
-
-  // Layer 3: pane scraping (~50ms per pane) — slow cycle only. Capture each
-  // pane ONCE, without classifying yet: classification needs the pane's agent
-  // identity, and hook-less panes are only named by discovery below.
-  const captureCache = new Map<string, string[]>();
-  for (const p of panes) {
-    const lines = captureFn(p.paneId);
-    if (lines.length > 0) captureCache.set(p.paneId, lines);
   }
 
   // Hook-less agent discovery: map allowlisted processes with no .status file to
@@ -334,6 +346,86 @@ export function refreshSlowCachesWithCapture(
   scrapeCacheTs = Math.floor(Date.now() / 1000);
 
   pruneDoneTracking(discoveryDone, new Set(discoveryCache.keys()));
+}
+
+// Same scan as refreshSlowCaches, but the per-pane capture is supplied by the
+// caller. Used by the CLI (one-shot, blocking is fine) and exercised directly
+// by tests; the TUI slow tick uses refreshSlowCachesAsync instead.
+export function refreshSlowCachesWithCapture(
+  panes: PaneInfo[],
+  hookStatuses: ResolvedHookStatus[],
+  captureFn: (paneId: string) => string[],
+): void {
+  const paths = new Set<string>();
+  for (const p of panes) paths.add(p.currentPath);
+  const nowMs = Date.now();
+  if (gitRefreshDue(paths, nowMs)) {
+    gitMetadataCache.clear();
+    for (const path of paths) gitMetadataCache.set(path, readGitMetadata(path));
+    gitMetadataUpdatedAt = nowMs;
+  }
+
+  const psTable = readPsTable();
+  const { ppidByPid } = parsePsTable(psTable);
+
+  let ports: PanePort[] = [];
+  try {
+    ports = detectPorts(panePidMap(panes), ppidByPid);
+  } catch {}
+
+  // Layer 3: pane scraping (~50ms per pane) — slow cycle only. Capture each
+  // pane ONCE, without classifying yet: classification needs the pane's agent
+  // identity, and hook-less panes are only named by discovery below.
+  const captureCache = new Map<string, string[]>();
+  for (const p of panes) {
+    const lines = captureFn(p.paneId);
+    if (lines.length > 0) captureCache.set(p.paneId, lines);
+  }
+
+  applySlowCaches(panes, hookStatuses, { psTable, ports, captureCache });
+}
+
+// Async slow tick for the TUI: git, ps, and the per-pane captures gather
+// concurrently (bounded by SLOW_SPAWN_LIMIT) with the event loop free between
+// spawns — the fix for the every-5s input freeze under load. The shared
+// applySlowCaches tail then runs unchanged. captureFn is async: the fork path
+// passes capturePaneLinesAsync; the control-mode path a lookup into its
+// pre-fetched cache.
+export async function refreshSlowCachesAsync(
+  panes: PaneInfo[],
+  hookStatuses: ResolvedHookStatus[],
+  captureFn: (paneId: string) => Promise<string[]>,
+): Promise<void> {
+  const paths = new Set<string>();
+  for (const p of panes) paths.add(p.currentPath);
+  const nowMs = Date.now();
+
+  const gitP = gitRefreshDue(paths, nowMs)
+    ? mapLimited([...paths], SLOW_SPAWN_LIMIT, async (path) => ({ path, meta: await readGitMetadataAsync(path) }))
+    : null;
+  const psP = readPsTableAsync();
+  const capP = mapLimited(panes, SLOW_SPAWN_LIMIT, async (p) => ({
+    paneId: p.paneId,
+    lines: await captureFn(p.paneId),
+  }));
+
+  const psTable = await psP;
+  const { ppidByPid } = parsePsTable(psTable);
+  const ports = await detectPortsAsync(panePidMap(panes), ppidByPid);
+  const caps = await capP;
+
+  if (gitP) {
+    gitMetadataCache.clear();
+    for (const { path, meta } of await gitP) gitMetadataCache.set(path, meta);
+    gitMetadataUpdatedAt = nowMs;
+  }
+
+  const captureCache = new Map<string, string[]>();
+  for (const { paneId, lines } of caps) {
+    if (lines.length > 0) captureCache.set(paneId, lines);
+  }
+
+  applySlowCaches(panes, hookStatuses, { psTable, ports, captureCache });
 }
 
 // Fast refresh: ONE tmux call + status file reads + last-line JSONL reads. No
@@ -475,11 +567,29 @@ export function refreshStates(
 }
 
 // Full refresh: one list-panes + one status-dir read feed both the slow caches
-// and the fast refresh.
+// and the fast refresh. Sync — used by one-shot CLI paths, where blocking is
+// fine. The TUI uses fullRefreshStatesAsync / fullRefreshStatesTui instead.
 export function fullRefreshStates(dirs: AgentDir[]): AgentState[] {
   const panesResult = listPanesResult();
   const hookStatuses = readAllStatusDirs(dirs);
   refreshSlowCaches(panesResult.panes, hookStatuses);
+  return refreshStates(dirs, { panesResult, hookStatuses });
+}
+
+// Async full refresh for the TUI: the whole gather (list-panes, captures, git,
+// ps, lsof) is non-blocking; the classification tail is shared with the sync
+// path. File reads stay sync — they're mtime-cached since F4.
+export async function fullRefreshStatesAsync(dirs: AgentDir[]): Promise<AgentState[]> {
+  const panesResult = await listPanesResultAsync();
+  const hookStatuses = readAllStatusDirs(dirs);
+  await refreshSlowCachesAsync(panesResult.panes, hookStatuses, capturePaneLinesAsync);
+  return refreshStates(dirs, { panesResult, hookStatuses });
+}
+
+// Fork-path fast tick: one async list-panes + cached file reads.
+async function refreshStatesForkAsync(dirs: AgentDir[]): Promise<AgentState[]> {
+  const panesResult = await listPanesResultAsync();
+  const hookStatuses = readAllStatusDirs(dirs);
   return refreshStates(dirs, { panesResult, hookStatuses });
 }
 
@@ -496,7 +606,7 @@ export async function refreshStatesTui(
   client: TmuxControlClient | null,
   latch: ControlLatch,
 ): Promise<AgentState[]> {
-  if (client === null || latch.dead) return refreshStates(dirs);
+  if (client === null || latch.dead) return refreshStatesForkAsync(dirs);
   try {
     const panesResult = await listPanesResultVia(client);
     const hookStatuses = readAllStatusDirs(dirs);
@@ -506,7 +616,7 @@ export async function refreshStatesTui(
     try {
       await client.close();
     } catch {}
-    return refreshStates(dirs);
+    return refreshStatesForkAsync(dirs);
   }
 }
 
@@ -515,28 +625,28 @@ export async function fullRefreshStatesTui(
   client: TmuxControlClient | null,
   latch: ControlLatch,
 ): Promise<AgentState[]> {
-  if (client === null || latch.dead) return fullRefreshStates(dirs);
+  if (client === null || latch.dead) return fullRefreshStatesAsync(dirs);
   try {
     // Resync barrier before the scan batch — drains any stale/unsolicited
     // blocks so the list-panes read pairs with its own response.
     await client.sync();
     const panesResult = await listPanesResultVia(client);
     const hookStatuses = readAllStatusDirs(dirs);
-    // Pre-fetch every pane's capture via the control client, then hand the
-    // cache to the shared slow-tick body so git/ports/discovery/classification
-    // run identically to the fork path.
+    // Pre-fetch every pane's capture via the control client (one child, one
+    // pipe — sequential by nature), then gather the rest (git/ps/lsof)
+    // concurrently through the shared async slow tick.
     const captureCache = new Map<string, string[]>();
     for (const p of panesResult.panes) {
       const lines = await capturePaneLinesVia(client, p.paneId);
       if (lines.length > 0) captureCache.set(p.paneId, lines);
     }
-    refreshSlowCachesWithCapture(panesResult.panes, hookStatuses, (id) => captureCache.get(id) ?? []);
+    await refreshSlowCachesAsync(panesResult.panes, hookStatuses, async (id) => captureCache.get(id) ?? []);
     return refreshStates(dirs, { panesResult, hookStatuses });
   } catch {
     flipControlDead(latch);
     try {
       await client.close();
     } catch {}
-    return fullRefreshStates(dirs);
+    return fullRefreshStatesAsync(dirs);
   }
 }

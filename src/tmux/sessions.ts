@@ -1,4 +1,4 @@
-import { tmux, tmuxOrNull, tmuxOrThrow } from './ipc.ts';
+import { tmux, tmuxAsync, tmuxOrNull, tmuxOrThrow } from './ipc.ts';
 
 export interface PaneInfo {
   paneId: string;
@@ -69,6 +69,13 @@ export function listPanesCommand(): string {
 
 export function listPanesResult(): ListPanesResult {
   const result = tmux(listPanesArgs());
+  if (result.exitCode !== 0) return { ok: false, panes: [] };
+  return { ok: true, panes: parsePanesOutput(result.stdout) };
+}
+
+// Async variant for the TUI tick paths — same parse, non-blocking fork.
+export async function listPanesResultAsync(): Promise<ListPanesResult> {
+  const result = await tmuxAsync(listPanesArgs());
   if (result.exitCode !== 0) return { ok: false, panes: [] };
   return { ok: true, panes: parsePanesOutput(result.stdout) };
 }
