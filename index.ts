@@ -79,10 +79,12 @@ function handleFilterInput(
     case 'enter': {
       const selected = app.selectedState();
       if (selected) {
+        // Switch before the verify/ack spawns so the jump isn't gated on
+        // them; the writes still complete synchronously before process exit.
+        switchClient(selected.paneId);
+        finish(0);
         verifyPaneState(selected, statusDirs);
         acknowledgePane(selected.paneId, statusDirs);
-        finish(0);
-        switchClient(selected.paneId);
       }
       break;
     }
@@ -411,10 +413,10 @@ async function launchTui(): Promise<number> {
           if (sel) {
             if (app.registerClick(sel.paneId, Date.now())) {
               // Double-click → jump to the agent, mirroring the Enter handler.
+              switchClient(sel.paneId);
+              finish(0);
               verifyPaneState(sel, statusDirs);
               acknowledgePane(sel.paneId, statusDirs);
-              finish(0);
-              switchClient(sel.paneId);
               return;
             }
             const idx = app.visibleStates().findIndex((s) => s.paneId === sel.paneId);
@@ -588,10 +590,10 @@ async function launchTui(): Promise<number> {
         case 'enter': {
           const selected = app.selectedState();
           if (selected) {
+            switchClient(selected.paneId);
+            finish(0);
             verifyPaneState(selected, statusDirs);
             acknowledgePane(selected.paneId, statusDirs);
-            finish(0);
-            switchClient(selected.paneId);
             return;
           }
           break;

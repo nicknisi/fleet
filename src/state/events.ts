@@ -1,4 +1,4 @@
-import { existsSync, openSync, readSync, fstatSync, closeSync } from 'node:fs';
+import { openSync, readSync, closeSync, statSync } from 'node:fs';
 import { AgentStatus, type EventEntry } from './types.ts';
 
 const TAIL_BYTES = 8192;
@@ -24,14 +24,21 @@ export function parseEventLog(content: string): EventEntry[] {
   return entries;
 }
 
+// Tail-read cache gated on (size, mtimeMs, maxLines): the fast tick tails
+// every pane's events file every 500ms; unchanged files skip open+read+parse.
+const eventsTailCache = new Map<string, { size: number; mtimeMs: number; maxLines: number; entries: EventEntry[] }>();
+
 // Read just the last `maxLines` events without parsing the whole file — reads a
 // bounded tail off the end so the hot refresh path stays cheap on long logs.
 export function readLastEvents(path: string, maxLines: number): EventEntry[] {
-  if (!existsSync(path)) return [];
   try {
+    const { size, mtimeMs } = statSync(path);
+    const hit = eventsTailCache.get(path);
+    if (hit && hit.size === size && hit.mtimeMs === mtimeMs && hit.maxLines === maxLines) {
+      return hit.entries;
+    }
     const fd = openSync(path, 'r');
     try {
-      const size = fstatSync(fd).size;
       const readBytes = Math.min(size, TAIL_BYTES);
       const buf = Buffer.alloc(readBytes);
       readSync(fd, buf, 0, readBytes, size - readBytes);
@@ -41,7 +48,9 @@ export function readLastEvents(path: string, maxLines: number): EventEntry[] {
         .filter((l) => l.length > 0);
       // If we didn't reach the start of the file, the first line may be partial.
       const usable = size > readBytes ? lines.slice(1) : lines;
-      return parseEventLog(usable.slice(-maxLines).join('\n'));
+      const entries = parseEventLog(usable.slice(-maxLines).join('\n'));
+      eventsTailCache.set(path, { size, mtimeMs, maxLines, entries });
+      return entries;
     } finally {
       closeSync(fd);
     }

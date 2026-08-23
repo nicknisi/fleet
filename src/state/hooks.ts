@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, existsSync, watch, writeFileSync, renameSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, statSync, watch, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import type { HookStatus, ResolvedHookStatus } from './types.ts';
 import type { AgentDir } from '../agents/config.ts';
@@ -41,6 +41,10 @@ export function parseStatusFile(content: string): HookStatus | null {
   }
 }
 
+// Parsed .status cache keyed by file path, gated on mtime: the fast tick
+// re-reads every status file every 500ms, and they change far less often.
+const statusCache = new Map<string, { mtimeMs: number; status: HookStatus | null }>();
+
 // Each record is stamped with its owning `agent` and source `statusDir` so the
 // caller (index.ts) knows which agent authored the status and which dir to read
 // the matching .events.jsonl from — the name travels with the data.
@@ -51,9 +55,16 @@ export function readStatusDir(dir: string, agent: string): ResolvedHookStatus[] 
     const files = readdirSync(dir);
     for (const file of files) {
       if (!file.endsWith('.status')) continue;
+      const path = join(dir, file);
       try {
-        const content = readFileSync(join(dir, file), 'utf-8');
-        const status = parseStatusFile(content);
+        const mtimeMs = statSync(path).mtimeMs;
+        const hit = statusCache.get(path);
+        if (hit && hit.mtimeMs === mtimeMs) {
+          if (hit.status) statuses.push({ ...hit.status, agent, statusDir: dir });
+          continue;
+        }
+        const status = parseStatusFile(readFileSync(path, 'utf-8'));
+        statusCache.set(path, { mtimeMs, status });
         if (status) statuses.push({ ...status, agent, statusDir: dir });
       } catch {
         // Skip unreadable files
