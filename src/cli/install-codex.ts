@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fleetPluginDir, linkPluginDir } from './install.ts';
 import { CODEX_STATUS_DIR, loadAgentDirs, type AgentDir } from '../agents/config.ts';
+import { isString } from '../json.ts';
 
 // Codex is configured entirely by editing its own files — no marketplace, no
 // `claude plugin` CLI, no $CLAUDE_PLUGIN_ROOT. `fleet install codex` is a
@@ -64,12 +65,14 @@ function codexEntry(script: string, event: string): CodexHookEntry {
 }
 
 function isFleetEntry(entry: CodexHookEntry): boolean {
-  return (entry.hooks ?? []).some((h) => typeof h.command === 'string' && h.command.includes(FLEET_HOOK_MARKER));
+  return (entry.hooks ?? []).some((h) => isString(h.command) && h.command.includes(FLEET_HOOK_MARKER));
 }
 
 // Add fleet's PreToolUse+Stop entries, preserving any the user already has.
 // Throws on malformed JSON (the caller aborts without writing — never clobber).
 export function addCodexHooks(path: string, script: string): void {
+  // SAFETY: every read below re-validates with ?? and some(); a malformed shape
+  // throws from JSON.parse or degrades to appending, never clobbering other keys.
   const doc: CodexHooksDoc = existsSync(path)
     ? (JSON.parse(readFileSync(path, 'utf8')) as CodexHooksDoc)
     : { hooks: {} };
@@ -84,6 +87,7 @@ export function addCodexHooks(path: string, script: string): void {
 // Remove exactly fleet's entries; leave the user's own hooks intact.
 export function removeCodexHooks(path: string): void {
   if (!existsSync(path)) return;
+  // SAFETY: every read below re-validates with Array.isArray before touching an entry.
   const doc = JSON.parse(readFileSync(path, 'utf8')) as CodexHooksDoc;
   if (!doc.hooks) return;
   for (const ev of CODEX_EVENTS) {
@@ -103,6 +107,7 @@ function hasAnyHookEntries(hooksJsonPath: string): boolean {
   if (!existsSync(hooksJsonPath)) return false;
   let doc: CodexHooksDoc;
   try {
+    // SAFETY: only .hooks is read, via ?? and Array.isArray re-validation below.
     doc = JSON.parse(readFileSync(hooksJsonPath, 'utf8')) as CodexHooksDoc;
   } catch {
     return true;
@@ -173,6 +178,7 @@ export function upsertAgentEntry(path: string, entry: AgentDir, seed: AgentDir[]
   let agents: AgentDir[] = [...seed];
   if (existsSync(path)) {
     try {
+      // SAFETY: only .agents is read, behind an Array.isArray re-validation.
       const doc = JSON.parse(readFileSync(path, 'utf8')) as AgentsDoc;
       if (Array.isArray(doc.agents)) agents = doc.agents;
     } catch {
@@ -190,6 +196,7 @@ export function removeAgentEntry(path: string, name: string): void {
   if (!existsSync(path)) return;
   let agents: AgentDir[];
   try {
+    // SAFETY: only .agents is read, behind an Array.isArray re-validation.
     const doc = JSON.parse(readFileSync(path, 'utf8')) as AgentsDoc;
     agents = Array.isArray(doc.agents) ? doc.agents : [];
   } catch {

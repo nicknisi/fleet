@@ -11,8 +11,8 @@ describe('loadAgentDirs', () => {
   test('each dir has name and statusDir', () => {
     const dirs = loadAgentDirs();
     for (const dir of dirs) {
-      expect(typeof dir.name).toBe('string');
-      expect(typeof dir.statusDir).toBe('string');
+      expect(dir.name).toEqual(expect.any(String));
+      expect(dir.statusDir).toEqual(expect.any(String));
     }
   });
 });

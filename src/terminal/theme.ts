@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { getTmuxOption } from '../tmux/ipc.ts';
+import { isJsonObject, isString, type JsonValue } from '../json.ts';
 import type { StateColorKey, StatePalette, ThemeColor } from './colors.ts';
 
 export type ThemeMode = 'light' | 'dark';
@@ -15,7 +16,7 @@ export interface Rgb {
 
 const STATE_COLOR_KEYS = ['permit', 'question', 'done', 'busy', 'idle', 'shell', 'down'] as const;
 
-const ANSI_FOREGROUND_CODES: Record<string, number> = {
+const ANSI_FOREGROUND_CODES = {
   black: 30,
   red: 31,
   green: 32,
@@ -32,11 +33,17 @@ const ANSI_FOREGROUND_CODES: Record<string, number> = {
   'bright-magenta': 95,
   'bright-cyan': 96,
   'bright-white': 97,
-};
+} satisfies Record<string, number>;
 
-export function parseThemeColor(value: unknown): ThemeColor {
-  if (typeof value !== 'string') throw new Error('color values must be strings');
-  const ansiCode = ANSI_FOREGROUND_CODES[value];
+function ansiForegroundCode(name: string): number | undefined {
+  if (!Object.hasOwn(ANSI_FOREGROUND_CODES, name)) return undefined;
+  // SAFETY: the Object.hasOwn check above proves name is a key of ANSI_FOREGROUND_CODES.
+  return ANSI_FOREGROUND_CODES[name as keyof typeof ANSI_FOREGROUND_CODES];
+}
+
+export function parseThemeColor(value: JsonValue | undefined): ThemeColor {
+  if (!isString(value)) throw new Error('color values must be strings');
+  const ansiCode = ansiForegroundCode(value);
   if (ansiCode !== undefined) return { kind: 'ansi', code: ansiCode };
   if (/^#[0-9a-fA-F]{6}$/.test(value)) {
     return {
@@ -49,7 +56,7 @@ export function parseThemeColor(value: unknown): ThemeColor {
   throw new Error(`unsupported color ${JSON.stringify(value)}`);
 }
 
-function parsePaletteColor(key: StateColorKey, value: unknown): ThemeColor {
+function parsePaletteColor(key: StateColorKey, value: JsonValue | undefined): ThemeColor {
   try {
     return parseThemeColor(value);
   } catch (error) {
@@ -58,18 +65,17 @@ function parsePaletteColor(key: StateColorKey, value: unknown): ThemeColor {
   }
 }
 
-export function parseStatePalette(value: unknown): StatePalette {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+export function parseStatePalette(value: JsonValue): StatePalette {
+  if (!isJsonObject(value) || !isJsonObject(value.colors)) {
     throw new Error('theme must contain a [colors] table');
   }
-  const colors = (value as Record<string, unknown>).colors;
-  if (typeof colors !== 'object' || colors === null || Array.isArray(colors)) {
-    throw new Error('theme must contain a [colors] table');
-  }
-  const colorValues = colors as Record<string, unknown>;
+  const colorValues = value.colors;
   for (const key of Object.keys(colorValues)) {
+    // SAFETY: includes() only reads membership; a non-member key simply returns false.
     if (!STATE_COLOR_KEYS.includes(key as StateColorKey)) throw new Error(`unknown color key ${JSON.stringify(key)}`);
   }
+  // SAFETY: the loop below assigns every STATE_COLOR_KEYS member, which is exactly
+  // StatePalette's key set, before palette escapes this function.
   const palette = {} as StatePalette;
   for (const key of STATE_COLOR_KEYS) {
     if (!(key in colorValues)) throw new Error(`missing color ${JSON.stringify(key)}`);
@@ -97,7 +103,10 @@ export function loadCustomStatePalette(options: ThemeLoaderOptions = {}): StateP
   const path = options.path ?? resolveThemePath(env, options.home ?? homedir());
   if (!(options.exists ?? existsSync)(path)) return null;
   try {
-    return parseStatePalette(Bun.TOML.parse((options.read ?? ((file) => readFileSync(file, 'utf8')))(path)));
+    // SAFETY: Bun.TOML.parse returns any; JsonValue covers every TOML value a palette file can hold.
+    return parseStatePalette(
+      Bun.TOML.parse((options.read ?? ((file) => readFileSync(file, 'utf8')))(path)) as JsonValue,
+    );
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     (options.warn ?? ((message) => process.stderr.write(`${message}\n`)))(

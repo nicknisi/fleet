@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fleetPluginDir } from './install.ts';
 import { agentsJsonPath, removeAgentEntry, seededAgentDirs, upsertAgentEntry, withTilde } from './install-codex.ts';
 import { PI_STATUS_DIR } from '../agents/config.ts';
+import { isJsonObject, isString, type JsonValue } from '../json.ts';
 
 // pi (npm: @earendil-works/pi-coding-agent) has no shell-hook config; it loads
 // package extensions from `packages` in ~/.pi/agent/settings.json (see pi's
@@ -20,8 +21,8 @@ const PI_EXTENSION_LINK = join(PI_EXTENSIONS_DIR, 'fleet-pi.ts');
 const PI_STATUS_DIR_CONFIG = '~/.cache/pi-status';
 
 interface PiSettingsDoc {
-  packages?: unknown[];
-  [key: string]: unknown;
+  packages?: JsonValue[];
+  [key: string]: JsonValue | undefined;
 }
 
 function piSettingsPath(): string {
@@ -39,6 +40,8 @@ function canonicalPiPackageSource(packageDir: string): string {
 function readPiSettings(path: string): PiSettingsDoc | null {
   if (!existsSync(path)) return null;
   try {
+    // SAFETY: fleet only reads .packages (re-validated with Array.isArray at every
+    // use); all other keys pass through untouched, so unknown shapes degrade safely.
     return JSON.parse(readFileSync(path, 'utf8')) as PiSettingsDoc;
   } catch {
     return null; // malformed — leave the user's settings untouched
@@ -56,21 +59,20 @@ function writePiSettings(path: string, doc: PiSettingsDoc): void {
 // exactly `packageDir` or pi's normalized relative form. A legacy entry
 // pointing at a symlinked source is repaired by packageDirsToRemove below
 // rather than by string surgery.
-export function piPackageEntryMatches(entry: unknown, packageDir: string): boolean {
+export function piPackageEntryMatches(entry: JsonValue, packageDir: string): boolean {
   const relativeDir = canonicalPiPackageSource(packageDir);
   const matches = (source: string): boolean => source === packageDir || source === relativeDir;
-  if (typeof entry === 'string') return matches(entry);
-  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return false;
-  const source = (entry as { source?: unknown }).source;
-  return typeof source === 'string' && matches(source);
+  if (isString(entry)) return matches(entry);
+  if (!isJsonObject(entry)) return false;
+  return isString(entry.source) && matches(entry.source);
 }
 
-export function upsertPiPackageEntry(packages: unknown[], packageDir: string): unknown[] {
+export function upsertPiPackageEntry(packages: JsonValue[], packageDir: string): JsonValue[] {
   if (packages.some((entry) => piPackageEntryMatches(entry, packageDir))) return packages;
   return [...packages, canonicalPiPackageSource(packageDir)];
 }
 
-function removePiPackageEntry(packages: unknown[], packageDir: string): unknown[] {
+function removePiPackageEntry(packages: JsonValue[], packageDir: string): JsonValue[] {
   return packages.filter((entry) => !piPackageEntryMatches(entry, packageDir));
 }
 

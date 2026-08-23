@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { isJsonObject, isNumber, isString, type JsonObject, type JsonValue } from '../json.ts';
+
 // `state` is the serialized (JSON) label; it maps 1:1 onto the subset of
 // AgentStatus values the scraper can emit (see RULE_STATE_TO_STATUS in scraper.ts).
 export type RuleState = 'PERMIT' | 'QUESTION' | 'BUSY' | 'IDLE';
@@ -87,7 +89,7 @@ function hasControlCharacters(value: string): boolean {
 // Answer-key arrays from overrides: keep only non-empty strings; an empty or
 // non-array value is treated as absent (fall through to the next default),
 // never an error.
-function validateKeys(raw: unknown): string[] | undefined {
+function validateKeys(raw: JsonValue | undefined): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const keys = raw.filter((k): k is string => typeof k === 'string' && k.length > 0);
   return keys.length > 0 ? keys : undefined;
@@ -110,12 +112,12 @@ function dedupeRules(rules: DetectionRule[], label: string): DetectionRule[] {
   return out;
 }
 
-function validateRules(raw: unknown[], label = 'rule'): DetectionRule[] {
+function validateRules(raw: JsonValue[], label = 'rule'): DetectionRule[] {
   const rules: DetectionRule[] = [];
   for (const r of raw) {
-    if (typeof r !== 'object' || r === null) continue;
-    const rule = r as Record<string, unknown>;
-    if (typeof rule.id !== 'string' || typeof rule.pattern !== 'string') continue;
+    if (!isJsonObject(r)) continue;
+    const rule = r;
+    if (!isString(rule.id) || !isString(rule.pattern)) continue;
     if (
       rule.id.length === 0 ||
       rule.id.length > MAX_RULE_ID_LENGTH ||
@@ -125,8 +127,8 @@ function validateRules(raw: unknown[], label = 'rule'): DetectionRule[] {
       warn(`detection: rejecting ${label} with unsafe id or oversized pattern`);
       continue;
     }
-    if (typeof rule.state !== 'string' || !VALID_STATES.has(rule.state)) continue;
-    const flags = typeof rule.flags === 'string' ? rule.flags : undefined;
+    if (!isString(rule.state) || !VALID_STATES.has(rule.state)) continue;
+    const flags = isString(rule.flags) ? rule.flags : undefined;
     // Cached RegExp objects must be stateless across ticks. Global/sticky flags
     // mutate lastIndex on test(), causing alternating matches; reject all flags
     // outside the safe, non-stateful set (and duplicate flag strings).
@@ -140,10 +142,11 @@ function validateRules(raw: unknown[], label = 'rule'): DetectionRule[] {
       id: rule.id,
       pattern: rule.pattern,
       flags,
+      // SAFETY: VALID_STATES membership was checked above; its elements are exactly RuleState.
       state: rule.state as RuleState,
-      ...(approveKeys ? { approveKeys } : {}),
-      ...(denyKeys ? { denyKeys } : {}),
     };
+    if (approveKeys) candidate.approveKeys = approveKeys;
+    if (denyKeys) candidate.denyKeys = denyKeys;
     // Drop bad-regex rules at load with one warning (not once per scrape).
     if (getCompiledRegex(candidate) === null) continue;
     rules.push(candidate);
@@ -151,22 +154,26 @@ function validateRules(raw: unknown[], label = 'rule'): DetectionRule[] {
   return dedupeRules(rules, label);
 }
 
-function validateManifest(raw: unknown, agent: string): DetectionManifest {
-  if (typeof raw !== 'object' || raw === null) throw new Error('manifest is not an object');
-  const m = raw as Record<string, unknown>;
+function validateManifest(raw: JsonValue, agent: string): DetectionManifest {
+  if (!isJsonObject(raw)) throw new Error('manifest is not an object');
+  const m = raw;
   if (!Array.isArray(m.rules)) throw new Error('manifest.rules must be an array');
 
-  return {
+  // titleRules is optional; a non-array value is treated as absent, not an error.
+  const titleRules = Array.isArray(m.titleRules) ? validateRules(m.titleRules) : undefined;
+  const approveKeys = validateKeys(m.approveKeys);
+  const denyKeys = validateKeys(m.denyKeys);
+  const manifest: DetectionManifest = {
     agent,
     linesFromBottom:
-      typeof m.linesFromBottom === 'number' && m.linesFromBottom > 0 ? m.linesFromBottom : DEFAULT_LINES_FROM_BOTTOM,
-    promptMarker: typeof m.promptMarker === 'string' ? m.promptMarker : '',
+      isNumber(m.linesFromBottom) && m.linesFromBottom > 0 ? m.linesFromBottom : DEFAULT_LINES_FROM_BOTTOM,
+    promptMarker: isString(m.promptMarker) ? m.promptMarker : '',
     rules: validateRules(m.rules),
-    // titleRules is optional; a non-array value is treated as absent, not an error.
-    ...(Array.isArray(m.titleRules) ? { titleRules: validateRules(m.titleRules) } : {}),
-    ...(validateKeys(m.approveKeys) ? { approveKeys: validateKeys(m.approveKeys) } : {}),
-    ...(validateKeys(m.denyKeys) ? { denyKeys: validateKeys(m.denyKeys) } : {}),
   };
+  if (titleRules) manifest.titleRules = titleRules;
+  if (approveKeys) manifest.approveKeys = approveKeys;
+  if (denyKeys) manifest.denyKeys = denyKeys;
+  return manifest;
 }
 
 // Braille block U+2800–U+28FF: the animated progress glyph a harness paints only
@@ -207,12 +214,7 @@ interface RuleOpKeys {
 // id, appendRules adds to the end. Unknown target ids for replace/disable warn
 // and are skipped (never throw). The combined result is de-duplicated so an
 // appended id colliding with a base id can't shadow ordering.
-function applyRuleOps(
-  base: DetectionRule[],
-  m: Record<string, unknown>,
-  keys: RuleOpKeys,
-  label: string,
-): DetectionRule[] {
+function applyRuleOps(base: DetectionRule[], m: JsonObject, keys: RuleOpKeys, label: string): DetectionRule[] {
   let rules = [...base];
 
   const replaceRaw = m[keys.replace];
@@ -245,7 +247,7 @@ function applyRuleOps(
 
 // Resolve a `schemaVersion:1` envelope against the built-ins. Returns null when
 // the schema is unrecognized so the caller falls back to the built-in.
-function resolveSchemaOverride(m: Record<string, unknown>, agent: string): DetectionManifest | null {
+function resolveSchemaOverride(m: JsonObject, agent: string): DetectionManifest | null {
   if (m.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
     warn(
       `detection: unknown schemaVersion ${JSON.stringify(m.schemaVersion)} in override for "${agent}" — using built-in`,
@@ -257,7 +259,7 @@ function resolveSchemaOverride(m: Record<string, unknown>, agent: string): Detec
   // An unknown target warns and falls back to the agent's own built-in.
   let baseAgent = agent;
   if (m.extends !== undefined) {
-    if (typeof m.extends === 'string' && BUILTINS[m.extends]) {
+    if (isString(m.extends) && builtinFor(m.extends)) {
       baseAgent = m.extends;
     } else {
       warn(
@@ -265,8 +267,8 @@ function resolveSchemaOverride(m: Record<string, unknown>, agent: string): Detec
       );
     }
   }
-  const base: DetectionManifest = BUILTINS[baseAgent] ??
-    BUILTINS[agent] ?? { agent, linesFromBottom: DEFAULT_LINES_FROM_BOTTOM, promptMarker: '', rules: [] };
+  const base: DetectionManifest = builtinFor(baseAgent) ??
+    builtinFor(agent) ?? { agent, linesFromBottom: DEFAULT_LINES_FROM_BOTTOM, promptMarker: '', rules: [] };
 
   const rules = applyRuleOps(
     base.rules,
@@ -284,16 +286,16 @@ function resolveSchemaOverride(m: Record<string, unknown>, agent: string): Detec
   const approveKeys = validateKeys(m.approveKeys) ?? base.approveKeys;
   const denyKeys = validateKeys(m.denyKeys) ?? base.denyKeys;
 
-  return {
+  const resolved: DetectionManifest = {
     agent,
-    linesFromBottom:
-      typeof m.linesFromBottom === 'number' && m.linesFromBottom > 0 ? m.linesFromBottom : base.linesFromBottom,
-    promptMarker: typeof m.promptMarker === 'string' ? m.promptMarker : base.promptMarker,
+    linesFromBottom: isNumber(m.linesFromBottom) && m.linesFromBottom > 0 ? m.linesFromBottom : base.linesFromBottom,
+    promptMarker: isString(m.promptMarker) ? m.promptMarker : base.promptMarker,
     rules,
-    ...(titleRules.length > 0 ? { titleRules } : {}),
-    ...(approveKeys ? { approveKeys } : {}),
-    ...(denyKeys ? { denyKeys } : {}),
   };
+  if (titleRules.length > 0) resolved.titleRules = titleRules;
+  if (approveKeys) resolved.approveKeys = approveKeys;
+  if (denyKeys) resolved.denyKeys = denyKeys;
+  return resolved;
 }
 
 // --- the embedded built-in `claude` manifest ---
@@ -451,30 +453,37 @@ export const PI_MANIFEST: DetectionManifest = {
 };
 
 // --- loader: built-in, replaced wholesale by a valid override ---
-const BUILTINS: Record<string, DetectionManifest> = {
+const BUILTINS = {
   claude: CLAUDE_MANIFEST,
   codex: CODEX_MANIFEST,
   pi: PI_MANIFEST,
   opencode: OPENCODE_MANIFEST,
-};
+} satisfies Record<string, DetectionManifest>;
+
+function builtinFor(agent: string): DetectionManifest | undefined {
+  if (!Object.hasOwn(BUILTINS, agent)) return undefined;
+  // SAFETY: the Object.hasOwn check above proves agent is a key of BUILTINS.
+  return BUILTINS[agent as keyof typeof BUILTINS];
+}
 const manifestCache = new Map<string, DetectionManifest>();
 
 export function loadDetectionManifest(agent: string): DetectionManifest {
   const cached = manifestCache.get(agent);
   if (cached) return cached;
 
-  const builtin = BUILTINS[agent] ?? null;
+  const builtin = builtinFor(agent) ?? null;
   const configDir = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config');
   const overridePath = join(configDir, 'fleet', 'detection', `${agent}.json`);
 
   let resolved: DetectionManifest | null = builtin;
   if (existsSync(overridePath)) {
     try {
-      const parsed: unknown = JSON.parse(readFileSync(overridePath, 'utf-8'));
-      if (typeof parsed === 'object' && parsed !== null && 'schemaVersion' in parsed) {
+      // SAFETY: JSON.parse returns any; JsonValue is the sound type of any JSON document.
+      const parsed = JSON.parse(readFileSync(overridePath, 'utf-8')) as JsonValue;
+      if (isJsonObject(parsed) && 'schemaVersion' in parsed) {
         // schemaVersion:1 envelope — INHERIT the built-in and apply operations.
         // An unrecognized schema returns null; fall back to the built-in.
-        resolved = resolveSchemaOverride(parsed as Record<string, unknown>, agent) ?? builtin;
+        resolved = resolveSchemaOverride(parsed, agent) ?? builtin;
       } else {
         resolved = validateManifest(parsed, agent); // legacy override REPLACES built-in wholesale
       }

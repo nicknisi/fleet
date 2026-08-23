@@ -23,7 +23,7 @@ describe('integration registry', () => {
     expect(integrationKeys()).toEqual(['claude', 'codex', 'pi']);
     for (const i of INTEGRATIONS) {
       expect(i.manifestKey).toBe(i.key); // current integrations map 1:1
-      expect(typeof i.label).toBe('string');
+      expect(i.label).toEqual(expect.any(String));
       expect(i.label.length).toBeGreaterThan(0);
     }
   });

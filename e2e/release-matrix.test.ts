@@ -12,19 +12,23 @@ import { join } from 'node:path';
 const WORKFLOW = join(import.meta.dir, '..', '.github', 'workflows', 'release.yml');
 const FORMULA = join(import.meta.dir, '..', 'Formula', 'fleet.rb');
 
+interface StringMap {
+  [key: string]: string;
+}
+
 // bun compile target -> published tarball basename. Every platform we ship
 // lives here; arm64 keeps the `arm64` token (like darwin-arm64) so mise's
 // github backend can match the host, while x64 is spelled `x86_64`.
-const EXPECTED: Record<string, string> = {
+const EXPECTED: StringMap = {
   'bun-darwin-arm64': 'fleet-darwin-arm64',
   'bun-darwin-x64': 'fleet-darwin-x86_64',
   'bun-linux-x64': 'fleet-linux-x86_64',
   'bun-linux-arm64': 'fleet-linux-arm64',
 };
 
-function parseMatrix(): Record<string, string> {
+function parseMatrix(): StringMap {
   const yml = readFileSync(WORKFLOW, 'utf8');
-  const pairs: Record<string, string> = {};
+  const pairs: StringMap = {};
   const re = /target:\s*(\S+)\s*\n\s*artifact:\s*(\S+)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(yml)) !== null) {
@@ -46,9 +50,9 @@ function parseFormulaAssets(): Set<string> {
 }
 
 // asset filename -> the shell var the release job substitutes into the tap.
-function parseChecksumMap(): Record<string, string> {
+function parseChecksumMap(): StringMap {
   const yml = readFileSync(WORKFLOW, 'utf8');
-  const map: Record<string, string> = {};
+  const map: StringMap = {};
   const re = /'(fleet-[a-z0-9_-]+\.tar\.gz)':\s*'\$\{(SHA_\w+)\}'/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(yml)) !== null) {
@@ -58,9 +62,9 @@ function parseChecksumMap(): Record<string, string> {
 }
 
 // shell var -> the asset it is computed from via `shasum -a 256 <asset>`.
-function parseChecksumSources(): Record<string, string> {
+function parseChecksumSources(): StringMap {
   const yml = readFileSync(WORKFLOW, 'utf8');
-  const src: Record<string, string> = {};
+  const src: StringMap = {};
   const re = /(SHA_\w+)=\$\(shasum -a 256 (fleet-[a-z0-9_-]+\.tar\.gz)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(yml)) !== null) {

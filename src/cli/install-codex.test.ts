@@ -30,6 +30,7 @@ interface AgentsDoc {
 }
 
 let workDir: string;
+// SAFETY: test-local helper — each call site names the shape of the file the test just wrote.
 const readJson = <T>(p: string): T => JSON.parse(readFileSync(p, 'utf8')) as T;
 
 beforeEach(() => {

@@ -168,7 +168,12 @@ export function parseNumstat(stdout: string): GitDiffstat {
 
 // --- Bounded git spawns ---------------------------------------------------
 
-function git(cwd: string, args: string[]): { ok: boolean; stdout: string } {
+interface GitResult {
+  ok: boolean;
+  stdout: string;
+}
+
+function git(cwd: string, args: string[]): GitResult {
   try {
     const proc = Bun.spawnSync({
       cmd: ['git', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args],

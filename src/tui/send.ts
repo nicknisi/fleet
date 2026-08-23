@@ -2,7 +2,12 @@ import { C } from '../terminal/colors.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 import { truncateAnsi } from '../terminal/ansi.ts';
 
-export function canSendTo(state: AgentState): { ok: boolean; reason: string } {
+interface SendCheck {
+  ok: boolean;
+  reason: string;
+}
+
+export function canSendTo(state: AgentState): SendCheck {
   switch (state.status) {
     case AgentStatus.IDLE:
     case AgentStatus.DONE:

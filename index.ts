@@ -607,7 +607,7 @@ async function launchTui(): Promise<number> {
     };
 
     process.stdin.on('data', (chunk: Buffer | string) => {
-      const buf = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, 'utf8');
       handleInput(buf);
       tick();
     });

@@ -58,9 +58,9 @@ describe('TuiApp', () => {
 
   test('mode transitions', () => {
     const app = new TuiApp();
-    expect(app.mode).toBe(TuiMode.DASHBOARD);
+    expect<TuiMode>(app.mode).toBe(TuiMode.DASHBOARD);
     app.mode = TuiMode.PREVIEW;
-    expect(app.mode).toBe(TuiMode.PREVIEW);
+    expect<TuiMode>(app.mode).toBe(TuiMode.PREVIEW);
   });
 
   test('selection clamps to range', () => {
@@ -107,35 +107,35 @@ describe('TuiApp', () => {
     const app = new TuiApp();
     app.mode = TuiMode.PREVIEW;
     app.enterPassthrough();
-    expect(app.mode as string).toBe('PASSTHROUGH');
+    expect<TuiMode>(app.mode).toBe(TuiMode.PASSTHROUGH);
     app.exitPassthrough();
-    expect(app.mode as string).toBe('PREVIEW');
+    expect<TuiMode>(app.mode).toBe(TuiMode.PREVIEW);
   });
 
   test('enterSend from preview restores to preview', () => {
     const app = new TuiApp();
     app.mode = TuiMode.PREVIEW;
     app.enterSend();
-    expect(app.mode as string).toBe('SEND');
+    expect<TuiMode>(app.mode).toBe(TuiMode.SEND);
     app.exitSend();
-    expect(app.mode as string).toBe('PREVIEW');
+    expect<TuiMode>(app.mode).toBe(TuiMode.PREVIEW);
   });
 
   test('enterKillConfirm / exitKillConfirm restores the prior mode from dashboard', () => {
     const app = new TuiApp();
     app.enterKillConfirm();
-    expect(app.mode as string).toBe('CONFIRM_KILL');
+    expect<TuiMode>(app.mode).toBe(TuiMode.CONFIRM_KILL);
     app.exitKillConfirm();
-    expect(app.mode as string).toBe('DASHBOARD');
+    expect<TuiMode>(app.mode).toBe(TuiMode.DASHBOARD);
   });
 
   test('enterKillConfirm from preview restores to preview', () => {
     const app = new TuiApp();
     app.mode = TuiMode.PREVIEW;
     app.enterKillConfirm();
-    expect(app.mode as string).toBe('CONFIRM_KILL');
+    expect<TuiMode>(app.mode).toBe(TuiMode.CONFIRM_KILL);
     app.exitKillConfirm();
-    expect(app.mode as string).toBe('PREVIEW');
+    expect<TuiMode>(app.mode).toBe(TuiMode.PREVIEW);
   });
 });
 

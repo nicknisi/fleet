@@ -24,32 +24,33 @@ export function sendKeyNames(paneId: string, keys: string[]): void {
   }
 }
 
-const SPECIAL_KEY_MAP: Record<number, string> = {
-  0x0d: 'Enter',
-  0x7f: 'BSpace',
-  0x09: 'Tab',
-  0x1b: 'Escape',
-};
+const SPECIAL_KEY_MAP = new Map<number, string>([
+  [0x0d, 'Enter'],
+  [0x7f, 'BSpace'],
+  [0x09, 'Tab'],
+  [0x1b, 'Escape'],
+]);
+
+const ARROW_NAMES = new Map<number, string>([
+  [0x41, 'Up'],
+  [0x42, 'Down'],
+  [0x43, 'Right'],
+  [0x44, 'Left'],
+]);
 
 export function sendRawKey(paneId: string, data: Buffer): void {
   const first = data[0];
   if (first === undefined) return;
 
   if (first === 0x1b && data.length >= 3 && data[1] === 0x5b) {
-    const arrows: Record<number, string> = {
-      0x41: 'Up',
-      0x42: 'Down',
-      0x43: 'Right',
-      0x44: 'Left',
-    };
-    const arrow = data[2] !== undefined ? arrows[data[2]] : undefined;
+    const arrow = data[2] !== undefined ? ARROW_NAMES.get(data[2]) : undefined;
     if (arrow) {
       tmuxOrThrow(['send-keys', '-t', paneId, arrow], 'send-keys arrow failed');
       return;
     }
   }
 
-  const special = SPECIAL_KEY_MAP[first];
+  const special = SPECIAL_KEY_MAP.get(first);
   if (special) {
     tmuxOrThrow(['send-keys', '-t', paneId, special], `send-keys ${special} failed`);
     return;

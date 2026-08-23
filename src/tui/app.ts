@@ -37,6 +37,11 @@ const DEFAULT_SPLIT = 0.45;
 // (the mouse "jump to agent" gesture, mirroring Enter).
 const DOUBLE_CLICK_MS = 400;
 
+interface GroupLabel {
+  label: string;
+  isRepo: boolean;
+}
+
 export class TuiApp {
   private states: AgentState[] = [];
   private filter: string = '';
@@ -83,7 +88,7 @@ export class TuiApp {
 
   // Display label + whether this is a repo group, derived from a group's first
   // (most-urgent) member.
-  private groupLabel(member: AgentState): { label: string; isRepo: boolean } {
+  private groupLabel(member: AgentState): GroupLabel {
     if (this.repoGroupMode && member.git) {
       return { label: repoLabelFromId(member.git.repoId), isRepo: true };
     }

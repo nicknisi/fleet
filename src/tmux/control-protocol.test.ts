@@ -162,7 +162,9 @@ describe('ControlProtocol multiple blocks', () => {
     const ev = p.feed('%begin 1 1 f\na\n%end 1 1 f\n%begin 1 2 f\nb\n%end 1 2 f\n');
     const blocks = blockEvents(ev);
     expect(blocks).toHaveLength(2);
+    // SAFETY: blockEvents() above selects only block events, whose shape carries body.
     expect((blocks[0] as { body: string }).body).toBe('a');
+    // SAFETY: same — blockEvents() returns only block events.
     expect((blocks[1] as { body: string }).body).toBe('b');
   });
 });

@@ -35,7 +35,7 @@ export function selectReadPath(s: ControlModeState): ReadPath {
 export function shouldAttemptControl(env: Record<string, string | undefined>): boolean {
   if (env.FLEET_CONTROL_MODE === '0') return false;
   const tmux = env.TMUX;
-  return typeof tmux === 'string' && tmux.length > 0;
+  return tmux !== undefined && tmux.length > 0;
 }
 
 /** Flip the latch to dead (permanent for the session). Idempotent. */

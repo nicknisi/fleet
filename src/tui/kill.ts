@@ -4,7 +4,12 @@ import { AgentStatus, whereLabel, type AgentState } from '../state/types.ts';
 // Killing is destructive, so it gets the same state gating as send: refuse the
 // states where the agent is mid-thought or blocked on you. You can still reap
 // anything that's finished, idle, or already dead.
-export function canKillSession(state: AgentState): { ok: boolean; reason: string } {
+interface KillCheck {
+  ok: boolean;
+  reason: string;
+}
+
+export function canKillSession(state: AgentState): KillCheck {
   switch (state.status) {
     case AgentStatus.IDLE:
     case AgentStatus.DONE:

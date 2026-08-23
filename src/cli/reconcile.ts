@@ -4,6 +4,7 @@ import { loadAgentDirs } from '../agents/config.ts';
 import { parseStatusFile, writeFileAtomic } from '../state/hooks.ts';
 import { classifyPane, isDeletable, livePaneSet } from '../state/presence.ts';
 import { listPanesResult } from '../tmux/sessions.ts';
+import { isJsonObject, type JsonValue } from '../json.ts';
 
 export function runReconcile(dryRun: boolean, verbose: boolean): number {
   const dirs = loadAgentDirs();
@@ -75,7 +76,9 @@ export function runReconcile(dryRun: boolean, verbose: boolean): number {
         if (age >= 180) {
           log(`STALE: ${path} (working for ${age}s)`);
           if (!dryRun) {
-            const data = JSON.parse(content) as Record<string, unknown>;
+            // SAFETY: JSON.parse returns any; JsonValue is the sound type of any JSON document.
+            const data = JSON.parse(content) as JsonValue;
+            if (!isJsonObject(data)) continue;
             data.state = 'idle';
             writeFileAtomic(path, JSON.stringify(data) + '\n');
           }

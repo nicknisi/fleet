@@ -7,7 +7,7 @@ export type PermitAction = 'approve' | 'deny';
 // last resort so unknown agents and user overrides without key specs behave
 // exactly as before: correct for genuine [y/n] prompts, a no-op for menu
 // dialogs.
-const FALLBACK_KEYS: Record<PermitAction, string[]> = { approve: ['y'], deny: ['n'] };
+const FALLBACK_KEYS = { approve: ['y'], deny: ['n'] } satisfies Record<PermitAction, string[]>;
 
 // Resolve the tmux send-keys key names that answer the permission dialog on
 // screen. Precedence: matched PERMIT rule's own keys > manifest defaults >

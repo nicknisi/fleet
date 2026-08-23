@@ -22,7 +22,7 @@ export interface RunWaitOptions {
 // display labels (STATUS_DISPLAY, types.ts) and the raw enum names are accepted.
 // There is no READY enum — 'ready' is DONE's display label. SHELL/DOWN are
 // intentionally omitted: they are not meaningful orchestration targets.
-const WAIT_STATES: Record<string, AgentStatus> = {
+const WAIT_STATES = {
   // display labels (STATUS_DISPLAY)
   ready: AgentStatus.DONE, // NOTE: 'ready' is DONE's label; there is no READY enum
   waiting: AgentStatus.PERMIT,
@@ -34,10 +34,13 @@ const WAIT_STATES: Record<string, AgentStatus> = {
   permit: AgentStatus.PERMIT,
   question: AgentStatus.QUESTION,
   busy: AgentStatus.BUSY,
-};
+} satisfies Record<string, AgentStatus>;
 
 export function parseWaitState(input: string): AgentStatus | null {
-  return WAIT_STATES[input.trim().toLowerCase()] ?? null;
+  const key = input.trim().toLowerCase();
+  if (!Object.hasOwn(WAIT_STATES, key)) return null;
+  // SAFETY: the Object.hasOwn check above proves key is a member of WAIT_STATES.
+  return WAIT_STATES[key as keyof typeof WAIT_STATES];
 }
 
 export interface ParsedWaitArgs {

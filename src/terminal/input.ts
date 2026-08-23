@@ -8,10 +8,15 @@ export type KeyEvent =
   | { type: 'ctrl'; char: string }
   | { type: 'unknown' };
 
+interface ParsedKey {
+  event: KeyEvent;
+  next: number;
+}
+
 // Parse one key event starting at `offset`, returning the event and the offset
 // just past its bytes — so a read that coalesced several keystrokes (fast
 // typing, SSH batching, paste) yields every key instead of only the first.
-function parseOneKey(data: Buffer, offset: number): { event: KeyEvent; next: number } {
+function parseOneKey(data: Buffer, offset: number): ParsedKey {
   const first = data[offset]!;
 
   // Escape sequence (arrows, other CSI)

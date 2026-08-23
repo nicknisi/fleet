@@ -130,10 +130,12 @@ export function windowColorArgs(states: AgentState[]): string[][] {
 // whether it was a cache hit. Split out so the short-circuit is testable without
 // a real tmux/filesystem — the thin CLI shell in index.ts wires real I/O around
 // it.
-export function resolveStatusLineSegment(
-  cached: string | null,
-  computeLive: () => string,
-): { segment: string; hit: boolean } {
+export interface StatusLineResolution {
+  segment: string;
+  hit: boolean;
+}
+
+export function resolveStatusLineSegment(cached: string | null, computeLive: () => string): StatusLineResolution {
   if (cached !== null) return { segment: cached, hit: true };
   return { segment: computeLive(), hit: false };
 }
