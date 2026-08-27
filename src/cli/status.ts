@@ -61,8 +61,13 @@ export function formatStatusLine(states: AgentState[]): string {
     const name = agentSessionName(s) ?? windowLabel(s);
     const clipped = [...name].length > 30 ? [...name].slice(0, 29).join('') + '…' : name;
     const label = clipped.replace(/#/g, '##');
+    // The label wears the state color, same as the icon: every chip here is an
+    // attention state by design (quiet agents are filtered out above), so the
+    // TUI's neutral name accent never applies on this surface. Named tmux
+    // colors keep the terminal-palette adaptability the statusline chose over
+    // theme hexes (see STATUS_DISPLAY).
     entries.push(
-      `#[range=user|${s.paneId}]#[fg=${display.color}]${display.icon} #[bold]${label}#[nobold] ${formatAge(s.ts)}#[norange]`,
+      `#[range=user|${s.paneId}]#[fg=${display.color}]${display.icon} #[fg=${display.color},bold]${label}#[nobold,fg=default] ${formatAge(s.ts)}#[norange]`,
     );
   }
 

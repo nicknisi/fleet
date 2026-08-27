@@ -161,7 +161,7 @@ describe('formatStatusLine', () => {
     expect(permitIdx).toBeLessThan(questionIdx);
   });
 
-  test('formats each entry with icon, bold window name, and age', () => {
+  test('formats each entry with icon, state-colored bold name, and age', () => {
     const now = Math.floor(Date.now() / 1000);
     const states = [
       makeState({ status: AgentStatus.PERMIT, session: 'mysession', window: 'task-window', ts: now - 10 }),
@@ -170,18 +170,31 @@ describe('formatStatusLine', () => {
     // Icon for PERMIT is ⚠ in the terminal's yellow (theme-aware named color)
     expect(result).toContain('#[fg=yellow]');
     expect(result).toContain('⚠');
-    expect(result).toContain('#[bold]task-window#[nobold]');
+    // The label wears the same state color — every chip is an attention state.
+    expect(result).toContain('#[fg=yellow,bold]task-window#[nobold,fg=default]');
     expect(result).toContain('10s');
+  });
+
+  test('label color tracks the state: permit yellow, question magenta, done green', () => {
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, window: 'perm-win', paneId: '%1' }),
+      makeState({ status: AgentStatus.QUESTION, window: 'ques-win', paneId: '%2' }),
+      makeState({ status: AgentStatus.DONE, window: 'done-win', paneId: '%3' }),
+    ];
+    const result = formatStatusLine(states);
+    expect(result).toContain('#[fg=yellow,bold]perm-win');
+    expect(result).toContain('#[fg=magenta,bold]ques-win');
+    expect(result).toContain('#[fg=green,bold]done-win');
   });
 
   test('falls back to the session name when the window is empty', () => {
     const states = [makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', window: '' })];
-    expect(formatStatusLine(states)).toContain('#[bold]dotfiles#[nobold]');
+    expect(formatStatusLine(states)).toContain('#[fg=yellow,bold]dotfiles#[nobold,fg=default]');
   });
 
   test('falls back to the session name when the window equals the session', () => {
     const states = [makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', window: 'dotfiles' })];
-    expect(formatStatusLine(states)).toContain('#[bold]dotfiles#[nobold]');
+    expect(formatStatusLine(states)).toContain('#[fg=yellow,bold]dotfiles#[nobold,fg=default]');
   });
 
   test('two same-session agents in different windows render distinguishable chips', () => {
@@ -190,8 +203,8 @@ describe('formatStatusLine', () => {
       makeState({ status: AgentStatus.DONE, session: 'cli', window: 'beta', paneId: '%2' }),
     ];
     const result = formatStatusLine(states);
-    expect(result).toContain('#[bold]alpha#[nobold]');
-    expect(result).toContain('#[bold]beta#[nobold]');
+    expect(result).toContain('#[fg=green,bold]alpha#[nobold,fg=default]');
+    expect(result).toContain('#[fg=green,bold]beta#[nobold,fg=default]');
   });
 
   test('wraps each entry in a clickable range with the pane id', () => {
