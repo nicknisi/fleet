@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/nicknisi/fleet/compare/v0.23.0...v0.24.0) (2026-08-27)
+
+
+### Features
+
+* color statusline chip labels by agent state ([#80](https://github.com/nicknisi/fleet/issues/80)) ([3bfef71](https://github.com/nicknisi/fleet/commit/3bfef713c4751135491eba90456da4b452b1a6c6))
+
 ## [0.23.0](https://github.com/nicknisi/fleet/compare/v0.22.4...v0.23.0) (2026-08-27)
 
 
