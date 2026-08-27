@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/nicknisi/fleet/compare/v0.24.0...v0.25.0) (2026-08-27)
+
+
+### Features
+
+* show project dirname in card meta line ([#82](https://github.com/nicknisi/fleet/issues/82)) ([fc370fc](https://github.com/nicknisi/fleet/commit/fc370fc599ef2aec29598a1b984797ef5ce9047d))
+
 ## [0.24.0](https://github.com/nicknisi/fleet/compare/v0.23.0...v0.24.0) (2026-08-27)
 
 
