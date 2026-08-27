@@ -29,13 +29,21 @@ fleet_sanitize_label() {
 # Write via a temp file + mv (atomic within a filesystem) so the TUI's reader
 # never catches a truncate-then-write window and sees partial JSON.
 fleet_write_status() {
-  local state="$1" tool tmp="${FLEET_STATUS_FILE}.tmp.$$"
+  local state="$1" tool name tmp="${FLEET_STATUS_FILE}.tmp.$$"
   tool=$(fleet_sanitize_label "${2:-}")
+  # Optional 3rd arg: the agent's own session name (codex thread_name, pi
+  # session name). A write that doesn't carry one keeps the previously written
+  # name — the name arrives on whichever write first resolves it and must not
+  # be erased by later nameless writes. No-jq path drops it (best-effort).
+  name=$(fleet_sanitize_label "${3:-}")
   if command -v jq >/dev/null 2>&1; then
+    if [ -z "$name" ] && [ -f "$FLEET_STATUS_FILE" ]; then
+      name=$(jq -r '.name // empty' "$FLEET_STATUS_FILE" 2>/dev/null)
+    fi
     jq -cn \
       --arg state "$state" --arg pane "$FLEET_PANE_ID" --arg session "$FLEET_SESSION" \
-      --arg tool "$tool" --argjson ts "$FLEET_TS" --argjson pid "${FLEET_TMUX_PID:-0}" \
-      '{state:$state, pane:$pane, session:$session, tool:$tool, ts:$ts, tmux_pid:$pid}' \
+      --arg tool "$tool" --arg name "$name" --argjson ts "$FLEET_TS" --argjson pid "${FLEET_TMUX_PID:-0}" \
+      '{state:$state, pane:$pane, session:$session, tool:$tool, name:$name, ts:$ts, tmux_pid:$pid}' \
       > "$tmp" && mv -f "$tmp" "$FLEET_STATUS_FILE"
   else
     # jq absent: label already stripped of control chars; also drop " and \.

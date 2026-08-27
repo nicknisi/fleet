@@ -217,13 +217,40 @@ describe('formatStatusLine', () => {
     expect(result).toContain(' #[fg=brightblack]│ ');
   });
 
-  test('uses the window name even when claudeName is set', () => {
+  test('prefers the agent session name over the window name', () => {
     const states = [
       makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', window: 'editor', claudeName: 'Fix auth bug' }),
     ];
     const result = formatStatusLine(states);
-    expect(result).toContain('editor');
+    expect(result).toContain('Fix auth bug');
+    expect(result).not.toContain('editor');
+  });
+
+  test('hook-provided agentName wins over the pane-title claudeName', () => {
+    const states = [
+      makeState({
+        status: AgentStatus.PERMIT,
+        window: 'editor',
+        claudeName: 'Fix auth bug',
+        agentName: 'Refactor auth module',
+      }),
+    ];
+    const result = formatStatusLine(states);
+    expect(result).toContain('Refactor auth module');
     expect(result).not.toContain('Fix auth bug');
+  });
+
+  test('falls back to the window name when the agent publishes no name', () => {
+    const states = [makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', window: 'editor' })];
+    expect(formatStatusLine(states)).toContain('editor');
+  });
+
+  test('caps long agent session names so the chip fits the status row', () => {
+    const long = 'x'.repeat(60);
+    const states = [makeState({ status: AgentStatus.PERMIT, agentName: long })];
+    const result = formatStatusLine(states);
+    expect(result).toContain(`${'x'.repeat(29)}…`);
+    expect(result).not.toContain(long);
   });
 
   test('appends a clickable clear-all chip when a ready agent is present', () => {

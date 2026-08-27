@@ -1,7 +1,28 @@
 import { describe, expect, test } from 'bun:test';
-import { stateIcon, windowLines, type LayoutLines } from './shared.ts';
+import { agentRowLabel, stateIcon, windowLines, type LayoutLines } from './shared.ts';
 import { CARD_LAYOUT_MAX_COLS, pickLayout } from './index.ts';
-import { AgentStatus } from '../../state/types.ts';
+import { AgentStatus, type AgentState } from '../../state/types.ts';
+
+const agentState = (over: Partial<AgentState>): AgentState => ({
+  paneId: '%1',
+  paneNum: 1,
+  session: 'api',
+  window: 'editor',
+  windowId: '@1',
+  claudeName: null,
+  customName: null,
+  status: AgentStatus.IDLE,
+  tool: null,
+  project: '~/Developer/api',
+  branch: 'main',
+  ports: [],
+  ts: 0,
+  agentType: 'claude',
+  ...over,
+});
+
+const agentRow = (over: Partial<AgentState>, grouped = false) =>
+  ({ kind: 'agent', state: agentState(over), grouped }) as const;
 
 const fake = (n: number): LayoutLines => ({
   lines: Array.from({ length: n }, (_, i) => `line${i}`),
@@ -24,6 +45,26 @@ describe('stateIcon', () => {
   test('non-busy states ignore the pulse phase entirely', () => {
     expect(stateIcon(AgentStatus.PERMIT, true)).toBe(stateIcon(AgentStatus.PERMIT, false));
     expect(stateIcon(AgentStatus.IDLE, true)).toBe(stateIcon(AgentStatus.IDLE, false));
+  });
+});
+
+describe('agentRowLabel', () => {
+  test('names the row after the agent session when one is published', () => {
+    expect(agentRowLabel(agentRow({ agentName: 'Refactor auth module' }))).toBe('api · Refactor auth module');
+    expect(agentRowLabel(agentRow({ claudeName: 'Fix auth bug' }))).toBe('api · Fix auth bug');
+    // The hook-provided name outranks the pane-title name.
+    expect(agentRowLabel(agentRow({ agentName: 'Refactor auth module', claudeName: 'Fix auth bug' }))).toBe(
+      'api · Refactor auth module',
+    );
+  });
+
+  test('falls back to the window label when the agent publishes no name', () => {
+    expect(agentRowLabel(agentRow({}))).toBe('api · editor');
+  });
+
+  test('grouped rows drop the session prefix', () => {
+    expect(agentRowLabel(agentRow({ agentName: 'Refactor auth module' }, true))).toBe('Refactor auth module');
+    expect(agentRowLabel(agentRow({}, true))).toBe('editor');
   });
 });
 

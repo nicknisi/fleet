@@ -24,6 +24,7 @@ import { loadRenames } from './rename.ts';
 import {
   AgentStatus,
   extractClaudeName,
+  extractPiTitleName,
   type AgentState,
   type ResolvedHookStatus,
   type StateDecision,
@@ -548,6 +549,11 @@ export function refreshStates(
       window: pane.windowName,
       windowId: pane.windowId,
       claudeName: extractClaudeName(pane.paneTitle),
+      // Hook name first (codex's only channel; pi's extension writes the same
+      // value), then pi's terminal title — which needs nothing loaded into pi
+      // and covers hookless/discovered pi panes too. Gated to identified pi
+      // panes: the title parse trusts non-empty titles (see extractPiTitleName).
+      agentName: hook?.name ?? (agentType === 'pi' ? extractPiTitleName(pane.paneTitle, pane.currentPath) : null),
       customName: renameCache.get(pane.sessionName) ?? null,
       status,
       tool,

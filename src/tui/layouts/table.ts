@@ -2,7 +2,15 @@ import { C } from '../../terminal/colors.ts';
 import { padAnsi, truncateAnsi, truncateWidth, visibleLength } from '../../terminal/ansi.ts';
 import { STATUS_DISPLAY, type AgentState } from '../../state/types.ts';
 import type { DashboardRow, TuiApp } from '../app.ts';
-import { agentRowLabel, formatAge, getAgeColor, getStateColor, stateIcon, type LayoutLines } from './shared.ts';
+import {
+  agentNameStyle,
+  agentRowLabel,
+  formatAge,
+  getAgeColor,
+  getStateColor,
+  stateIcon,
+  type LayoutLines,
+} from './shared.ts';
 
 export interface ColumnWidths {
   name: number;
@@ -57,15 +65,15 @@ function formatAgentRow(
 
   const sel = selected ? `${stColor}▌${C.reset}` : ' ';
 
-  const nameColor = selected ? C.bold : hovered ? C.underline : '';
+  // The session name is the row's identity — bold + accent hue, switching to
+  // the state color when the row needs you (agentNameStyle). Selection shows
+  // on the ▌ bar; hover adds the underline.
+  const nameColor = `${agentNameStyle(state)}${hovered ? C.underline : ''}`;
   const name = padAnsi(truncateWidth(nameCell(row), widths.name), widths.name);
 
-  let detail = '';
-  if (state.claudeName) {
-    detail = state.claudeName;
-  } else {
-    detail = (state.project ?? '').replace(/^~\/Developer\//, '');
-  }
+  // The agent's session name moved up to the name cell (agentRowLabel), so
+  // the detail column stays on the project path full-time.
+  const detail = (state.project ?? '').replace(/^~\/Developer\//, '');
 
   const branch = state.branch ?? '';
   const branchColor = branch && branch !== 'main' && branch !== 'master' ? C.purple : C.gray;
@@ -77,8 +85,7 @@ function formatAgentRow(
 
   const portStr = state.ports.length > 0 ? ` ${C.cyan}⌁${state.ports[0]}${C.reset}` : '';
 
-  const detailColor = state.claudeName ? C.dim : C.gray;
-  const line = `${sel} ${stateIcon(state.status, pulse)} ${nameColor}${name}${C.reset}${detailColor}${padAnsi(truncateWidth(detail, widths.detail), widths.detail)}${C.reset}${branchPart} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
+  const line = `${sel} ${stateIcon(state.status, pulse)} ${nameColor}${name}${C.reset}${C.gray}${padAnsi(truncateWidth(detail, widths.detail), widths.detail)}${C.reset}${branchPart} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
 
   return truncateAnsi(line, cols);
 }

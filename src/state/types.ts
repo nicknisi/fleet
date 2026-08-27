@@ -93,6 +93,13 @@ export interface AgentState {
   window: string;
   windowId: string;
   claudeName: string | null;
+  // The agent's own session name: the hook's status file (pi extension, codex
+  // thread_name) or, for pi, the built-in `π - name - dir` pane title when the
+  // hook wrote none — the title channel needs nothing loaded into pi. Distinct
+  // from claudeName, which is scraped from the pane title; null when neither
+  // channel provided one. Optional for source compatibility with AgentState
+  // fixtures (like `tracking`); live refreshes always set it.
+  agentName?: string | null;
   customName: string | null; // user rename for this pane's session, or null
   status: AgentStatus;
   tool: string | null;
@@ -126,6 +133,42 @@ export function extractClaudeName(paneTitle: string): string | null {
   const trimmed = paneTitle.trim();
   if (!trimmed.startsWith('✳')) return null;
   const name = trimmed.slice(1).trim();
+  return name.length > 0 ? name : null;
+}
+
+// pi exposes its session name in the terminal title with zero pi-side wiring
+// (pi core's updateTerminalTitle re-applies it on every rename; tmux captures
+// it as #{pane_title}). Shapes seen in the wild: stock `π - <name> - <dir>`
+// (unnamed: `π - <dir>`), and the common session-name package's `π — <dir>`
+// unnamed with a configurable named titleFormat (`{summary}`, `{summary} —
+// {dir}`, …). Only call this for panes already identified as pi — the named
+// fallback is deliberately trusting, treating whatever remains as the name;
+// an unidentified pane's title could be anything. The dir suffix is anchored
+// on the pane's cwd basename so a name containing ' - ' survives.
+export function extractPiTitleName(paneTitle: string, cwd: string): string | null {
+  // A leading braille frame is a working spinner some setups prepend — never
+  // part of the name.
+  const t = paneTitle.trim().replace(/^[\u2800-\u28FF] /, '');
+  if (!t) return null;
+  const dir = cwd.split('/').filter(Boolean).pop() ?? '';
+
+  // Unnamed shapes: app mark + dir, both dash styles. Not a name.
+  if (t === 'π' || t === `π - ${dir}` || t === `π — ${dir}`) return null;
+
+  let rest = t;
+  if (rest.startsWith('π - ')) rest = rest.slice(4);
+  else if (rest.startsWith('π — ')) rest = rest.slice(4);
+
+  // Stock appends ` - <dir>`; the package's default format appends ` — <dir>`.
+  if (dir) {
+    for (const suffix of [` - ${dir}`, ` — ${dir}`]) {
+      if (rest !== dir && rest.endsWith(suffix)) {
+        rest = rest.slice(0, rest.length - suffix.length);
+        break;
+      }
+    }
+  }
+  const name = rest.trim();
   return name.length > 0 ? name : null;
 }
 
@@ -166,9 +209,18 @@ export function windowLabel(state: AgentState): string {
   return state.window;
 }
 
-// Precedence for a row's primary label: user rename > Claude auto-name > session.
+// The agent's own name for its session: agent-published first (codex
+// thread_name via hook; pi session name via hook or its built-in pane title),
+// then Claude's pane-title auto-name. null when the agent has published none —
+// callers fall back to the window/session label.
+export function agentSessionName(state: AgentState): string | null {
+  return state.agentName ?? state.claudeName ?? null;
+}
+
+// Precedence for a row's primary label: user rename > agent session name
+// (hook) > Claude auto-name (pane title) > session.
 export function displayName(state: AgentState): string {
-  return state.customName ?? state.claudeName ?? sessionLabel(state);
+  return state.customName ?? agentSessionName(state) ?? sessionLabel(state);
 }
 
 // Session-level display string (rename wins over the raw session name). Used by
@@ -182,6 +234,10 @@ export interface HookStatus {
   pane: string;
   session: string;
   tool: string;
+  // Agent-provided session name (codex thread_name, pi session name); null
+  // when the writer had none. Added after the shape froze, so older status
+  // files parse to null — never absent on a parsed record.
+  name: string | null;
   ts: number;
   tmux_pid: number;
 }

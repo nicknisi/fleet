@@ -2,6 +2,7 @@ import {
   AgentStatus,
   ACK_ALL_RANGE,
   SIDEBAR_RANGE,
+  agentSessionName,
   compareStatus,
   formatAgeDelta,
   needsAttention,
@@ -51,9 +52,15 @@ export function formatStatusLine(states: AgentState[]): string {
 
   for (const s of filtered) {
     const display = STATUS_DISPLAY[s.status];
-    // tmux re-expands format directives in #() output, so a window/session
-    // name containing '#' must be escaped ('##') or it corrupts the row.
-    const label = windowLabel(s).replace(/#/g, '##');
+    // The agent's own session name identifies the chip when the agent
+    // publishes one — several agents can share a window, so the window label
+    // can't tell them apart. Capped because generated names run long, and
+    // chips share one status row. tmux re-expands format directives in #()
+    // output, so a name containing '#' must be escaped ('##') or it corrupts
+    // the row.
+    const name = agentSessionName(s) ?? windowLabel(s);
+    const clipped = [...name].length > 30 ? [...name].slice(0, 29).join('') + '…' : name;
+    const label = clipped.replace(/#/g, '##');
     entries.push(
       `#[range=user|${s.paneId}]#[fg=${display.color}]${display.icon} #[bold]${label}#[nobold] ${formatAge(s.ts)}#[norange]`,
     );

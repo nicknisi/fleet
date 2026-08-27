@@ -15,6 +15,19 @@ describe('parseStatusFile', () => {
     expect(status!.pane).toBe('%42');
     expect(status!.session).toBe('dotfiles');
     expect(status!.tool).toBe('Edit');
+    // No `name` in the payload -> null (pre-name schema).
+    expect(status!.name).toBeNull();
+  });
+
+  test('parses the agent-provided session name; empty string reads as null', () => {
+    const named = parseStatusFile(
+      '{"state":"working","pane":"%42","session":"s","tool":"","name":"Refactor auth module","ts":1,"tmux_pid":1}',
+    );
+    expect(named!.name).toBe('Refactor auth module');
+    const unnamed = parseStatusFile(
+      '{"state":"working","pane":"%42","session":"s","tool":"","name":"","ts":1,"tmux_pid":1}',
+    );
+    expect(unnamed!.name).toBeNull();
   });
 
   test('returns null for invalid JSON', () => {

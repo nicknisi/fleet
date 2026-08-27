@@ -1,8 +1,10 @@
-import { C } from '../../terminal/colors.ts';
+import { C, serializeThemeColor, stateThemeColor } from '../../terminal/colors.ts';
 import {
   AgentStatus,
   STATUS_DISPLAY,
+  agentSessionName,
   formatAgeDelta,
+  needsAttention,
   sessionDisplay,
   windowLabel,
   type AgentState,
@@ -22,16 +24,30 @@ export interface LayoutLines {
   states: (AgentState | null)[];
 }
 
-// Row label shared by both layouts. Grouped rows sit under a session header,
-// so repeating the session per row is noise — the window label alone names
-// them. Ungrouped rows carry the session inline. Window-presence logic keys on
-// the real session (windowLabel compares against it); only the shown string
-// swaps to the rename via sessionDisplay.
+// Row label shared by both layouts. The agent's own session name (pi session
+// name, codex thread name, claude pane-title name) names the row when one is
+// available — several agents can share a window, so the window label can't
+// tell them apart; the window label is the fallback. Grouped rows sit under a
+// session header, so repeating the session per row is noise. Ungrouped rows
+// carry the session inline. Window-presence logic keys on the real session
+// (windowLabel compares against it); only the shown string swaps to the
+// rename via sessionDisplay.
 export function agentRowLabel(row: Extract<DashboardRow, { kind: 'agent' }>): string {
-  const label = windowLabel(row.state);
+  const label = agentSessionName(row.state) ?? windowLabel(row.state);
   if (row.grouped) return label;
   const session = sessionDisplay(row.state);
   return label === row.state.session ? session : `${session} · ${label}`;
+}
+
+// Style prefix for the row's primary label: bold + a dedicated accent hue (the
+// 'question' mauve doubles as the identity lane), switching to the row's state
+// color when the row needs you (permit/question/done) so attention rows light
+// up. Serializers return '' when colors are disabled, degrading to plain text.
+export function agentNameStyle(state: AgentState): string {
+  const fg = needsAttention(state.status)
+    ? getStateColor(state.status)
+    : serializeThemeColor(stateThemeColor('question'));
+  return `${C.bold}${fg}`;
 }
 
 export function getStateColor(status: AgentStatus): string {
