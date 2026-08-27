@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/nicknisi/fleet/compare/v0.22.4...v0.23.0) (2026-08-27)
+
+
+### Features
+
+* prefer agent session names over window names for row identity ([#78](https://github.com/nicknisi/fleet/issues/78)) ([6523cb7](https://github.com/nicknisi/fleet/commit/6523cb7146ae3e7746d63a5da6a5be50645bba60))
+
 ## [0.22.4](https://github.com/nicknisi/fleet/compare/v0.22.3...v0.22.4) (2026-08-23)
 
 
