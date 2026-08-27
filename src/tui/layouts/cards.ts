@@ -52,7 +52,8 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
     );
     states.push(st);
 
-    const meta = [st.branch, st.agentType].filter(Boolean).join(' · ');
+    const project = st.project?.split('/').pop();
+    const meta = [project, st.branch, st.agentType].filter(Boolean).join(' · ');
     lines.push(truncateAnsi(`${bar}   ${C.gray}${truncateWidth(meta, Math.max(1, cols - 4))}${C.reset}`, cols));
     states.push(st);
 
