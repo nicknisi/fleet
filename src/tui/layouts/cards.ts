@@ -2,7 +2,15 @@ import { C } from '../../terminal/colors.ts';
 import { truncateAnsi, truncateWidth, visibleLength } from '../../terminal/ansi.ts';
 import { STATUS_DISPLAY, type AgentState } from '../../state/types.ts';
 import type { TuiApp } from '../app.ts';
-import { agentRowLabel, formatAge, getAgeColor, getStateColor, stateIcon, type LayoutLines } from './shared.ts';
+import {
+  agentNameStyle,
+  agentRowLabel,
+  formatAge,
+  getAgeColor,
+  getStateColor,
+  stateIcon,
+  type LayoutLines,
+} from './shared.ts';
 
 // Sidebar cards: every agent is a fixed 4-line block —
 //   ▌⚠ name            4s
@@ -38,7 +46,7 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
     const gap = ' '.repeat(Math.max(1, nameW - visibleLength(name) + 1));
     lines.push(
       truncateAnsi(
-        `${bar} ${stateIcon(st.status, app.pulsePhase)} ${selected ? C.bold : hovered ? C.underline : ''}${name}${C.reset}${gap}${getAgeColor(st.ts)}${age}${C.reset}`,
+        `${bar} ${stateIcon(st.status, app.pulsePhase)} ${agentNameStyle(st)}${hovered ? C.underline : ''}${name}${C.reset}${gap}${getAgeColor(st.ts)}${age}${C.reset}`,
         cols,
       ),
     );
@@ -48,7 +56,9 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
     lines.push(truncateAnsi(`${bar}   ${C.gray}${truncateWidth(meta, Math.max(1, cols - 4))}${C.reset}`, cols));
     states.push(st);
 
-    const detail = st.tool ?? st.claudeName ?? display.label;
+    // The agent's session name is already the card's line-1 title (via
+    // agentRowLabel), so detail falls from tool straight to the state label.
+    const detail = st.tool ?? display.label;
     lines.push(truncateAnsi(`${bar}   ${C.dim}${truncateWidth(detail, Math.max(1, cols - 4))}${C.reset}`, cols));
     states.push(st);
 

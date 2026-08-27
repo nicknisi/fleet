@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, existsSync, statSync, watch, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import type { HookStatus, ResolvedHookStatus } from './types.ts';
-import { isJsonObject, type JsonValue } from '../json.ts';
+import { isJsonObject, isString, type JsonValue } from '../json.ts';
 import type { AgentDir } from '../agents/config.ts';
 
 // The `.status` / `.events.jsonl` filename convention, named once. Keyed by the
@@ -37,6 +37,10 @@ export function parseStatusFile(content: string): HookStatus | null {
       pane: String(data.pane ?? ''),
       session: String(data.session ?? ''),
       tool: String(data.tool ?? ''),
+      // The agent's own session name (codex thread_name, pi session name).
+      // Absent/empty in older or nameless writes — callers fall back to the
+      // window label.
+      name: isString(data.name) && data.name.length > 0 ? data.name : null,
       ts: Number(data.ts ?? 0),
       tmux_pid: Number(data.tmux_pid ?? 0),
     };

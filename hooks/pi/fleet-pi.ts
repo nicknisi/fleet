@@ -8,6 +8,7 @@
  * file). It subscribes to pi's lifecycle events and writes the
  * same status-file schema fleet's shell hooks write (see hooks/lib.sh):
  *
+ *   session_start                  -> { state: "idle" }        (carries the session name on reload/resume)
  *   agent_start                    -> { state: "working" }
  *   tool_execution_start           -> { state: "working", tool: "Bash: …" | "Edit: …" }
  *   tool_call (question tool)      -> { state: "question" }
@@ -15,6 +16,7 @@
  *   rpiv:ask-user:blocked (active)  -> { state: "question" }
  *   rpiv:ask-user:blocked (cleared) -> { state: "working" }
  *   agent_end                      -> { state: "done" }      (fleet ages done -> idle)
+ *   session_info_changed           -> rewrite current state carrying pi's session name
  *   session_shutdown               -> remove the status file (pi exited; no stale state)
  *
  * pi auto-runs its tools, so it has no interactive permission prompt. Question
@@ -67,6 +69,10 @@ interface PiExtensionAPI {
   on(event: 'session_start' | 'agent_start' | 'agent_end' | 'session_shutdown', handler: () => void): void;
   on(event: 'tool_execution_start', handler: (event: PiToolExecutionStartEvent) => void): void;
   on(event: 'tool_call' | 'tool_execution_end', handler: (event: PiToolEvent) => void): void;
+  on(event: 'session_info_changed', handler: (event: { name?: string }) => void): void;
+  // pi names sessions (auto-named after the first turn, renameable via /name);
+  // optional so the extension still loads on a pi build that predates it.
+  getSessionName?(): string | undefined;
   events?: {
     on(event: 'rpiv:ask-user:blocked', handler: (payload: { active: boolean }) => void): void;
   };
@@ -105,7 +111,8 @@ export function fleetPiLabel(toolName: string, args: JsonValue | undefined): str
 
 // Serialize a fleet status record. JSON.stringify escapes quotes/newlines in the
 // label so a status file can never be corrupted by tool input. Field names and
-// shape mirror parseStatusFile in src/state/hooks.ts exactly.
+// shape mirror parseStatusFile in src/state/hooks.ts exactly. `name` is pi's own
+// session name ('' when unnamed) — fleet prefers it over the tmux window label.
 export function buildPiStatusLine(
   state: string,
   pane: string,
@@ -113,8 +120,9 @@ export function buildPiStatusLine(
   tool: string,
   ts: number,
   tmuxPid: number,
+  name = '',
 ): string {
-  return JSON.stringify({ state, pane, session, tool, ts, tmux_pid: tmuxPid }) + '\n';
+  return JSON.stringify({ state, pane, session, tool, name, ts, tmux_pid: tmuxPid }) + '\n';
 }
 
 // --- extension entry point ----------------------------------------------------
@@ -139,12 +147,22 @@ export default function (pi: PiExtensionAPI): void {
   let session = tmuxQuery('#{session_name}');
   let tmuxPid = Number(tmuxQuery('#{pid}')) || 0;
 
+  const sessionName = (): string => {
+    try {
+      return pi.getSessionName?.() ?? '';
+    } catch {
+      return '';
+    }
+  };
+
+  let lastState = '';
   const write = (state: string, tool: string): void => {
+    lastState = state;
     try {
       mkdirSync(statusDir, { recursive: true });
       writeFileSync(
         statusFile,
-        buildPiStatusLine(state, paneId, session, tool, Math.floor(Date.now() / 1000), tmuxPid),
+        buildPiStatusLine(state, paneId, session, tool, Math.floor(Date.now() / 1000), tmuxPid, sessionName()),
       );
     } catch {
       // Never break the user's pi session over a status write.
@@ -157,6 +175,12 @@ export default function (pi: PiExtensionAPI): void {
     // tmux env is fully populated by now; backfill anything missing at load.
     if (!session) session = tmuxQuery('#{session_name}');
     if (!tmuxPid) tmuxPid = Number(tmuxQuery('#{pid}')) || 0;
+    // Write on start/reload/resume: pi names sessions out-of-band (auto-namer,
+    // /name), and an idle session fires no later lifecycle event — without this
+    // the name would never reach the status file until the next turn. Discovery
+    // already surfaces a fresh pi pane as IDLE, so this changes the label, not
+    // the visibility.
+    write('idle', '');
   });
   pi.on('agent_start', () => write('working', currentTool));
   pi.on('tool_execution_start', (event) => {
@@ -178,8 +202,15 @@ export default function (pi: PiExtensionAPI): void {
     currentTool = '';
     write('done', '');
   });
+  // The auto-name lands after the first turn, between lifecycle writes —
+  // rewrite the current state so a rename/auto-name shows up immediately
+  // instead of whenever the next write happens.
+  pi.on('session_info_changed', () => {
+    if (lastState) write(lastState, currentTool);
+  });
   pi.on('session_shutdown', () => {
     // pi is exiting — drop the status file so the pane doesn't linger as done.
+    lastState = '';
     try {
       rmSync(statusFile, { force: true });
     } catch {

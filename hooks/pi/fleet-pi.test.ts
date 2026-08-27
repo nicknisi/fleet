@@ -66,9 +66,15 @@ describe('buildPiStatusLine', () => {
       pane: '%3',
       session: 'projects',
       tool: 'Bash: npm test',
+      name: null, // unnamed write: '' on the wire, null after parsing
       ts: 1783136479,
       tmux_pid: 17136,
     });
+  });
+
+  test('carries the pi session name when one is set', () => {
+    const line = buildPiStatusLine('working', '%3', 'projects', '', 1783136479, 17136, 'Refactor auth module');
+    expect(parseStatusFile(line)?.name).toBe('Refactor auth module');
   });
 
   test('escapes quotes/newlines in the label so the file stays valid JSON', () => {
@@ -101,7 +107,7 @@ describe('extension event wiring', () => {
   });
 
   // Capture the handlers the extension registers so the test can fire them.
-  function loadWithTmux(pane: string): HandlerMap {
+  function loadWithTmux(pane: string, getSessionName?: () => string | undefined): HandlerMap {
     process.env.TMUX = '/tmp/fake-tmux,1,0';
     process.env.TMUX_PANE = pane;
     const handlers: HandlerMap = {};
@@ -109,6 +115,7 @@ describe('extension event wiring', () => {
       on(event: string, handler: (event?: JsonValue) => void): void {
         handlers[event] = handler;
       },
+      getSessionName,
       events: {
         on(event: string, handler: (event?: JsonValue) => void): void {
           handlers[event] = handler;
@@ -180,6 +187,42 @@ describe('extension event wiring', () => {
     expect(existsSync(join(statusDir, '7.status'))).toBe(true);
     h.session_shutdown?.();
     expect(existsSync(join(statusDir, '7.status'))).toBe(false);
+  });
+
+  test('session_start writes idle carrying the session name', () => {
+    const h = loadWithTmux('%13', () => 'Refactor auth module');
+    h.session_start?.();
+    const s = readStatus('13');
+    expect(s?.state).toBe('idle');
+    expect(s?.name).toBe('Refactor auth module');
+  });
+
+  test('writes the pi session name and refreshes it on session_info_changed', () => {
+    let name: string | undefined;
+    const h = loadWithTmux('%11', () => name);
+
+    // Unnamed at session start: the write carries no name rather than erasing one.
+    h.agent_start?.();
+    expect(readStatus('11')?.name).toBeNull();
+
+    // The auto-name (or a /name rename) lands between lifecycle writes; the
+    // session_info_changed handler rewrites the current state carrying it.
+    name = 'Refactor auth module';
+    h.session_info_changed?.({ name });
+    expect(readStatus('11')?.name).toBe('Refactor auth module');
+    expect(readStatus('11')?.state).toBe('working');
+
+    // A cleared name (undefined from getSessionName) round-trips to null. The
+    // handler re-reads pi.getSessionName() rather than trusting the payload.
+    name = undefined;
+    h.session_info_changed?.({});
+    expect(readStatus('11')?.name).toBeNull();
+  });
+
+  test('session_info_changed writes nothing before the first lifecycle write', () => {
+    const h = loadWithTmux('%12', () => 'Refactor auth module');
+    h.session_info_changed?.({ name: 'Refactor auth module' });
+    expect(existsSync(join(statusDir, '12.status'))).toBe(false);
   });
 
   test('outside tmux: registers no handlers and writes nothing', () => {

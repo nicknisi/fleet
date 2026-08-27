@@ -1,4 +1,4 @@
-import { AgentStatus, compareStatus, windowLabel, type AgentState } from '../state/types.ts';
+import { AgentStatus, agentSessionName, compareStatus, windowLabel, type AgentState } from '../state/types.ts';
 import { repoLabelFromId } from '../state/repo-groups.ts';
 
 // A rendered dashboard line: sessions with 2+ agents get a header row followed
@@ -219,7 +219,7 @@ export class TuiApp {
       (s) =>
         s.session.toLowerCase().includes(lower) ||
         s.window.toLowerCase().includes(lower) ||
-        (s.claudeName?.toLowerCase().includes(lower) ?? false) ||
+        (agentSessionName(s)?.toLowerCase().includes(lower) ?? false) ||
         (s.customName?.toLowerCase().includes(lower) ?? false) ||
         (s.project?.toLowerCase().includes(lower) ?? false),
     );

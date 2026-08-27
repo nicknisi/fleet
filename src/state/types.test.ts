@@ -4,6 +4,8 @@ import {
   statusPriority,
   compareStatus,
   extractClaudeName,
+  extractPiTitleName,
+  agentSessionName,
   displayName,
   sessionDisplay,
   sessionLabel,
@@ -79,6 +81,47 @@ describe('extractClaudeName', () => {
   test('returns null for empty name after ✳', () => {
     expect(extractClaudeName('✳ ')).toBeNull();
     expect(extractClaudeName('✳')).toBeNull();
+  });
+
+  describe('extractPiTitleName', () => {
+    // Caller gates to identified pi panes; these shapes come from pi core
+    // (`π - name - dir`, unnamed `π - dir`) and the session-name package
+    // (unnamed `π — dir`, named titleFormat like `{summary}` or `{summary} — {dir}`).
+    test("reads the name from pi's built-in title format", () => {
+      expect(extractPiTitleName('π - Diagnose GitHub issue #73 - arc', '/Users/n/dev/arc')).toBe(
+        'Diagnose GitHub issue #73',
+      );
+    });
+
+    test('unnamed titles yield null in both dash styles', () => {
+      expect(extractPiTitleName('π - arc', '/Users/n/dev/arc')).toBeNull();
+      expect(extractPiTitleName('π — arc', '/Users/n/dev/arc')).toBeNull();
+      expect(extractPiTitleName('π', '/Users/n/dev/arc')).toBeNull();
+    });
+
+    test('splits on the cwd basename so names containing the separator survive', () => {
+      expect(extractPiTitleName('π - Fix - arc - arc', '/x/arc')).toBe('Fix - arc');
+    });
+
+    test('a name equal to the dir still parses', () => {
+      expect(extractPiTitleName('π - arc - arc', '/x/arc')).toBe('arc');
+    });
+
+    test("bare {summary} titles are trusted whole (pi-pane gating is the caller's job)", () => {
+      expect(extractPiTitleName('Thermo-nuclear code quality review', '/x/riker')).toBe(
+        'Thermo-nuclear code quality review',
+      );
+      // Non-pi-looking titles too — the caller only invokes this for pi panes.
+      expect(extractPiTitleName('✳ Fix auth bug', '/x/arc')).toBe('✳ Fix auth bug');
+    });
+
+    test('the {summary} — {dir} package format strips the dir suffix', () => {
+      expect(extractPiTitleName('Fix auth — arc', '/x/arc')).toBe('Fix auth');
+    });
+
+    test('a leading braille spinner frame is stripped', () => {
+      expect(extractPiTitleName('⠋ π - Fix auth - arc', '/x/arc')).toBe('Fix auth');
+    });
   });
 
   test('trims whitespace', () => {
@@ -159,6 +202,19 @@ describe('windowLabel', () => {
   });
 });
 
+describe('agentSessionName', () => {
+  test('prefers the hook-provided agent name over the pane-title name', () => {
+    expect(agentSessionName({ ...base, agentName: 'Refactor auth module', claudeName: 'Fix auth bug' })).toBe(
+      'Refactor auth module',
+    );
+  });
+
+  test('falls back to claudeName, then null', () => {
+    expect(agentSessionName({ ...base, claudeName: 'Fix auth bug' })).toBe('Fix auth bug');
+    expect(agentSessionName(base)).toBeNull();
+  });
+});
+
 describe('displayName', () => {
   test('returns claudeName when set', () => {
     expect(displayName({ ...base, claudeName: 'Fix auth bug' })).toBe('Fix auth bug');
@@ -174,6 +230,13 @@ describe('displayName', () => {
 
   test('claudeName is used when customName is null', () => {
     expect(displayName({ ...base, customName: null, claudeName: 'Fix auth bug' })).toBe('Fix auth bug');
+  });
+
+  test('agentName wins over claudeName and session, loses to customName', () => {
+    expect(displayName({ ...base, agentName: 'Refactor auth module', claudeName: 'Fix auth bug' })).toBe(
+      'Refactor auth module',
+    );
+    expect(displayName({ ...base, customName: 'prod hotfix', agentName: 'Refactor auth module' })).toBe('prod hotfix');
   });
 });
 

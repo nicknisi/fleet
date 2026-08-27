@@ -14,10 +14,26 @@ EVENT="${1:-}"
 export FLEET_STATUS_DIR="${FLEET_STATUS_DIR:-${HOME}/.cache/codex-status}"
 . "$(dirname "$0")/../lib.sh" # ../ -> hooks/lib.sh; sets FLEET_STATUS_FILE etc.
 
+# Codex names every thread (auto-generated after the first prompt, renameable
+# in the TUI) and records it in session_index.jsonl — the hook payload's
+# session_id joins against it. Empty when the thread isn't named yet; lib.sh
+# then preserves whatever name an earlier write stored.
+fleet_codex_thread_name() {
+  local sid index
+  sid=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null) || return 0
+  [ -n "$sid" ] || return 0
+  index="${CODEX_HOME:-$HOME/.codex}/session_index.jsonl"
+  [ -f "$index" ] || return 0
+  # Last match wins: codex appends a fresh entry on rename rather than editing
+  # in place.
+  jq -r --arg id "$sid" 'select(.id == $id) | .thread_name // empty' "$index" 2>/dev/null | tail -n 1
+}
+FLEET_NAME=$(fleet_codex_thread_name)
+
 case "$EVENT" in
   PreToolUse)
     TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
-    fleet_write_status "working" "$TOOL"
+    fleet_write_status "working" "$TOOL" "$FLEET_NAME"
     fleet_append_event "PreToolUse" "tool" "\"$TOOL\""
     ;;
   Stop)
@@ -26,7 +42,7 @@ case "$EVENT" in
     TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
     fleet_append_event "Stop" "stop_reason" "\"$STOP_REASON\"" "background_tasks" "$BG_TASKS"
     if [ "$STOP_REASON" = "tool_use" ] || [ "$BG_TASKS" = "true" ]; then
-      fleet_write_status "working" "$TOOL"
+      fleet_write_status "working" "$TOOL" "$FLEET_NAME"
     else
       # Debounced done: a new turn within 3s rewrites .status with a fresh ts, so
       # the ts-equality check cancels this stale done (same guard as stop.sh).
@@ -35,7 +51,7 @@ case "$EVENT" in
         if [ -f "$FLEET_STATUS_FILE" ]; then
           CURRENT_TS=$(jq -r '.ts // 0' "$FLEET_STATUS_FILE" 2>/dev/null)
           if [ "$CURRENT_TS" = "$FLEET_TS" ]; then
-            fleet_write_status "done" "$TOOL"
+            fleet_write_status "done" "$TOOL" "$FLEET_NAME"
             fleet_notify "done" "$FLEET_SESSION" "$FLEET_PANE_ID" "$TOOL" >/dev/null 2>&1
           fi
         fi

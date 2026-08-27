@@ -40,7 +40,7 @@ export interface AgentView {
   windowLabel: string; // window-first display label
   session: string; // tmux session name
   sessionLabel: string; // session:window display label
-  label: string; // primary display name (rename > claude name > session)
+  label: string; // primary display name (rename > agent session name > claude name > session)
   agentType: string; // 'claude' | 'codex' | ... | '' for a shell pane
   tracking: 'hook' | 'discovery' | 'shell';
   status: AgentStatus; // fused final state
