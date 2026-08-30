@@ -1,6 +1,6 @@
 import { TuiMode, type TuiApp } from './app.ts';
 import { renderHeader, renderSessionList, renderFooter } from './dashboard.ts';
-import { renderPreview } from './preview.ts';
+import { renderPreviewWithCursor, type PreviewRender } from './preview.ts';
 import { renderSendMode } from './send.ts';
 import { renderRenameMode } from './rename.ts';
 import { renderKillConfirm } from './kill.ts';
@@ -33,6 +33,10 @@ export function render(app: TuiApp, size: TerminalSize): string {
   // (the fill loop below), so no row can carry a stale previous frame.
   const contentRows = rows - headerLines.length - footerLines.length;
   let linesWritten = 0;
+  // Absolute (1-indexed) screen position of the passthrough caret, applied at
+  // the end of the frame. null → hide the hardware cursor (every non-passthrough
+  // frame), so the caret only ever shows where you're actually typing.
+  let cursorPos: { line: number; col: number } | null = null;
 
   // SEND/RENAME/CONFIRM_KILL share one modal shape: a spacer, then the modal's
   // lines. null = not a modal mode (or nothing selected — fill loop blanks it).
@@ -77,7 +81,21 @@ export function render(app: TuiApp, size: TerminalSize): string {
     linesWritten++;
     // contentRows - 1: the spacer above consumed one content row.
     const sessionLines = renderSessionList(app, contentRows - 1, listWidth);
-    const previewLines = selected ? renderPreview(selected, previewWidth, contentRows - 1, isPassthrough) : [];
+    const emptyPreview: PreviewRender = { lines: [], cursor: null };
+    const preview = selected
+      ? renderPreviewWithCursor(selected, previewWidth, contentRows - 1, isPassthrough)
+      : emptyPreview;
+    const previewLines = preview.lines;
+    // Map the preview-relative caret to an absolute screen cell. Preview array
+    // index r renders at screen line (headerLines.length + 2 + r) — one header
+    // block, then the spacer row consumed by the split loop. The caret sits in
+    // the preview column, which starts one past the divider at listWidth + 2.
+    if (isPassthrough && preview.cursor) {
+      cursorPos = {
+        line: headerLines.length + 2 + preview.cursor.row,
+        col: listWidth + 2 + preview.cursor.col,
+      };
+    }
 
     for (let row = 0; row < contentRows - 1; row++) {
       const sessionLine = sessionLines[row] ?? '';
@@ -88,7 +106,12 @@ export function render(app: TuiApp, size: TerminalSize): string {
       // like nerd-font icons in window names, shifting the divider per row.
       const sessionVis = visibleLength(sessionLine);
       if (sessionVis < listWidth) out.push(' '.repeat(listWidth - sessionVis));
-      out.push(app.dragging ? `${C.cyan}│${C.reset}` : `${C.gray}│${C.reset}`);
+      // Divider affordance: a dim thin line at rest, a bright heavy line the
+      // moment the cursor enters the grab zone (hover) or a drag is underway —
+      // the glyph visibly thickens so users can tell the line is draggable.
+      if (app.dragging) out.push(`${C.cyanBold}┃${C.reset}`);
+      else if (app.hoverDivider) out.push(`${C.cyan}┃${C.reset}`);
+      else out.push(`${C.gray}│${C.reset}`);
       out.push(previewLine);
       // Preview content is untrusted captured pane ANSI and may leave an open
       // SGR (e.g. a diff line's background). Seal the boundary with a literal
@@ -123,6 +146,12 @@ export function render(app: TuiApp, size: TerminalSize): string {
     out.push(footerLines[i]!);
     out.push('\x1b[K');
   }
+
+  // Caret: show the hardware cursor at the passthrough typing position, or hide
+  // it (idempotent) on every other frame. Last write wins over the footer's
+  // trailing cursor position.
+  if (cursorPos) out.push(`\x1b[${cursorPos.line};${cursorPos.col}H\x1b[?25h`);
+  else out.push('\x1b[?25l');
 
   return out.join('');
 }
