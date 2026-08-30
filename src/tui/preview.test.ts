@@ -1,20 +1,30 @@
 import { describe, expect, test, beforeAll, mock } from 'bun:test';
 import { previewActions } from './preview.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
+import type { AlignedCapture } from '../tmux/sessions.ts';
 import { disableColors } from '../terminal/colors.ts';
 
 disableColors();
 
-// capturePane reads real tmux; mock it so renderPreview is deterministic.
+// tmux reads real panes; mock them so preview rendering is deterministic. The
+// aligned capture + cursor drive the passthrough caret; tests mutate these.
+let alignedCap: AlignedCapture = { lines: ['l0', 'l1', 'l2'], droppedTop: 0 };
+let paneCursorValue: { x: number; y: number } | null = { x: 0, y: 0 };
 mock.module('../tmux/sessions.ts', () => ({
   capturePane: () => ['pane content'],
+  capturePaneAligned: () => alignedCap,
+  paneCursor: () => paneCursorValue,
 }));
 
 let renderPreview: typeof import('./preview.ts').renderPreview;
+let renderPreviewWithCursor: typeof import('./preview.ts').renderPreviewWithCursor;
 let captureForPreview: typeof import('./preview.ts').captureForPreview;
+let invalidatePreviewCache: typeof import('./preview.ts').invalidatePreviewCache;
 
 beforeAll(async () => {
-  ({ renderPreview, captureForPreview } = await import('./preview.ts'));
+  ({ renderPreview, renderPreviewWithCursor, captureForPreview, invalidatePreviewCache } = await import(
+    './preview.ts'
+  ));
 });
 
 const makeState = (status: AgentStatus): AgentState => ({
@@ -73,6 +83,30 @@ describe('renderPreview title', () => {
     const lines = renderPreview({ ...makeState(AgentStatus.DONE), window: 'test' }, 80, 20);
     expect(lines[0]).toContain('test · READY');
     expect(lines[0]).not.toContain('[');
+  });
+});
+
+describe('renderPreviewWithCursor passthrough caret', () => {
+  test('maps cursor_y through droppedTop onto a preview row (after title+separator)', () => {
+    alignedCap = { lines: ['l0', 'l1', 'l2', 'l3'], droppedTop: 5 };
+    paneCursorValue = { x: 7, y: 6 }; // 6 - 5 = content row 1
+    invalidatePreviewCache('%1');
+    const { cursor } = renderPreviewWithCursor(makeState(AgentStatus.BUSY), 80, 20, true);
+    // row = CONTENT_ROW_OFFSET(2) + contentRow(1); col = cursor_x
+    expect(cursor).toEqual({ row: 3, col: 7 });
+  });
+
+  test('returns no caret when the pane cursor is above the shown window', () => {
+    alignedCap = { lines: ['l0', 'l1'], droppedTop: 5 };
+    paneCursorValue = { x: 0, y: 2 }; // 2 - 5 < 0 → off-screen
+    invalidatePreviewCache('%1');
+    const { cursor } = renderPreviewWithCursor(makeState(AgentStatus.BUSY), 80, 20, true);
+    expect(cursor).toBeNull();
+  });
+
+  test('non-passthrough preview never carries a caret', () => {
+    const { cursor } = renderPreviewWithCursor(makeState(AgentStatus.DONE), 80, 20, false);
+    expect(cursor).toBeNull();
   });
 });
 

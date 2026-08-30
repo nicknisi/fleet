@@ -1,5 +1,6 @@
 import { TuiApp, TuiMode } from './src/tui/app.ts';
 import { render } from './src/tui/render.ts';
+import { invalidatePreviewCache } from './src/tui/preview.ts';
 import { paneTitle, renderFooter, renderHeader, stateAtLine } from './src/tui/dashboard.ts';
 import { canSendTo } from './src/tui/send.ts';
 import { canKillSession } from './src/tui/kill.ts';
@@ -49,6 +50,16 @@ import { existsSync } from 'node:fs';
 
 const FAST_REFRESH_MS = 500;
 const SLOW_REFRESH_MS = 5000;
+// Passthrough forwards keys to the live pane; a 500ms preview repaint makes the
+// echo feel laggy. While in passthrough, repaint the preview at this faster
+// cadence (invalidating the capture cache each tick) so keystrokes and streaming
+// output track in near real time. Only runs while passthrough is active, so idle
+// dashboards keep the cheap 500ms cadence.
+const PASSTHROUGH_REFRESH_MS = 90;
+// Half-width (in columns) of the divider grab zone. The divider is 1 column, but
+// requiring a pixel-perfect press on it is hard to hit; ±3 gives a 7-column
+// target while staying clear of the row-click regions on either side.
+const DIVIDER_GRAB = 3;
 
 function handleFilterInput(
   app: TuiApp,
@@ -297,6 +308,8 @@ async function launchTui(): Promise<number> {
     // replay below fires synchronously before the timers are armed, and a
     // quit key there would otherwise hit the const in its temporal dead zone.
     let slowTimer: ReturnType<typeof setInterval> | null = null;
+    // Live preview repaint, armed only while in passthrough (see tick()).
+    let passthroughTimer: ReturnType<typeof setInterval> | null = null;
     let finished = false;
 
     // Control-mode fast path: one long-lived `tmux -C` child replaces a fork
@@ -327,6 +340,7 @@ async function launchTui(): Promise<number> {
       finished = true;
       if (refreshTimer !== null) clearInterval(refreshTimer);
       if (slowTimer !== null) clearInterval(slowTimer);
+      if (passthroughTimer !== null) clearInterval(passthroughTimer);
       if (watcherTimeout !== null) clearTimeout(watcherTimeout);
       stopWatching();
       process.stdin.removeAllListeners('data');
@@ -339,11 +353,37 @@ async function launchTui(): Promise<number> {
       resolve(code);
     };
 
+    // Arm/disarm the live preview repaint to match passthrough mode. Each tick
+    // drops the selected pane's capture cache and forces a draw, so the preview
+    // reflects keystroke echo and streaming output within ~90ms instead of
+    // waiting on the 500ms fast timer. Torn down the moment passthrough exits.
+    const syncPassthroughTimer = () => {
+      const active = app.mode === TuiMode.PASSTHROUGH;
+      if (active && passthroughTimer === null && !finished) {
+        passthroughTimer = setInterval(() => {
+          if (finished || app.mode !== TuiMode.PASSTHROUGH) {
+            if (passthroughTimer !== null) {
+              clearInterval(passthroughTimer);
+              passthroughTimer = null;
+            }
+            return;
+          }
+          const sel = app.selectedState();
+          if (sel) invalidatePreviewCache(sel.paneId);
+          draw();
+        }, PASSTHROUGH_REFRESH_MS);
+      } else if (!active && passthroughTimer !== null) {
+        clearInterval(passthroughTimer);
+        passthroughTimer = null;
+      }
+    };
+
     const tick = () => {
       if (needsRender) {
         draw();
         needsRender = false;
       }
+      syncPassthroughTimer();
       if (app.shouldQuit) finish(0);
     };
 
@@ -368,10 +408,12 @@ async function launchTui(): Promise<number> {
           return stateAtLine(app, lineIdx, contentRows, listCols);
         };
 
-        // Divider drag (preview / passthrough)
+        // Divider drag (preview / passthrough). The grab zone is wider than the
+        // 1-column divider so the press doesn't have to land exactly on the line
+        // — anything within DIVIDER_GRAB columns either side starts the drag.
         if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
           const dividerCol = app.listWidth(sz.cols) + 1;
-          if (mouse.button === 'left' && mouse.type === 'press' && Math.abs(mouse.x - dividerCol) <= 1) {
+          if (mouse.button === 'left' && mouse.type === 'press' && Math.abs(mouse.x - dividerCol) <= DIVIDER_GRAB) {
             app.startDrag();
             needsRender = true;
             return;
@@ -388,13 +430,19 @@ async function launchTui(): Promise<number> {
           }
         }
 
-        // Hover highlight — underline the row under the cursor. Any-event mouse
-        // tracking (?1003) streams motion constantly, so only re-render when the
-        // hovered pane actually changes; parking the cursor costs nothing.
+        // Hover highlight — underline the row under the cursor, and (in a split
+        // view) light up the divider when the cursor is over its grab zone so it
+        // reads as draggable. Any-event mouse tracking (?1003) streams motion
+        // constantly, so only re-render when the hovered pane or divider state
+        // actually changes; parking the cursor costs nothing.
         if (mouse.type === 'move' && !app.dragging) {
           const id = listHit(mouse.x, mouse.y)?.paneId ?? null;
-          if (id !== app.hoverPaneId) {
+          const splitView = app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH;
+          const overDivider =
+            splitView && Math.abs(mouse.x - (app.listWidth(sz.cols) + 1)) <= DIVIDER_GRAB;
+          if (id !== app.hoverPaneId || overDivider !== app.hoverDivider) {
             app.hoverPaneId = id;
+            app.hoverDivider = overDivider;
             needsRender = true;
           }
           return;
