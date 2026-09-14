@@ -1,12 +1,18 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AgentStatus, type AgentState } from '../state/types.ts';
+import * as ipc from '../tmux/ipc.ts';
 import {
   buildInjectCommands,
   buildRemoveCommands,
   buildRollupEnableCommands,
+  chipSeparator,
+  FOCUS_HOOK_ACTION,
+  injectedFrom,
+  parseChipSeparator,
+  parseOwnsRow,
   STATUS_ROW1_FORMAT,
   WINDOW_STATUS_FORMAT,
   WINDOW_STATUS_CURRENT_FORMAT,
@@ -162,13 +168,13 @@ describe('buildInjectCommands', () => {
     expect(cmds.some((c) => c.some((a) => a.includes('@fleet_rollup')))).toBe(false);
   });
 
-  test('bind uses MouseDown1Status with if-shell guard for row 1 only', () => {
+  test('bind uses MouseDown1Status with an if-shell guard on the range name', () => {
     const cmds = buildInjectCommands();
     const bindCmd = cmds.find((c) => c[1] === 'bind' && c.includes('MouseDown1Status'));
     expect(bindCmd).toBeDefined();
     expect(bindCmd).toContain('MouseDown1Status');
     expect(bindCmd).toContain('if-shell');
-    const condArg = bindCmd!.find((a) => a.includes('mouse_status_line'));
+    const condArg = bindCmd!.find((a) => a.includes('mouse_status_range'));
     expect(condArg).toBeDefined();
     const trueArg = bindCmd!.find((a) => a.includes('fleet switch'));
     expect(trueArg).toBeDefined();
@@ -176,13 +182,19 @@ describe('buildInjectCommands', () => {
     expect(falseArg).toBeDefined();
   });
 
-  test('left-click guard fires on any non-empty range so the clear chip routes too', () => {
+  test('left-click guard matches pane ids and __sentinel__ chips, on any row', () => {
     const cmds = buildInjectCommands();
     const bindCmd = cmds.find((c) => c[1] === 'bind' && c.includes('MouseDown1Status'));
-    const condArg = bindCmd!.find((a) => a.includes('mouse_status_line'));
-    // Must not be restricted to pane-id ranges (%*) anymore.
-    expect(condArg).not.toContain('%*');
-    expect(condArg).toContain('mouse_status_range');
+    const condArg = bindCmd!.find((a) => a.includes('mouse_status_range'))!;
+    // Agent chips are pane ids (%N — matched by shape, since a literal % is a
+    // strftime conversion in tmux formats); the sidebar and clear-all chips are
+    // __sentinels__.
+    expect(condArg).toContain('^.[0-9]+$');
+    expect(condArg).not.toContain('%');
+    expect(condArg).toContain('__*');
+    // A user who mounts the chips on a one-row bar must still get clicks: the
+    // guard must not care which status row the click landed on.
+    expect(condArg).not.toContain('mouse_status_line');
   });
 
   test('binds MouseDown3Status (right-click) to fleet ack with the same guard', () => {
@@ -190,10 +202,93 @@ describe('buildInjectCommands', () => {
     const ackBind = cmds.find((c) => c[1] === 'bind' && c.includes('MouseDown3Status'));
     expect(ackBind).toBeDefined();
     expect(ackBind).toContain('if-shell');
-    const condArg = ackBind!.find((a) => a.includes('mouse_status_line'));
-    expect(condArg).toBeDefined();
+    const leftGuard = cmds
+      .find((c) => c[1] === 'bind' && c.includes('MouseDown1Status'))!
+      .find((a) => a.includes('mouse_status_range'));
+    const condArg = ackBind!.find((a) => a.includes('mouse_status_range'));
+    expect(condArg).toBe(leftGuard);
     const trueArg = ackBind!.find((a) => a.includes('fleet ack'));
     expect(trueArg).toBeDefined();
+  });
+
+  test('without the row: no status/status-format[1], bindings and hook only', () => {
+    const cmds = buildInjectCommands(false);
+    expect(cmds).toHaveLength(4);
+    expect(cmds.some((c) => c[3] === 'status')).toBe(false);
+    expect(cmds.some((c) => c[3] === 'status-format[1]')).toBe(false);
+    expect(cmds.filter((c) => c[1] === 'bind')).toHaveLength(2);
+    expect(cmds.some((c) => c[1] === 'set-hook')).toBe(true);
+  });
+});
+
+describe('parseOwnsRow', () => {
+  test('unset, 1, on keep the default second row', () => {
+    expect(parseOwnsRow(null)).toBe(true);
+    expect(parseOwnsRow('1')).toBe(true);
+    expect(parseOwnsRow('on')).toBe(true);
+    expect(parseOwnsRow('anything')).toBe(true);
+  });
+
+  test('none / off / 0 / false opt out', () => {
+    expect(parseOwnsRow('none')).toBe(false);
+    expect(parseOwnsRow('NONE')).toBe(false);
+    expect(parseOwnsRow('off')).toBe(false);
+    expect(parseOwnsRow('0')).toBe(false);
+    expect(parseOwnsRow(' false ')).toBe(false);
+  });
+});
+
+describe('parseChipSeparator', () => {
+  test('unset → the default │', () => {
+    expect(parseChipSeparator(null)).toBe('│');
+  });
+
+  test('none / off / empty → no separator', () => {
+    expect(parseChipSeparator('none')).toBeNull();
+    expect(parseChipSeparator('OFF')).toBeNull();
+    expect(parseChipSeparator('')).toBeNull();
+    expect(parseChipSeparator('   ')).toBeNull();
+  });
+
+  test('anything else is used verbatim, trimmed', () => {
+    expect(parseChipSeparator('·')).toBe('·');
+    expect(parseChipSeparator(' ❖ ')).toBe('❖');
+  });
+});
+
+describe('chipSeparator', () => {
+  test('distinguishes an unset tmux option from an explicitly empty one', () => {
+    const read = spyOn(ipc, 'tmux');
+    try {
+      read.mockReturnValue({ exitCode: 1, stdout: '', stderr: 'invalid option' });
+      expect(chipSeparator()).toBe('│');
+      read.mockReturnValue({ exitCode: 0, stdout: '\n', stderr: '' });
+      expect(chipSeparator()).toBeNull();
+      read.mockReturnValue({ exitCode: 0, stdout: '·\n', stderr: '' });
+      expect(chipSeparator()).toBe('·');
+      expect(read).toHaveBeenLastCalledWith(['show', '-gv', '@fleet_chip_separator']);
+    } finally {
+      read.mockRestore();
+    }
+  });
+});
+
+describe('injectedFrom', () => {
+  const row = { status: '2', format: STATUS_ROW1_FORMAT };
+
+  test('with the row: needs status 2, the exact row format, and the hook', () => {
+    expect(injectedFrom(FOCUS_HOOK_ACTION, row)).toBe(true);
+    expect(injectedFrom(FOCUS_HOOK_ACTION, { status: 'on', format: STATUS_ROW1_FORMAT })).toBe(false);
+    expect(injectedFrom(FOCUS_HOOK_ACTION, { status: '2', format: '#[align=left]stale' })).toBe(false);
+    expect(injectedFrom(null, row)).toBe(false);
+  });
+
+  test('without the row: the hook alone decides', () => {
+    // A user who reset `status` to one row after the inject line must not make
+    // every reload re-run the full inject (which rebinds the mouse under them).
+    expect(injectedFrom(FOCUS_HOOK_ACTION, null)).toBe(true);
+    expect(injectedFrom(null, null)).toBe(false);
+    expect(injectedFrom('something else', null)).toBe(false);
   });
 });
 
@@ -210,6 +305,13 @@ describe('buildRemoveCommands', () => {
       ['tmux', 'set', '-g', '-u', 'window-status-current-format'],
       ['tmux', 'set', '-g', '-u', '@fleet_rollup'],
     ]);
+  });
+
+  test('without the row: leaves status and status-format[1] alone', () => {
+    const cmds = buildRemoveCommands(false);
+    expect(cmds.some((c) => c[3] === 'status' || c[4] === 'status-format[1]')).toBe(false);
+    expect(cmds.filter((c) => c[1] === 'unbind')).toHaveLength(2);
+    expect(cmds.some((c) => c[1] === 'set-hook')).toBe(true);
   });
 
   test('removes only our indexed focus hook, leaving focus-events untouched', () => {

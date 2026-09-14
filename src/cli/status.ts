@@ -36,11 +36,16 @@ export function formatAge(ts: number): string {
 // this whole path is built around.
 const SIDEBAR_BUTTON = `#[range=user|${SIDEBAR_RANGE}]#[fg=cyan] ☰ #[norange]`;
 
+// What sits between agent chips. The default is a dim bar; users whose status
+// bars have no dividers set `@fleet_chip_separator` (read by the callers, see
+// statusline.ts) — `none` drops the glyph and leaves a two-space gap.
+export const DEFAULT_CHIP_SEPARATOR = '│';
+
 // These chips must keep reaching tmux as #() job output, never inlined into
 // status-format as a literal: tmux strftime-expands the format string itself, so
 // a literal `range=user|%42` registers as `42` (%4 is an unknown conversion) and
 // every click resolves to the wrong target. Job output skips that pass.
-export function formatStatusLine(states: AgentState[]): string {
+export function formatStatusLine(states: AgentState[], separator: string | null = DEFAULT_CHIP_SEPARATOR): string {
   // The status line is for agents whose turn it is for you to act on: waiting on
   // a permission prompt (PERMIT), asking a question (QUESTION), or finished and
   // waiting on your next move (DONE/ready). Working and idle agents don't need
@@ -77,7 +82,8 @@ export function formatStatusLine(states: AgentState[]): string {
     entries.push(`#[range=user|${ACK_ALL_RANGE}]#[fg=brightblack]✕ clear#[norange]`);
   }
 
-  return SIDEBAR_BUTTON + entries.join(' #[fg=brightblack]│ ');
+  const joiner = separator === null ? '  ' : ` #[fg=brightblack]${separator} `;
+  return SIDEBAR_BUTTON + entries.join(joiner);
 }
 
 export function formatPlainStatus(states: AgentState[], session: string): string {

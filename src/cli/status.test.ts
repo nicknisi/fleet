@@ -114,6 +114,35 @@ describe('formatStatusLine', () => {
     expect(result).not.toContain('│');
   });
 
+  test('separates chips with a dim │ by default', () => {
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, window: 'permit-w' }),
+      makeState({ status: AgentStatus.QUESTION, window: 'question-w', paneId: '%2' }),
+    ];
+    expect(formatStatusLine(states)).toContain(' #[fg=brightblack]│ ');
+  });
+
+  test('a custom separator replaces the │', () => {
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, window: 'permit-w' }),
+      makeState({ status: AgentStatus.QUESTION, window: 'question-w', paneId: '%2' }),
+    ];
+    const result = formatStatusLine(states, '·');
+    expect(result).toContain(' #[fg=brightblack]· ');
+    expect(result).not.toContain('│');
+  });
+
+  test('a null separator leaves a two-space gap and no divider styling', () => {
+    const states = [
+      makeState({ status: AgentStatus.PERMIT, window: 'permit-w' }),
+      makeState({ status: AgentStatus.QUESTION, window: 'question-w', paneId: '%2' }),
+    ];
+    const result = formatStatusLine(states, null);
+    expect(result).not.toContain('│');
+    expect(result).not.toContain('brightblack]');
+    expect(result).toContain('#[norange]  #[range=user|%2]');
+  });
+
   test('anchors the sidebar button leftmost, ahead of every agent chip', () => {
     const states = [
       makeState({ status: AgentStatus.PERMIT, window: 'permit-w' }),
