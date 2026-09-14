@@ -405,6 +405,12 @@ suite('send', () => {
 });
 
 suite('raw passthrough input', () => {
+  const largeInput = Buffer.concat([
+    Buffer.alloc(1023, 0x61),
+    Buffer.from('é'),
+    ...Array.from({ length: 15 }, (_, i) => Buffer.alloc(1024, 0x62 + i)),
+    Buffer.from(' tail 🐈'),
+  ]);
   const cases: Array<[string, Buffer[]]> = [
     ['plain text', [Buffer.from('hello')]],
     ['Shift-Left', [Buffer.from('\x1b[1;2D')]],
@@ -418,25 +424,30 @@ suite('raw passthrough input', () => {
     ['bracketed paste', [Buffer.from('\x1b[200~two\nlines\x1b[201~')]],
     ['extended key encoding', [Buffer.from('\x1b[57350;2u')]],
     ['UTF-8 split across reads', [Buffer.from([0xc3]), Buffer.from([0xa9])]],
-    ['large input read', [Buffer.alloc(16 * 1024, 0x61)]],
+    ['large input with split UTF-8 and a short tail', [largeInput]],
+    ['large run of control keys', [Buffer.alloc(2049, 0x09)]],
   ];
+
+  async function inputReceiver(prefix = ''): Promise<{ pane: string; output: string }> {
+    const { pane } = newSession();
+    const output = join(root, `input-${sessionSeq}.bin`);
+    const receiver = join(root, 'input-receiver.cjs');
+    writeFileSync(output, '');
+    writeFileSync(
+      receiver,
+      "const fs = require('node:fs');\n" +
+        'process.stdin.setRawMode(true);\n' +
+        "process.stdin.on('data', data => fs.appendFileSync(process.argv[2], data));\n" +
+        `process.stdout.write(${JSON.stringify(prefix + 'INPUT_READY')});\n`,
+    );
+    expect(tm(['respawn-pane', '-k', '-t', pane, process.execPath, receiver, output]).code).toBe(0);
+    expect(await waitForScreen(pane, 'INPUT_READY')).toBe(true);
+    return { pane, output };
+  }
 
   for (const [name, chunks] of cases) {
     test(`delivers every byte of ${name}`, async () => {
-      const { pane } = newSession();
-      const output = join(root, `input-${sessionSeq}.bin`);
-      const receiver = join(root, 'input-receiver.cjs');
-      writeFileSync(output, '');
-      writeFileSync(
-        receiver,
-        "const fs = require('node:fs');\n" +
-          'process.stdin.setRawMode(true);\n' +
-          "process.stdin.on('data', data => fs.appendFileSync(process.argv[2], data));\n" +
-          "process.stdout.write('INPUT_READY');\n",
-      );
-      expect(tm(['respawn-pane', '-k', '-t', pane, process.execPath, receiver, output]).code).toBe(0);
-      expect(await waitForScreen(pane, 'INPUT_READY')).toBe(true);
-
+      const { pane, output } = await inputReceiver();
       const bytes = Buffer.concat(chunks);
       for (const chunk of chunks) sendRawKey(pane, chunk);
       const deadline = Date.now() + 1000;
@@ -444,6 +455,25 @@ suite('raw passthrough input', () => {
       expect(readFileSync(output).toString('hex')).toBe(bytes.toString('hex'));
     });
   }
+
+  test('preserves application cursor mode for coalesced named arrows', async () => {
+    const { pane, output } = await inputReceiver('\x1b[?1h');
+    expect(tmOut(['display-message', '-p', '-t', pane, '#{keypad_cursor_flag}'])).toBe('1');
+    sendRawKey(pane, Buffer.from('\x1b[A\x1b[B'));
+    const deadline = Date.now() + 1000;
+    while (readFileSync(output).length < 6 && Date.now() < deadline) await sleep(20);
+    expect(readFileSync(output).toString('hex')).toBe('1b4f411b4f42');
+  });
+
+  test('a named arrow navigates copy mode without dismissing it', async () => {
+    const { pane } = await inputReceiver('history line\r\n'.repeat(80));
+    expect(tm(['copy-mode', '-t', pane]).code).toBe(0);
+    const before = Number(tmOut(['display-message', '-p', '-t', pane, '#{copy_cursor_y}']));
+    expect(before).toBeGreaterThan(0);
+    sendRawKey(pane, Buffer.from('\x1b[A'));
+    expect(tmOut(['display-message', '-p', '-t', pane, '#{pane_in_mode}'])).toBe('1');
+    expect(Number(tmOut(['display-message', '-p', '-t', pane, '#{copy_cursor_y}']))).toBe(before - 1);
+  });
 });
 
 suite('approve (permit-key resolution + transport)', () => {

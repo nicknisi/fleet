@@ -24,15 +24,49 @@ export function sendKeyNames(paneId: string, keys: string[]): void {
   }
 }
 
-const RAW_KEY_CHUNK_SIZE = 1024;
+const KEYS_PER_COMMAND = 1024;
+const SPECIAL_KEY_NAMES = new Map<number, string>([
+  [0x0d, 'Enter'],
+  [0x7f, 'BSpace'],
+  [0x09, 'Tab'],
+]);
+const ARROW_NAMES = new Map<number, string>([
+  [0x41, 'Up'],
+  [0x42, 'Down'],
+  [0x43, 'Right'],
+  [0x44, 'Left'],
+]);
 
 export function sendRawKey(paneId: string, data: Buffer): void {
-  // Decoding only the first key can turn a modified arrow into Escape or
-  // discard coalesced keys. Hex mode preserves every byte, including UTF-8
-  // characters split across separate terminal reads.
-  // Bound each command so large reads fit within tmux's message size limit.
-  for (let offset = 0; offset < data.length; offset += RAW_KEY_CHUNK_SIZE) {
-    const chunk = data.subarray(offset, offset + RAW_KEY_CHUNK_SIZE);
+  // Keep tmux's encoding for recognized leading keys: named arrows work in
+  // copy mode and adapt to the target's application cursor mode. Consume the
+  // whole recognized prefix rather than dropping everything after its first key.
+  let offset = 0;
+  while (offset < data.length) {
+    const keys: string[] = [];
+    while (offset < data.length && keys.length < KEYS_PER_COMMAND) {
+      const first = data[offset]!;
+      const third = data[offset + 2];
+      const arrow =
+        first === 0x1b && data[offset + 1] === 0x5b && third !== undefined ? ARROW_NAMES.get(third) : undefined;
+      const key =
+        arrow ??
+        SPECIAL_KEY_NAMES.get(first) ??
+        (first >= 0x01 && first <= 0x1a ? `C-${String.fromCharCode(first + 0x60)}` : undefined);
+      if (key === undefined) break;
+      keys.push(key);
+      offset += arrow === undefined ? 1 : 3;
+    }
+    if (keys.length === 0) break;
+    tmuxOrThrow(['send-keys', '-t', paneId, '--', ...keys], 'send-keys named keys failed');
+  }
+
+  // Forward the rest unchanged. In particular, an unrecognized escape
+  // sequence must not become a bare Escape, and partial UTF-8 must not be
+  // decoded. Leave escape/paste payloads opaque after this point.
+  // Bound both paths so large reads fit within tmux's message size limit.
+  for (; offset < data.length; offset += KEYS_PER_COMMAND) {
+    const chunk = data.subarray(offset, offset + KEYS_PER_COMMAND);
     tmuxOrThrow(
       ['send-keys', '-t', paneId, '-H', ...Array.from(chunk, (byte) => byte.toString(16).padStart(2, '0'))],
       'send-keys raw bytes failed',
