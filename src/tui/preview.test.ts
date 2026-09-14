@@ -1,21 +1,17 @@
-import { describe, expect, test, beforeAll, mock } from 'bun:test';
-import { previewActions } from './preview.ts';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { previewActions, renderPreview, captureForPreview } from './preview.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 import { disableColors } from '../terminal/colors.ts';
+import * as tmuxSessions from '../tmux/sessions.ts';
 
 disableColors();
 
-// capturePane reads real tmux; mock it so renderPreview is deterministic.
-mock.module('../tmux/sessions.ts', () => ({
-  capturePane: () => ['pane content'],
-}));
-
-let renderPreview: typeof import('./preview.ts').renderPreview;
-let captureForPreview: typeof import('./preview.ts').captureForPreview;
-
-beforeAll(async () => {
-  ({ renderPreview, captureForPreview } = await import('./preview.ts'));
+// Stub only capturePane and restore it after each test.
+let captureSpy: ReturnType<typeof spyOn<typeof tmuxSessions, 'capturePane'>>;
+beforeEach(() => {
+  captureSpy = spyOn(tmuxSessions, 'capturePane').mockReturnValue(['pane content']);
 });
+afterEach(() => captureSpy.mockRestore());
 
 const makeState = (status: AgentStatus): AgentState => ({
   paneId: '%1',
