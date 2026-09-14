@@ -1,5 +1,5 @@
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, utimesSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cacheFilePath, readFreshSegmentCache, writeSegmentCache } from './segment-cache.ts';
@@ -17,7 +17,9 @@ beforeEach(() => {
   process.env.TMUX = '/tmp/tmux-501/default,12345,0';
 });
 
-afterAll(() => {
+// Restore TMPDIR after every test: otherwise the next beforeEach mkdtemps
+// under the previous test's TMPDIR and the temp dirs nest without bound.
+afterEach(() => {
   if (workDir) rmSync(workDir, { recursive: true, force: true });
   if (prevTmpdir === undefined) delete process.env.TMPDIR;
   else process.env.TMPDIR = prevTmpdir;
@@ -104,5 +106,61 @@ describe('writeSegmentCache + readFreshSegmentCache', () => {
     // Make the cache "file" be a directory → readFileSync throws EISDIR.
     mkdirSync(cacheFilePath(), { recursive: true });
     expect(readFreshSegmentCache()).toBeNull();
+  });
+});
+
+describe('writeSegmentCache dedup + heartbeat', () => {
+  test('skips rewriting stable text within the heartbeat interval', () => {
+    writeSegmentCache('stable', 0);
+    // Remove the file: a skipped write leaves it absent, a real write recreates it.
+    rmSync(cacheFilePath());
+    writeSegmentCache('stable', 1_000);
+    writeSegmentCache('stable', 2_999);
+    expect(existsSync(cacheFilePath())).toBe(false);
+  });
+
+  test('republishes unchanged text once the heartbeat interval elapses', () => {
+    writeSegmentCache('stable', 0);
+    rmSync(cacheFilePath());
+    writeSegmentCache('stable', 3_000);
+    expect(readFreshSegmentCache()).toBe('stable');
+  });
+
+  test('writes changed text immediately, even inside the interval', () => {
+    writeSegmentCache('a', 0);
+    writeSegmentCache('b', 100);
+    expect(readFreshSegmentCache()).toBe('b');
+  });
+
+  test('treats empty text as a change and writes it immediately', () => {
+    writeSegmentCache('a', 0);
+    writeSegmentCache('', 100);
+    expect(readFreshSegmentCache()).toBe('');
+  });
+
+  test('retries after a failed write (memo is not poisoned)', () => {
+    // rename onto an existing directory fails, so the write never lands.
+    mkdirSync(cacheFilePath(), { recursive: true });
+    writeSegmentCache('x', 0);
+    rmSync(cacheFilePath(), { recursive: true });
+    // Same text, but the prior write failed → must write, not dedup.
+    writeSegmentCache('x', 100);
+    expect(readFreshSegmentCache()).toBe('x');
+  });
+
+  test('memoization is scoped per cache path', () => {
+    writeSegmentCache('same', 0);
+    // Different tmux socket → different cache path → no shared dedup state.
+    process.env.TMUX = '/tmp/tmux-501/other-socket,12345,0';
+    rmSync(cacheFilePath(), { force: true });
+    writeSegmentCache('same', 100);
+    expect(readFreshSegmentCache()).toBe('same');
+  });
+
+  test('republishes after a backwards clock jump', () => {
+    writeSegmentCache('t', 10_000);
+    rmSync(cacheFilePath());
+    writeSegmentCache('t', 0);
+    expect(readFreshSegmentCache()).toBe('t');
   });
 });

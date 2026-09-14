@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, utimesSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AgentStatus, type AgentState } from './types.ts';
@@ -68,5 +68,43 @@ describe('agent snapshot cache', () => {
 
   test('returns null when the cache is missing', () => {
     expect(readFreshAgentSnapshot()).toBeNull();
+  });
+
+  test('publishes at most once per five seconds even as state changes', () => {
+    // The hot 500ms tick calls this repeatedly; only the first write in a
+    // five-second window reaches disk, regardless of state churn.
+    writeAgentSnapshot([state], 0);
+    expect(readFreshAgentSnapshot()).toEqual([state]);
+    const changed: AgentState = { ...state, status: AgentStatus.BUSY };
+    writeAgentSnapshot([changed], 500);
+    writeAgentSnapshot([changed], 4_999);
+    // Still the first snapshot: within the 5s gate nothing was rewritten.
+    expect(readFreshAgentSnapshot()).toEqual([state]);
+    writeAgentSnapshot([changed], 5_000);
+    expect(readFreshAgentSnapshot()).toEqual([changed]);
+  });
+
+  test('the gate short-circuits before serialization', () => {
+    writeAgentSnapshot([state], 1_000);
+    const original = readFileSync(snapshotCacheFilePath(), 'utf8');
+    let serialized = false;
+    const next: AgentState = {
+      ...state,
+      get status() {
+        serialized = true;
+        return AgentStatus.BUSY;
+      },
+    };
+    writeAgentSnapshot([next], 2_000);
+    expect(serialized).toBe(false);
+    expect(readFileSync(snapshotCacheFilePath(), 'utf8')).toBe(original);
+  });
+
+  test('republishes immediately after a backwards clock jump', () => {
+    writeAgentSnapshot([state], 10_000);
+    const changed: AgentState = { ...state, status: AgentStatus.BUSY };
+    // Clock moved backwards (NTP correction, host resume): don't stall.
+    writeAgentSnapshot([changed], 0);
+    expect(readFreshAgentSnapshot()).toEqual([changed]);
   });
 });

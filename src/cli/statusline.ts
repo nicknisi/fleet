@@ -134,19 +134,36 @@ export function rollupEnabled(): boolean {
   return getTmuxOption('@fleet_rollup') === '1';
 }
 
-// One batched tmux call for all windows: `tmux set ... ; set -w -u ... ; ...`.
-// tmux treats a lone ";" arg as a command separator, so N windows = 1 spawn.
-// Failures (not in tmux, window closed mid-batch) are non-critical — the next
-// redraw retries.
-export function emitWindowColors(states: AgentState[]): void {
+// Skip identical 500ms ticks, but periodically reassert state in case another
+// process changed the options. Transitions and stale-tint clearing stay immediate.
+const COLOR_RECONCILE_MS = 5_000;
+let lastWindowColors: { server: string | undefined; signature: string; at: number } | undefined;
+
+// One batched tmux call for all windows. Failed batches are never remembered,
+// so the next refresh retries even if its desired colors have not changed.
+export function emitWindowColors(states: AgentState[], now = Date.now()): void {
   const groups = windowColorArgs(states);
-  if (groups.length === 0) return;
+  if (groups.length === 0) {
+    lastWindowColors = undefined;
+    return;
+  }
+  const server = process.env.TMUX;
+  const signature = JSON.stringify(groups);
+  if (
+    lastWindowColors?.server === server &&
+    lastWindowColors?.signature === signature &&
+    now >= lastWindowColors.at &&
+    now - lastWindowColors.at < COLOR_RECONCILE_MS
+  )
+    return;
   const flat: string[] = [];
   for (let i = 0; i < groups.length; i++) {
     if (i > 0) flat.push(';');
     flat.push(...groups[i]!);
   }
-  tmux(flat);
+  // A failed batch may have applied its first commands. Forget the previous
+  // signature too, so returning to that state repairs any partial writes.
+  lastWindowColors = tmux(flat).exitCode === 0 ? { server, signature, at: now } : undefined;
 }
 
 // Sweep every window's @fleet_state so no stale tint lingers after uninstall —

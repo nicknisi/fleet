@@ -232,8 +232,8 @@ export function acknowledgeAllReady(dirs: AgentDir[]): void {
   }
 }
 
-export function refreshSlowCaches(panes: PaneInfo[], hookStatuses: ResolvedHookStatus[]): void {
-  refreshSlowCachesWithCapture(panes, hookStatuses, capturePaneLines);
+export function refreshSlowCaches(panes: PaneInfo[], hookStatuses: ResolvedHookStatus[], includeDetails = true): void {
+  refreshSlowCachesWithCapture(panes, hookStatuses, capturePaneLines, includeDetails);
 }
 
 // ponytail: fixed cap on concurrent slow-tick spawns — an unbounded
@@ -356,23 +356,27 @@ export function refreshSlowCachesWithCapture(
   panes: PaneInfo[],
   hookStatuses: ResolvedHookStatus[],
   captureFn: (paneId: string) => string[],
+  includeDetails = true,
 ): void {
-  const paths = new Set<string>();
-  for (const p of panes) paths.add(p.currentPath);
-  const nowMs = Date.now();
-  if (gitRefreshDue(paths, nowMs)) {
-    gitMetadataCache.clear();
-    for (const path of paths) gitMetadataCache.set(path, readGitMetadata(path));
-    gitMetadataUpdatedAt = nowMs;
+  // Status chips need discovery and scrape signals, but no Git/port metadata.
+  if (includeDetails) {
+    const paths = new Set(panes.map((p) => p.currentPath));
+    const nowMs = Date.now();
+    if (gitRefreshDue(paths, nowMs)) {
+      gitMetadataCache.clear();
+      for (const path of paths) gitMetadataCache.set(path, readGitMetadata(path));
+      gitMetadataUpdatedAt = nowMs;
+    }
   }
 
   const psTable = readPsTable();
-  const { ppidByPid } = parsePsTable(psTable);
-
   let ports: PanePort[] = [];
-  try {
-    ports = detectPorts(panePidMap(panes), ppidByPid);
-  } catch {}
+  if (includeDetails) {
+    const { ppidByPid } = parsePsTable(psTable);
+    try {
+      ports = detectPorts(panePidMap(panes), ppidByPid);
+    } catch {}
+  }
 
   // Layer 3: pane scraping (~50ms per pane) — slow cycle only. Capture each
   // pane ONCE, without classifying yet: classification needs the pane's agent
@@ -575,10 +579,10 @@ export function refreshStates(
 // Full refresh: one list-panes + one status-dir read feed both the slow caches
 // and the fast refresh. Sync — used by one-shot CLI paths, where blocking is
 // fine. The TUI uses fullRefreshStatesAsync / fullRefreshStatesTui instead.
-export function fullRefreshStates(dirs: AgentDir[]): AgentState[] {
+export function fullRefreshStates(dirs: AgentDir[], includeDetails = true): AgentState[] {
   const panesResult = listPanesResult();
   const hookStatuses = readAllStatusDirs(dirs);
-  refreshSlowCaches(panesResult.panes, hookStatuses);
+  refreshSlowCaches(panesResult.panes, hookStatuses, includeDetails);
   return refreshStates(dirs, { panesResult, hookStatuses });
 }
 
