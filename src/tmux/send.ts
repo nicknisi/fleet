@@ -24,43 +24,18 @@ export function sendKeyNames(paneId: string, keys: string[]): void {
   }
 }
 
-const SPECIAL_KEY_MAP = new Map<number, string>([
-  [0x0d, 'Enter'],
-  [0x7f, 'BSpace'],
-  [0x09, 'Tab'],
-  [0x1b, 'Escape'],
-]);
-
-const ARROW_NAMES = new Map<number, string>([
-  [0x41, 'Up'],
-  [0x42, 'Down'],
-  [0x43, 'Right'],
-  [0x44, 'Left'],
-]);
+const RAW_KEY_CHUNK_SIZE = 1024;
 
 export function sendRawKey(paneId: string, data: Buffer): void {
-  const first = data[0];
-  if (first === undefined) return;
-
-  if (first === 0x1b && data.length >= 3 && data[1] === 0x5b) {
-    const arrow = data[2] !== undefined ? ARROW_NAMES.get(data[2]) : undefined;
-    if (arrow) {
-      tmuxOrThrow(['send-keys', '-t', paneId, arrow], 'send-keys arrow failed');
-      return;
-    }
+  // Decoding only the first key can turn a modified arrow into Escape or
+  // discard coalesced keys. Hex mode preserves every byte, including UTF-8
+  // characters split across separate terminal reads.
+  // Bound each command so large reads fit within tmux's message size limit.
+  for (let offset = 0; offset < data.length; offset += RAW_KEY_CHUNK_SIZE) {
+    const chunk = data.subarray(offset, offset + RAW_KEY_CHUNK_SIZE);
+    tmuxOrThrow(
+      ['send-keys', '-t', paneId, '-H', ...Array.from(chunk, (byte) => byte.toString(16).padStart(2, '0'))],
+      'send-keys raw bytes failed',
+    );
   }
-
-  const special = SPECIAL_KEY_MAP.get(first);
-  if (special) {
-    tmuxOrThrow(['send-keys', '-t', paneId, special], `send-keys ${special} failed`);
-    return;
-  }
-
-  if (first >= 0x01 && first <= 0x1a) {
-    const letter = String.fromCharCode(first + 0x60);
-    tmuxOrThrow(['send-keys', '-t', paneId, `C-${letter}`], `send-keys C-${letter} failed`);
-    return;
-  }
-
-  tmuxOrThrow(['send-keys', '-t', paneId, '-l', '--', data.toString('utf8')], 'send-keys literal failed');
 }

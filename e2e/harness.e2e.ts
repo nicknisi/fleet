@@ -25,7 +25,7 @@ import type { JsonObject } from '../src/json.ts';
 import { fullRefreshStates, fullRefreshStatesTui } from '../src/state/refresh.ts';
 import { TmuxControlClient } from '../src/tmux/control.ts';
 import { resolvePermitKeys } from '../src/state/permit-keys.ts';
-import { sendKeyNames } from '../src/tmux/send.ts';
+import { sendKeyNames, sendRawKey } from '../src/tmux/send.ts';
 import { AgentStatus } from '../src/state/types.ts';
 import {
   __resetSnapshotCacheForTests,
@@ -402,6 +402,48 @@ suite('send', () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('No agents found');
   });
+});
+
+suite('raw passthrough input', () => {
+  const cases: Array<[string, Buffer[]]> = [
+    ['plain text', [Buffer.from('hello')]],
+    ['Shift-Left', [Buffer.from('\x1b[1;2D')]],
+    ['modified navigation', [Buffer.from('\x1b[1;5D\x1b[1;2C')]],
+    ['Shift-Tab', [Buffer.from('\x1b[Z')]],
+    ['application-mode Home', [Buffer.from('\x1bOH')]],
+    ['coalesced arrows', [Buffer.from('\x1b[A\x1b[B')]],
+    ['Enter followed by text', [Buffer.from('\rhello')]],
+    ['coalesced control keys', [Buffer.from('\t\r\x7f\x01')]],
+    ['Unicode and navigation', [Buffer.from('café 🐈\x1b[D')]],
+    ['bracketed paste', [Buffer.from('\x1b[200~two\nlines\x1b[201~')]],
+    ['extended key encoding', [Buffer.from('\x1b[57350;2u')]],
+    ['UTF-8 split across reads', [Buffer.from([0xc3]), Buffer.from([0xa9])]],
+    ['large input read', [Buffer.alloc(16 * 1024, 0x61)]],
+  ];
+
+  for (const [name, chunks] of cases) {
+    test(`delivers every byte of ${name}`, async () => {
+      const { pane } = newSession();
+      const output = join(root, `input-${sessionSeq}.bin`);
+      const receiver = join(root, 'input-receiver.cjs');
+      writeFileSync(output, '');
+      writeFileSync(
+        receiver,
+        "const fs = require('node:fs');\n" +
+          'process.stdin.setRawMode(true);\n' +
+          "process.stdin.on('data', data => fs.appendFileSync(process.argv[2], data));\n" +
+          "process.stdout.write('INPUT_READY');\n",
+      );
+      expect(tm(['respawn-pane', '-k', '-t', pane, process.execPath, receiver, output]).code).toBe(0);
+      expect(await waitForScreen(pane, 'INPUT_READY')).toBe(true);
+
+      const bytes = Buffer.concat(chunks);
+      for (const chunk of chunks) sendRawKey(pane, chunk);
+      const deadline = Date.now() + 1000;
+      while (readFileSync(output).length < bytes.length && Date.now() < deadline) await sleep(20);
+      expect(readFileSync(output).toString('hex')).toBe(bytes.toString('hex'));
+    });
+  }
 });
 
 suite('approve (permit-key resolution + transport)', () => {
