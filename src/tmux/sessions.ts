@@ -102,6 +102,40 @@ export function capturePane(paneId: string, maxLines: number): string[] {
   return processCaptureOutput(output, maxLines);
 }
 
+export interface AlignedCapture {
+  lines: string[];
+  droppedTop: number; // pane rows above the shown window; maps cursor_y → row
+}
+
+// Row-aligned capture for passthrough: unlike processCaptureOutput it does NOT
+// drop trailing blank rows (only the final newline artifact), so a line's index
+// still equals its pane row. That lets the caller map tmux's cursor_y onto a
+// preview row. `droppedTop` is how many top rows fell outside the bottom
+// `maxLines` window shown.
+export function processCaptureAligned(output: string, maxLines: number): AlignedCapture {
+  const lines = output.split('\n').map((line) => line.replace(/[\s ]+$/, ''));
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  const droppedTop = Math.max(0, lines.length - maxLines);
+  return { lines: lines.slice(droppedTop), droppedTop };
+}
+
+export function capturePaneAligned(paneId: string, maxLines: number): AlignedCapture {
+  const output = tmuxOrThrow(['capture-pane', '-e', '-p', '-t', paneId], 'capture-pane failed');
+  return processCaptureAligned(output, maxLines);
+}
+
+// Visible-screen cursor position of a pane (0-based, relative to the visible
+// top-left). Returns null on any tmux failure so callers degrade to no cursor.
+export function paneCursor(paneId: string): { x: number; y: number } | null {
+  const out = tmuxOrNull(['display-message', '-p', '-t', paneId, '#{cursor_x},#{cursor_y}']);
+  if (out === null) return null;
+  const [xs, ys] = out.trim().split(',');
+  const x = Number(xs);
+  const y = Number(ys);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
 // Read-only plain capture for `fleet capture`: no `-e`, so escape sequences are
 // stripped and the bottom `maxLines` come back as clean text. Returns [] on any
 // tmux failure (dead server, gone pane) so the caller degrades instead of

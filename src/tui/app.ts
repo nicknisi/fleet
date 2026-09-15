@@ -58,6 +58,9 @@ export class TuiApp {
   hooksMissing: boolean = false;
   splitRatio: number = DEFAULT_SPLIT;
   dragging: boolean = false;
+  // True while the cursor is within the divider grab zone (preview/passthrough
+  // only). Drives the divider's hover affordance so it reads as draggable.
+  hoverDivider: boolean = false;
   hoverPaneId: string | null = null;
   pulsePhase: boolean = false;
   // Opt-in repo-group view: groups panes by their git repository id (sibling
