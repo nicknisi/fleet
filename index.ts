@@ -230,7 +230,6 @@ async function launchTui(): Promise<number> {
   // tmux; read the rollup gate once (it spawns tmux) rather than per tick.
   const insideTmux = process.env.TMUX !== undefined && process.env.TMUX.length > 0;
   const rollupOn = insideTmux && rollupEnabled();
-  let lastWrittenSegment: string | null = null;
   let notifyPrev = new Map<string, AgentStatus>();
 
   // Compare this snapshot's statuses to the last and fire a silent desktop toast
@@ -256,19 +255,14 @@ async function launchTui(): Promise<number> {
     needsRender = true;
     // Keep the CLI's statusline cache warm with the SAME renderer the CLI uses
     // (formatStatusLine) so a cached hit is byte-identical to a live compute.
-    // Skip the write when the segment is unchanged since the last tick — the
-    // statusline is quiet most of the time, so this is usually a no-op fs call.
-    if (insideTmux) {
-      if (getLastTmuxOk()) writeAgentSnapshot(states);
-      const segment = formatStatusLine(states);
-      if (segment !== lastWrittenSegment) {
-        writeSegmentCache(segment);
-        lastWrittenSegment = segment;
-      }
-      // Window tints used to be emitted by the CLI status path on every
-      // status-interval; now that the CLI short-circuits on a cache hit while
-      // the TUI runs, the TUI owns them so they stay live (one batched tmux
-      // spawn per tick, gated on the opt-in @fleet_rollup option).
+    // The cache writer deduplicates text and periodically renews freshness,
+    // so a quiet TUI doesn't let the CLI cache expire. Failed scans must not
+    // renew an empty cache and prevent the CLI from retrying live discovery.
+    if (insideTmux && getLastTmuxOk()) {
+      writeAgentSnapshot(states);
+      writeSegmentCache(formatStatusLine(states));
+      // The TUI owns window tints while the CLI serves cached text. The emitter
+      // skips unchanged batches between periodic reconciliation passes.
       if (rollupOn) emitWindowColors(states);
     }
   };

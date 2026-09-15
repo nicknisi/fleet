@@ -34,16 +34,39 @@ export function cacheFilePath(): string {
   return join(tmpdir(), `fleet-statusline-${uid}-${tmuxSocketId()}.cache`);
 }
 
+// The running TUI calls this every tick. This writer owns both deduplication
+// and the freshness heartbeat: it skips rewriting identical text until the
+// heartbeat interval elapses, then republishes so the reader's 6s TTL never
+// expires on a still-live TUI. Changed text (including empty text) is written
+// immediately.
+const HEARTBEAT_INTERVAL_MS = 3_000;
+// Keyed by cache path so distinct TMPDIR/$TMUX (e.g. isolated tests) never share
+// dedup state. Only updated on a successful write, so a failed write retries on
+// the next tick rather than being deduplicated away.
+const lastWriteByPath = new Map<string, { segment: string; writtenMs: number }>();
+
 // Atomic write: write a temp file beside the target then rename. rename is
 // atomic on the same filesystem, so a concurrent reader never sees a partial
 // segment. Never throws — a cache write failure is non-fatal; the worst case is
 // the CLI falls back to a live compute on the next status-interval.
-export function writeSegmentCache(segment: string): void {
+export function writeSegmentCache(segment: string, now = Date.now()): void {
   try {
     const path = cacheFilePath();
+    const last = lastWriteByPath.get(path);
+    // Dedup unchanged text until the heartbeat is due. A backwards clock jump
+    // (now < last.writtenMs) republishes immediately instead of stalling.
+    if (
+      last !== undefined &&
+      last.segment === segment &&
+      now >= last.writtenMs &&
+      now - last.writtenMs < HEARTBEAT_INTERVAL_MS
+    ) {
+      return;
+    }
     const tmp = `${path}.${process.pid}.tmp`;
     writeFileSync(tmp, segment);
     renameSync(tmp, path);
+    lastWriteByPath.set(path, { segment, writtenMs: now });
   } catch {
     // Swallow: the cache is an optimization, not a correctness requirement.
   }

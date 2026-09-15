@@ -141,7 +141,7 @@ export async function handleCli(args: string[]): Promise<number | null> {
           if (cached.length > 0) process.stdout.write(cached + '\n');
           return 0;
         }
-        const states = fullRefreshStates(dirs);
+        const states = fullRefreshStates(dirs, false); // chips don't use Git or port details
         const { segment } = resolveStatusLineSegment(null, () => formatStatusLine(states));
         writeSegmentCache(segment);
         if (segment.length > 0) process.stdout.write(segment + '\n');

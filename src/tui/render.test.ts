@@ -1,6 +1,9 @@
-import { describe, expect, test, beforeAll, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 import { disableColors } from '../terminal/colors.ts';
+import * as tmuxSessions from '../tmux/sessions.ts';
+import { TuiApp, TuiMode } from './app.ts';
+import { render } from './render.ts';
 
 disableColors();
 
@@ -9,20 +12,12 @@ disableColors();
 const OPEN_BG = '\x1b[48;5;52m';
 const CAPTURED_DIFF_LINE = `${OPEN_BG}  4 -description`;
 
-// capturePane reads real tmux; mock it so render() gets deterministic,
-// untrusted ANSI content for the preview pane.
-mock.module('../tmux/sessions.ts', () => ({
-  capturePane: () => [CAPTURED_DIFF_LINE],
-}));
-
-let render: typeof import('./render.ts').render;
-let TuiApp: typeof import('./app.ts').TuiApp;
-let TuiMode: typeof import('./app.ts').TuiMode;
-
-beforeAll(async () => {
-  ({ render } = await import('./render.ts'));
-  ({ TuiApp, TuiMode } = await import('./app.ts'));
+// Stub capturePane without replacing the tmux exports used by other tests.
+let captureSpy: ReturnType<typeof spyOn<typeof tmuxSessions, 'capturePane'>>;
+beforeEach(() => {
+  captureSpy = spyOn(tmuxSessions, 'capturePane').mockReturnValue([CAPTURED_DIFF_LINE]);
 });
+afterEach(() => captureSpy.mockRestore());
 
 const makeState = (): AgentState => ({
   paneId: '%1',
@@ -39,6 +34,11 @@ const makeState = (): AgentState => ({
   ports: [],
   ts: Math.floor(Date.now() / 1000),
   agentType: 'claude',
+});
+
+test('preview capture mocking preserves unrelated tmux exports', async () => {
+  const sessions = await import('../tmux/sessions.ts');
+  expect(sessions.parsePanesOutput('')).toEqual([]);
 });
 
 describe('render grouped dashboard frame', () => {

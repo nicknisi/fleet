@@ -1,4 +1,8 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { AgentStatus, type AgentState } from '../state/types.ts';
 import {
   buildInjectCommands,
   buildRemoveCommands,
@@ -6,7 +10,103 @@ import {
   STATUS_ROW1_FORMAT,
   WINDOW_STATUS_FORMAT,
   WINDOW_STATUS_CURRENT_FORMAT,
+  emitWindowColors,
 } from './statusline.ts';
+
+describe('emitWindowColors', () => {
+  let work: string;
+  let stub: string;
+  let oldPath: string | undefined;
+  let oldTmux: string | undefined;
+  const state: AgentState = {
+    paneId: '%1',
+    paneNum: 1,
+    session: 'test',
+    window: 'main',
+    windowId: '@1',
+    claudeName: null,
+    customName: null,
+    status: AgentStatus.PERMIT,
+    tool: null,
+    project: '/tmp/test',
+    branch: null,
+    ports: [],
+    ts: 0,
+    agentType: 'claude',
+  };
+  beforeEach(() => {
+    oldPath = process.env.PATH;
+    oldTmux = process.env.TMUX;
+    work = mkdtempSync(join(tmpdir(), 'fleet-colors-'));
+    stub = join(work, 'tmux');
+    writeFileSync(stub, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$0.log"\n[ ! -e "$0.fail" ]\n', { mode: 0o755 });
+    writeFileSync(`${stub}.log`, '');
+    process.env.PATH = `${work}:${oldPath}`;
+    process.env.TMUX = `${work}/socket,1,0`;
+  });
+  afterEach(() => {
+    if (oldPath === undefined) delete process.env.PATH;
+    else process.env.PATH = oldPath;
+    if (oldTmux === undefined) delete process.env.TMUX;
+    else process.env.TMUX = oldTmux;
+    rmSync(work, { recursive: true, force: true });
+  });
+  const calls = () => readFileSync(`${stub}.log`, 'utf8').trim().split('\n').filter(Boolean);
+
+  test('unchanged ticks skip tmux until the reconciliation interval', () => {
+    for (let now = 0; now < 5_000; now += 500) emitWindowColors([state], now);
+    expect(calls()).toHaveLength(1);
+    emitWindowColors([state], 5_000);
+    expect(calls()).toHaveLength(2);
+  });
+
+  test('clears attention immediately, even inside the interval', () => {
+    emitWindowColors([state], 0);
+    emitWindowColors([{ ...state, status: AgentStatus.BUSY }], 500);
+    expect(calls()).toHaveLength(2);
+    expect(calls()[1]).toContain('set -w -u -t @1 @fleet_state');
+    emitWindowColors([{ ...state, status: AgentStatus.BUSY }], 1_000);
+    expect(calls()).toHaveLength(2);
+  });
+
+  test('failed writes retry and a different server is not deduplicated', () => {
+    writeFileSync(`${stub}.fail`, '');
+    emitWindowColors([state], 0);
+    rmSync(`${stub}.fail`);
+    emitWindowColors([state], 500);
+    emitWindowColors([state], 1_000);
+    expect(calls()).toHaveLength(2);
+    process.env.TMUX = `${work}/other,2,0`;
+    emitWindowColors([state], 1_500);
+    expect(calls()).toHaveLength(3);
+  });
+
+  test('a partially failed batch invalidates the previous successful signature', () => {
+    emitWindowColors([state], 0);
+    writeFileSync(`${stub}.fail`, '');
+    emitWindowColors(
+      [
+        { ...state, status: AgentStatus.BUSY },
+        { ...state, paneId: '%2', windowId: '@2' },
+      ],
+      500,
+    );
+    rmSync(`${stub}.fail`);
+    // The first command in the failed batch may have cleared @1's tint.
+    // Restoring the old desired state must not be mistaken for a no-op.
+    emitWindowColors([state], 1_000);
+    expect(calls()).toHaveLength(3);
+  });
+
+  test('empty state and backwards time invalidate the last successful batch', () => {
+    emitWindowColors([state], 10_000);
+    emitWindowColors([], 10_100);
+    emitWindowColors([state], 10_200);
+    expect(calls()).toHaveLength(2);
+    emitWindowColors([state], 0);
+    expect(calls()).toHaveLength(3);
+  });
+});
 
 describe('STATUS_ROW1_FORMAT', () => {
   // isStatusLineInjected compares a live `show -gqv status-format[1]` against

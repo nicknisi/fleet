@@ -7,8 +7,9 @@ import { AgentStatus, type AgentState } from './types.ts';
 
 const CACHE_VERSION = 1;
 const WRITE_INTERVAL_MS = 5_000;
-let lastPayload = '';
-let lastWriteMs = 0;
+// NEGATIVE_INFINITY so the first write always clears the gate, even when tests
+// drive small `now` values.
+let lastWriteMs = Number.NEGATIVE_INFINITY;
 
 function cacheDirPath(): string {
   const uid = process.getuid?.() ?? 0;
@@ -37,15 +38,19 @@ export function snapshotCacheFilePath(): string {
 // read this file; they never mutate persistent state. Rewriting at most every
 // five seconds keeps the cache fresh without putting the hot 500ms tick on disk.
 export function writeAgentSnapshot(states: AgentState[], now = Date.now()): void {
+  // Gate before any serialization or filesystem work: the hot 500ms tick calls
+  // this, but we publish at most once per five seconds. A backwards clock jump
+  // (now < lastWriteMs) republishes immediately instead of stalling until the
+  // clock catches up. On failure lastWriteMs is left unchanged so the next tick
+  // retries.
+  if (now >= lastWriteMs && now - lastWriteMs < WRITE_INTERVAL_MS) return;
   try {
     if (!ensurePrivateCacheDir()) return;
     const payload = JSON.stringify({ version: CACHE_VERSION, writtenAt: now, states });
-    if (payload === lastPayload && now - lastWriteMs < WRITE_INTERVAL_MS) return;
     const path = snapshotCacheFilePath();
     const tmp = `${path}.${process.pid}.tmp`;
     writeFileSync(tmp, payload, { mode: 0o600 });
     renameSync(tmp, path);
-    lastPayload = payload;
     lastWriteMs = now;
   } catch {
     // Cache publication is best-effort; live observation remains authoritative.
@@ -88,6 +93,5 @@ export function readFreshAgentSnapshot(maxAgeSecs = 300): AgentState[] | null {
 }
 
 export function __resetSnapshotCacheForTests(): void {
-  lastPayload = '';
-  lastWriteMs = 0;
+  lastWriteMs = Number.NEGATIVE_INFINITY;
 }
