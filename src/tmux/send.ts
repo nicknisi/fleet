@@ -24,7 +24,7 @@ export function sendKeyNames(paneId: string, keys: string[]): void {
   }
 }
 
-const KEYS_PER_COMMAND = 1024;
+const KEYS_PER_COMMAND = 256;
 const SPECIAL_KEY_NAMES = new Map<number, string>([
   [0x0d, 'Enter'],
   [0x7f, 'BSpace'],
