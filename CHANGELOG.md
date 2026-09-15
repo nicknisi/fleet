@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.26.0](https://github.com/nicknisi/fleet/compare/v0.25.0...v0.26.0) (2026-09-15)
+
+
+### Features
+
+* live passthrough preview (typing caret + faster refresh) and divider affordance ([#84](https://github.com/nicknisi/fleet/issues/84)) ([d92a347](https://github.com/nicknisi/fleet/commit/d92a3472ccca2a14ec71d5ce3dfded2efb7dd914))
+* support custom tmux status-bar layouts ([#87](https://github.com/nicknisi/fleet/issues/87)) ([6e1c256](https://github.com/nicknisi/fleet/commit/6e1c2565821611416d789f086bb0500b9089d42d))
+
+
+### Bug Fixes
+
+* preserve raw passthrough key sequences ([#86](https://github.com/nicknisi/fleet/issues/86)) ([eb7a2eb](https://github.com/nicknisi/fleet/commit/eb7a2eb36f770422a1efc2eb88bcaabc79032abb))
+
+
+### Performance Improvements
+
+* reduce statusline cache and tmux refresh overhead ([#88](https://github.com/nicknisi/fleet/issues/88)) ([4d976ac](https://github.com/nicknisi/fleet/commit/4d976ac4b32f1ff171a18b6b00fd4d2a6f89203b))
+
 ## [0.25.0](https://github.com/nicknisi/fleet/compare/v0.24.0...v0.25.0) (2026-08-27)
 
 
