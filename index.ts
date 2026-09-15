@@ -31,7 +31,7 @@ import { sendKeys, sendKeyNames, sendRawKey } from './src/tmux/send.ts';
 import { resolvePermitKeys } from './src/state/permit-keys.ts';
 import { formatStatusLine } from './src/cli/status.ts';
 import { runNext } from './src/cli/next.ts';
-import { emitWindowColors, rollupEnabled } from './src/cli/statusline.ts';
+import { chipSeparator, emitWindowColors, rollupEnabled } from './src/cli/statusline.ts';
 import { handleCli } from './src/cli/router.ts';
 import {
   refreshStates,
@@ -230,6 +230,7 @@ async function launchTui(): Promise<number> {
   // tmux; read the rollup gate once (it spawns tmux) rather than per tick.
   const insideTmux = process.env.TMUX !== undefined && process.env.TMUX.length > 0;
   const rollupOn = insideTmux && rollupEnabled();
+  const chipSep = insideTmux ? chipSeparator() : null;
   let notifyPrev = new Map<string, AgentStatus>();
 
   // Compare this snapshot's statuses to the last and fire a silent desktop toast
@@ -260,7 +261,7 @@ async function launchTui(): Promise<number> {
     // renew an empty cache and prevent the CLI from retrying live discovery.
     if (insideTmux && getLastTmuxOk()) {
       writeAgentSnapshot(states);
-      writeSegmentCache(formatStatusLine(states));
+      writeSegmentCache(formatStatusLine(states, chipSep));
       // The TUI owns window tints while the CLI serves cached text. The emitter
       // skips unchanged batches between periodic reconciliation passes.
       if (rollupOn) emitWindowColors(states);

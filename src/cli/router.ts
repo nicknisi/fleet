@@ -33,7 +33,13 @@ import { runIntegrationInstall, runIntegrationUninstall } from '../agents/integr
 import { runDoctor } from './doctor.ts';
 import { runReconcile } from './reconcile.ts';
 import { runExplain } from './explain.ts';
-import { runStatusLineInject, runStatusLineRemove, emitWindowColors, rollupEnabled } from './statusline.ts';
+import {
+  runStatusLineInject,
+  runStatusLineRemove,
+  emitWindowColors,
+  rollupEnabled,
+  chipSeparator,
+} from './statusline.ts';
 import { runWait, parseWaitArgs } from './wait.ts';
 import type { Selectable } from '../state/selector.ts';
 
@@ -85,7 +91,7 @@ export function printHelp(): number {
       `    ${C.idle}fleet doctor${C.reset}                     ${C.gray}Health check${C.reset}`,
       '',
       `  ${C.bold}Tmux${C.reset}`,
-      `    ${C.idle}fleet statusline${C.reset} --inject        ${C.gray}Add fleet status to tmux row 2${C.reset}`,
+      `    ${C.idle}fleet statusline${C.reset} --inject        ${C.gray}Add fleet status to tmux row 2 (+ click bindings)${C.reset}`,
       `    ${C.idle}fleet statusline${C.reset} --inject --force ${C.gray}Re-apply even if already injected${C.reset}`,
       `    ${C.idle}fleet statusline${C.reset} --remove        ${C.gray}Remove fleet status from tmux${C.reset}`,
       '',
@@ -142,7 +148,7 @@ export async function handleCli(args: string[]): Promise<number | null> {
           return 0;
         }
         const states = fullRefreshStates(dirs, false); // chips don't use Git or port details
-        const { segment } = resolveStatusLineSegment(null, () => formatStatusLine(states));
+        const { segment } = resolveStatusLineSegment(null, () => formatStatusLine(states, chipSeparator()));
         writeSegmentCache(segment);
         if (segment.length > 0) process.stdout.write(segment + '\n');
         if (rollupEnabled()) emitWindowColors(states);

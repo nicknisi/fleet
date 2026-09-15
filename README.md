@@ -337,7 +337,7 @@ Fleet also works as a non-interactive CLI for scripting and tmux integration.
 | Command                                   | Description                                                                           |
 | ----------------------------------------- | ------------------------------------------------------------------------------------- |
 | `fleet status [--tmux] <session>`         | Query agent state. `--tmux` outputs a tmux format string for status bars.             |
-| `fleet status --statusline`               | Render a full multi-agent status line for tmux's second row.                          |
+| `fleet status --statusline`               | Render the multi-agent chip strip for tmux (second row by default, or your own bar).  |
 | `fleet next`                              | Switch to the next waiting agent pane (cycles through PERMIT > QUESTION > DONE).      |
 | `fleet switch <pane-id>`                  | Acknowledge a ready agent and switch to it (used by the statusline click binding).    |
 | `fleet ack <pane-id>`                     | Acknowledge a ready agent in place (clear it from the attention tier, no switch).     |
@@ -355,8 +355,8 @@ Fleet also works as a non-interactive CLI for scripting and tmux integration.
 | `fleet uninstall`                         | Remove plugin registration + tmux status row.                                         |
 | `fleet uninstall codex`                   | Remove fleet's Codex hooks + config (leaves your own Codex hooks intact).             |
 | `fleet uninstall pi`                      | Remove fleet's pi extension + registration.                                           |
-| `fleet statusline --inject`               | Manually add the second tmux status row.                                              |
-| `fleet statusline --remove`               | Manually remove the second tmux status row.                                           |
+| `fleet statusline --inject`               | Manually add the second tmux status row and the click bindings.                       |
+| `fleet statusline --remove`               | Manually remove the second tmux status row and the click bindings.                    |
 
 ### Scripting & JSON API
 
@@ -482,7 +482,20 @@ Each entry is clickable (tmux 3.2+). **Left-click** an agent name to switch to t
 
 **The `☰` button** sits at the far left of the row and is always there, even when no agent needs you. Click it (either mouse button) to open the dashboard in a 34-column sidebar split; click again to close it. It toggles the window you're looking at, so it does the right thing with several clients attached to different windows. Same thing as `prefix+f`, minus the keyboard — and the same as `fleet sidebar`, which you can bind however you like.
 
-(After upgrading Fleet, re-run `fleet statusline --inject` to pick up the right-click binding, clear chip, focus-to-clear hook, and `☰` button.)
+After upgrading Fleet, run `fleet statusline --inject --force` once to update the click bindings and focus hook.
+
+**One-row bar (bring your own layout):** If you'd rather keep a single status row, tell fleet not to own the second one and mount the chips yourself. Both options go in `tmux.conf` _above_ the fleet-managed `run-shell "fleet statusline --inject"` line:
+
+```
+set -g @fleet_statusline_row none      # inject installs the click bindings + focus hook only
+set -g @fleet_chip_separator none      # optional: no │ between chips (any string works too)
+set -g status on                      # switch an existing two-row bar back to one row
+set -g status-right '#(fleet status --statusline)  #[default]…'
+```
+
+After reloading `tmux.conf`, run `fleet statusline --inject --force` once if Fleet was already injected. Restart any running Fleet dashboard after changing the separator, since it caches that setting at startup.
+
+The chips stay clickable wherever they land: the bindings key off the range name, not the row. Running `fleet status --statusline` is also what tints windows when the rollup is on, so keep it on the bar even when it renders only `☰`. A custom separator is spliced into tmux format output verbatim, so write a literal `#` as `##`.
 
 **Status-right icon (lightweight):** A single icon in your existing status bar:
 
