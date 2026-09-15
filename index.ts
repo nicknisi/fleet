@@ -432,8 +432,7 @@ async function launchTui(): Promise<number> {
         if (mouse.type === 'move' && !app.dragging) {
           const id = listHit(mouse.x, mouse.y)?.paneId ?? null;
           const splitView = app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH;
-          const overDivider =
-            splitView && Math.abs(mouse.x - (app.listWidth(sz.cols) + 1)) <= DIVIDER_GRAB;
+          const overDivider = splitView && Math.abs(mouse.x - (app.listWidth(sz.cols) + 1)) <= DIVIDER_GRAB;
           if (id !== app.hoverPaneId || overDivider !== app.hoverDivider) {
             app.hoverPaneId = id;
             app.hoverDivider = overDivider;

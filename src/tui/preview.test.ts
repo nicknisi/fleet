@@ -22,9 +22,8 @@ let captureForPreview: typeof import('./preview.ts').captureForPreview;
 let invalidatePreviewCache: typeof import('./preview.ts').invalidatePreviewCache;
 
 beforeAll(async () => {
-  ({ renderPreview, renderPreviewWithCursor, captureForPreview, invalidatePreviewCache } = await import(
-    './preview.ts'
-  ));
+  ({ renderPreview, renderPreviewWithCursor, captureForPreview, invalidatePreviewCache } =
+    await import('./preview.ts'));
 });
 
 const makeState = (status: AgentStatus): AgentState => ({
