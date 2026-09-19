@@ -1,15 +1,23 @@
-import { tmuxOrThrow } from './ipc.ts';
+import { tmux, tmuxOrThrow } from './ipc.ts';
 
 export function sendKeys(paneId: string, text: string): void {
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
+    // Retain the existing newline key even when the target has paste mode off.
+    if (i > 0) tmuxOrThrow(['send-keys', '-t', paneId, 'M-Enter'], 'send-keys M-Enter failed');
     const line = lines[i]!;
-    if (i > 0) {
-      tmuxOrThrow(['send-keys', '-t', paneId, 'M-Enter'], 'send-keys M-Enter failed');
+    if (line.length === 0) continue;
+    // Paste boundaries distinguish queued text from the following key. tmux
+    // adds markers only when the target has requested bracketed paste.
+    const buffer = `fleet-send-${process.pid}-${crypto.randomUUID()}`;
+    try {
+      tmuxOrThrow(['load-buffer', '-b', buffer, '-'], 'load-buffer failed', line);
+      tmuxOrThrow(['paste-buffer', '-p', '-d', '-b', buffer, '-t', paneId], 'paste-buffer failed');
+    } finally {
+      // -d normally removes it; also clean up if delivery fails. Leave the
+      // user's existing buffers alone and preserve any original send error.
+      tmux(['delete-buffer', '-b', buffer]);
     }
-    // `--` ends option parsing: a line starting with `-` (markdown bullet,
-    // CLI flag) would otherwise be read as a send-keys option and fail.
-    tmuxOrThrow(['send-keys', '-t', paneId, '-l', '--', line], 'send-keys failed');
   }
   tmuxOrThrow(['send-keys', '-t', paneId, 'Enter'], 'send-keys Enter failed');
 }
