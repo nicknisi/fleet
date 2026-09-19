@@ -1,16 +1,18 @@
 import { tmux, tmuxOrThrow } from './ipc.ts';
 
-let bufferSequence = 0;
-
 export function sendKeys(paneId: string, text: string): void {
-  if (text.length > 0) {
-    // Paste boundaries keep queued text distinct from the final Enter. A
-    // separate send-keys call alone does not guarantee a separate terminal read.
-    const buffer = `fleet-send-${process.pid}-${++bufferSequence}`;
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    // Retain the existing newline key even when the target has paste mode off.
+    if (i > 0) tmuxOrThrow(['send-keys', '-t', paneId, 'M-Enter'], 'send-keys M-Enter failed');
+    const line = lines[i]!;
+    if (line.length === 0) continue;
+    // Paste boundaries distinguish queued text from the following key. tmux
+    // adds markers only when the target has requested bracketed paste.
+    const buffer = `fleet-send-${process.pid}-${crypto.randomUUID()}`;
     try {
-      tmuxOrThrow(['load-buffer', '-b', buffer, '-'], 'load-buffer failed', text);
-      // tmux adds markers only when requested by the target; -r preserves LF.
-      tmuxOrThrow(['paste-buffer', '-p', '-r', '-d', '-b', buffer, '-t', paneId], 'paste-buffer failed');
+      tmuxOrThrow(['load-buffer', '-b', buffer, '-'], 'load-buffer failed', line);
+      tmuxOrThrow(['paste-buffer', '-p', '-d', '-b', buffer, '-t', paneId], 'paste-buffer failed');
     } finally {
       // -d normally removes it; also clean up if delivery fails. Leave the
       // user's existing buffers alone and preserve any original send error.

@@ -429,14 +429,23 @@ suite('send', () => {
 });
 
 suite('prompt submission', () => {
-  const cases: Array<[string, string]> = [
-    ['plain text', 'hello from Fleet'],
-    ['multiline Unicode and leading flags', '- first café\n\n--second 🐈\n'],
-    ['a prompt larger than a tmux command', 'long café '.repeat(8192) + '\nfinal line 🐈'],
+  const longLine = 'long café '.repeat(8192);
+  const cases: Array<[string, string, string]> = [
+    ['plain text', 'hello from Fleet', '\x1b[200~hello from Fleet\x1b[201~\r'],
+    [
+      'multiline Unicode and leading flags',
+      '- first café\n\n--second 🐈\n',
+      '\x1b[200~- first café\x1b[201~\x1b\r\x1b\r\x1b[200~--second 🐈\x1b[201~\x1b\r\r',
+    ],
+    [
+      'a prompt larger than a tmux command',
+      longLine + '\nfinal line 🐈',
+      `\x1b[200~${longLine}\x1b[201~\x1b\r\x1b[200~final line 🐈\x1b[201~\r`,
+    ],
   ];
 
-  for (const [label, text] of cases) {
-    test(`queues one bracketed paste followed by Enter for ${label}`, async () => {
+  for (const [label, text, expected] of cases) {
+    test(`queues pasted lines and newline keys before Enter for ${label}`, async () => {
       const { name, pane, output } = await inputReceiver('\x1b[?2004h');
       writeStatus(pane, name, { state: 'idle' });
       const pid = Number(tmOut(['display-message', '-p', '-t', pane, '#{pane_pid}']));
@@ -448,7 +457,7 @@ suite('prompt submission', () => {
       } finally {
         process.kill(pid, 'SIGCONT');
       }
-      await expectInput(output, `\x1b[200~${text}\x1b[201~\r`);
+      await expectInput(output, expected);
     });
   }
 
@@ -471,10 +480,36 @@ suite('prompt submission', () => {
     }
   });
 
-  test('omits paste markers when the target has not requested them', async () => {
+  test('preserves a leftover buffer from a reused process ID', async () => {
+    const { pane } = await inputReceiver('\x1b[?2004h');
+    // A fresh sender starts its old counter at 1, independently of test order.
+    const proc = Bun.spawnSync({
+      cmd: [
+        process.execPath,
+        '-e',
+        `import { sendKeys } from ${JSON.stringify(join(import.meta.dir, '..', 'src/tmux/send.ts'))};
+         const name = 'fleet-send-' + process.pid + '-1';
+         const tm = (args) => Bun.spawnSync({cmd: ['tmux', ...args], stdout: 'pipe', stderr: 'pipe', env: process.env});
+         if (tm(['set-buffer', '-b', name, 'saved text']).exitCode !== 0) throw new Error('set-buffer failed');
+         try {
+           sendKeys(${JSON.stringify(pane)}, 'new prompt');
+           const saved = tm(['show-buffer', '-b', name]);
+           if (saved.exitCode !== 0 || saved.stdout.toString() !== 'saved text') throw new Error('saved buffer changed');
+         } finally {
+           tm(['delete-buffer', '-b', name]);
+         }`,
+      ],
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: process.env,
+    });
+    expect(proc.exitCode).toBe(0);
+  });
+
+  test('preserves newline key semantics without bracketed paste', async () => {
     const { pane, output } = await inputReceiver('\x1b[?2004l');
     sendKeys(pane, 'plain café\nsecond line');
-    await expectInput(output, 'plain café\nsecond line\r');
+    await expectInput(output, 'plain café\x1b\rsecond line\r');
   });
 
   test('an empty prompt sends only Enter and leaves no buffer', async () => {
