@@ -4,10 +4,11 @@ export interface TmuxResult {
   stderr: string;
 }
 
-export function tmux(args: string[]): TmuxResult {
+export function tmux(args: string[], input?: string): TmuxResult {
   try {
     const proc = Bun.spawnSync({
       cmd: ['tmux', ...args],
+      stdin: input === undefined ? 'ignore' : Buffer.from(input),
       stdout: 'pipe',
       stderr: 'pipe',
       // Pass the live environment explicitly. Bun otherwise snapshots the
@@ -61,8 +62,8 @@ export function getTmuxOption(name: string): string | null {
   return tmuxOrNull(['show', '-gqv', name]);
 }
 
-export function tmuxOrThrow(args: string[], label: string): string {
-  const result = tmux(args);
+export function tmuxOrThrow(args: string[], label: string, input?: string): string {
+  const result = tmux(args, input);
   if (result.exitCode !== 0) {
     const detail = result.stderr.trim();
     throw new Error(detail.length > 0 ? `${label}: ${detail}` : label);

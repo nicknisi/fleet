@@ -1,15 +1,21 @@
-import { tmuxOrThrow } from './ipc.ts';
+import { tmux, tmuxOrThrow } from './ipc.ts';
+
+let bufferSequence = 0;
 
 export function sendKeys(paneId: string, text: string): void {
-  const lines = text.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (i > 0) {
-      tmuxOrThrow(['send-keys', '-t', paneId, 'M-Enter'], 'send-keys M-Enter failed');
+  if (text.length > 0) {
+    // Paste boundaries keep queued text distinct from the final Enter. A
+    // separate send-keys call alone does not guarantee a separate terminal read.
+    const buffer = `fleet-send-${process.pid}-${++bufferSequence}`;
+    try {
+      tmuxOrThrow(['load-buffer', '-b', buffer, '-'], 'load-buffer failed', text);
+      // tmux adds markers only when requested by the target; -r preserves LF.
+      tmuxOrThrow(['paste-buffer', '-p', '-r', '-d', '-b', buffer, '-t', paneId], 'paste-buffer failed');
+    } finally {
+      // -d normally removes it; also clean up if delivery fails. Leave the
+      // user's existing buffers alone and preserve any original send error.
+      tmux(['delete-buffer', '-b', buffer]);
     }
-    // `--` ends option parsing: a line starting with `-` (markdown bullet,
-    // CLI flag) would otherwise be read as a send-keys option and fail.
-    tmuxOrThrow(['send-keys', '-t', paneId, '-l', '--', line], 'send-keys failed');
   }
   tmuxOrThrow(['send-keys', '-t', paneId, 'Enter'], 'send-keys Enter failed');
 }
