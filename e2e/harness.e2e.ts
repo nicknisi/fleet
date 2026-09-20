@@ -25,7 +25,7 @@ import type { JsonObject } from '../src/json.ts';
 import { fullRefreshStates, fullRefreshStatesTui, refreshActionState } from '../src/state/refresh.ts';
 import { TmuxControlClient } from '../src/tmux/control.ts';
 import { resolvePermitKeys } from '../src/state/permit-keys.ts';
-import { sendKeyNames, sendRawKey } from '../src/tmux/send.ts';
+import { sendKeys, sendKeyNames, sendRawKey } from '../src/tmux/send.ts';
 import { AgentStatus } from '../src/state/types.ts';
 import {
   __resetSnapshotCacheForTests,
@@ -144,6 +144,30 @@ async function waitForScreen(pane: string, needle: string, timeoutMs = 3000): Pr
     if (Date.now() - start > timeoutMs) return false;
     await sleep(40);
   }
+}
+
+async function inputReceiver(prefix = ''): Promise<SessionInfo & { output: string }> {
+  const { name, pane } = newSession();
+  const output = join(root, `input-${sessionSeq}.bin`);
+  const receiver = join(root, `input-receiver-${sessionSeq}.cjs`);
+  writeFileSync(output, '');
+  writeFileSync(
+    receiver,
+    "const fs = require('node:fs');\n" +
+      'process.stdin.setRawMode(true);\n' +
+      "process.stdin.on('data', data => fs.appendFileSync(process.argv[2], data));\n" +
+      `process.stdout.write(${JSON.stringify(prefix + 'INPUT_READY')});\n`,
+  );
+  expect(tm(['respawn-pane', '-k', '-t', pane, process.execPath, receiver, output]).code).toBe(0);
+  expect(await waitForScreen(pane, 'INPUT_READY')).toBe(true);
+  return { name, pane, output };
+}
+
+async function expectInput(output: string, expected: string): Promise<void> {
+  const bytes = Buffer.from(expected);
+  const deadline = Date.now() + 2000;
+  while (readFileSync(output).length < bytes.length && Date.now() < deadline) await sleep(20);
+  expect(readFileSync(output).equals(bytes)).toBe(true);
 }
 
 // `fleet status <session>` prints "<STATE> <needs-you-count>". Return the state.
@@ -456,6 +480,111 @@ suite('send', () => {
   });
 });
 
+suite('prompt submission', () => {
+  const longLine = 'long café '.repeat(8192);
+  const cases: Array<[string, string, string]> = [
+    ['plain text', 'hello from Fleet', '\x1b[200~hello from Fleet\x1b[201~\r'],
+    [
+      'multiline Unicode and leading flags',
+      '- first café\n\n--second 🐈\n',
+      '\x1b[200~- first café\x1b[201~\x1b\r\x1b\r\x1b[200~--second 🐈\x1b[201~\x1b\r\r',
+    ],
+    [
+      'a prompt larger than a tmux command',
+      longLine + '\nfinal line 🐈',
+      `\x1b[200~${longLine}\x1b[201~\x1b\r\x1b[200~final line 🐈\x1b[201~\r`,
+    ],
+  ];
+
+  for (const [label, text, expected] of cases) {
+    test(`queues pasted lines and newline keys before Enter for ${label}`, async () => {
+      const { name, pane, output } = await inputReceiver('\x1b[?2004h');
+      writeStatus(pane, name, { state: 'idle' });
+      const pid = Number(tmOut(['display-message', '-p', '-t', pane, '#{pane_pid}']));
+      expect(pid).toBeGreaterThan(0);
+      // Force text and Enter to accumulate before the target can read either.
+      process.kill(pid, 'SIGSTOP');
+      try {
+        expect(fleet(['send', name, text]).code).toBe(0);
+      } finally {
+        process.kill(pid, 'SIGCONT');
+      }
+      await expectInput(output, expected);
+    });
+  }
+
+  test('preserves existing paste buffers across consecutive sends', async () => {
+    const { pane, output } = await inputReceiver('\x1b[?2004h');
+    expect(tm(['set-buffer', '-b', 'user-buffer', 'saved café']).code).toBe(0);
+    expect(tm(['set-buffer', 'default text']).code).toBe(0);
+    const before = tmOut(['list-buffers', '-F', '#{buffer_name}']);
+    const defaultBuffer = before.split('\n')[0]!;
+    try {
+      sendKeys(pane, 'first');
+      sendKeys(pane, 'second');
+      await expectInput(output, '\x1b[200~first\x1b[201~\r\x1b[200~second\x1b[201~\r');
+      expect(tmOut(['list-buffers', '-F', '#{buffer_name}'])).toBe(before);
+      expect(tmOut(['show-buffer'])).toBe('default text');
+      expect(tmOut(['show-buffer', '-b', 'user-buffer'])).toBe('saved café');
+    } finally {
+      tm(['delete-buffer', '-b', 'user-buffer']);
+      tm(['delete-buffer', '-b', defaultBuffer]);
+    }
+  });
+
+  test('preserves a leftover buffer from a reused process ID', async () => {
+    const { pane } = await inputReceiver('\x1b[?2004h');
+    // A fresh sender starts its old counter at 1, independently of test order.
+    const proc = Bun.spawnSync({
+      cmd: [
+        process.execPath,
+        '-e',
+        `import { sendKeys } from ${JSON.stringify(join(import.meta.dir, '..', 'src/tmux/send.ts'))};
+         const name = 'fleet-send-' + process.pid + '-1';
+         const tm = (args) => Bun.spawnSync({cmd: ['tmux', ...args], stdout: 'pipe', stderr: 'pipe', env: process.env});
+         if (tm(['set-buffer', '-b', name, 'saved text']).exitCode !== 0) throw new Error('set-buffer failed');
+         try {
+           sendKeys(${JSON.stringify(pane)}, 'new prompt');
+           const saved = tm(['show-buffer', '-b', name]);
+           if (saved.exitCode !== 0 || saved.stdout.toString() !== 'saved text') throw new Error('saved buffer changed');
+         } finally {
+           tm(['delete-buffer', '-b', name]);
+         }`,
+      ],
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: process.env,
+    });
+    expect(proc.exitCode).toBe(0);
+  });
+
+  test('preserves newline key semantics without bracketed paste', async () => {
+    const { pane, output } = await inputReceiver('\x1b[?2004l');
+    sendKeys(pane, 'plain café\nsecond line');
+    await expectInput(output, 'plain café\x1b\rsecond line\r');
+  });
+
+  test('an empty prompt sends only Enter and leaves no buffer', async () => {
+    const { pane, output } = await inputReceiver('\x1b[?2004h');
+    const before = tmOut(['list-buffers', '-F', '#{buffer_name}']);
+    sendKeys(pane, '');
+    await expectInput(output, '\r');
+    expect(tmOut(['list-buffers', '-F', '#{buffer_name}'])).toBe(before);
+  });
+
+  test('cleans up a failed paste without touching existing buffers', () => {
+    expect(tm(['set-buffer', '-b', 'preserved-on-failure', 'keep me']).code).toBe(0);
+    const before = tmOut(['list-buffers', '-F', '#{buffer_name}']);
+    try {
+      expect(() => sendKeys('%999999', 'undeliverable')).toThrow("can't find pane: %999999");
+      expect(tmOut(['list-buffers', '-F', '#{buffer_name}'])).toBe(before);
+      expect(tmOut(['show-buffer', '-b', 'preserved-on-failure'])).toBe('keep me');
+    } finally {
+      tm(['delete-buffer', '-b', 'preserved-on-failure']);
+    }
+  });
+});
+
 suite('raw passthrough input', () => {
   const largeInput = Buffer.concat([
     Buffer.alloc(1023, 0x61),
@@ -479,23 +608,6 @@ suite('raw passthrough input', () => {
     ['large input with split UTF-8 and a short tail', [largeInput]],
     ['large run of control keys', [Buffer.alloc(2049, 0x09)]],
   ];
-
-  async function inputReceiver(prefix = ''): Promise<{ pane: string; output: string }> {
-    const { pane } = newSession();
-    const output = join(root, `input-${sessionSeq}.bin`);
-    const receiver = join(root, 'input-receiver.cjs');
-    writeFileSync(output, '');
-    writeFileSync(
-      receiver,
-      "const fs = require('node:fs');\n" +
-        'process.stdin.setRawMode(true);\n' +
-        "process.stdin.on('data', data => fs.appendFileSync(process.argv[2], data));\n" +
-        `process.stdout.write(${JSON.stringify(prefix + 'INPUT_READY')});\n`,
-    );
-    expect(tm(['respawn-pane', '-k', '-t', pane, process.execPath, receiver, output]).code).toBe(0);
-    expect(await waitForScreen(pane, 'INPUT_READY')).toBe(true);
-    return { pane, output };
-  }
 
   for (const [name, chunks] of cases) {
     test(`delivers every byte of ${name}`, async () => {
