@@ -1,4 +1,5 @@
 import { AgentStatus, type DetectResult } from './types.ts';
+import { stripAnsi } from '../terminal/ansi.ts';
 import { capturePane, processCaptureOutput } from '../tmux/sessions.ts';
 import { tmuxAsync } from '../tmux/ipc.ts';
 import { capturePaneVia, type ControlReadClient } from '../tmux/control-adapter.ts';
@@ -25,7 +26,9 @@ const RULE_STATE_TO_STATUS = {
 // Defaults to the built-in claude manifest so the regression tests can call it
 // with a single `lines` argument and touch no disk.
 export function detectFromPaneContent(lines: string[], manifest: DetectionManifest = CLAUDE_MANIFEST): DetectResult {
-  const bottomText = lines.slice(-manifest.linesFromBottom).join('\n');
+  // Captures preserve ANSI for previews, but detection rules describe visible
+  // text. Color changes must not split a prompt or hide an anchored spinner row.
+  const bottomText = stripAnsi(lines.slice(-manifest.linesFromBottom).join('\n'));
 
   for (const rule of manifest.rules) {
     const re = getCompiledRegex(rule);

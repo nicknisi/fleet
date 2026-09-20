@@ -106,7 +106,7 @@ describe('statusline refresh work', () => {
 
   test('a cold refresh clears the window tint when attention ends', () => {
     run('status', '--statusline');
-    expect(calls().some((line) => line.includes('set -w -t @1 @fleet_state yellow'))).toBe(true);
+    expect(calls().some((line) => line.includes('set -w -t @1 @fleet_state red'))).toBe(true);
     for (const name of readdirSync(work)) {
       if (name.endsWith('.cache')) rmSync(join(work, name));
     }

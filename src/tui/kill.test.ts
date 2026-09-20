@@ -58,12 +58,12 @@ describe('renderKillConfirm', () => {
 
   test('labels window-first with the session as context', () => {
     const lines = renderKillConfirm(makeState({ session: 'dotfiles', window: 'editor', status: AgentStatus.DONE }));
-    expect(lines.join('\n')).toContain('Kill editor [dotfiles]?');
+    expect(lines.join('\n')).toContain('Kill %42: editor [dotfiles]?');
   });
 
   test('collapses to the bare session when the window adds nothing', () => {
     const lines = renderKillConfirm(makeState({ session: 'dotfiles', window: 'dotfiles', status: AgentStatus.DONE }));
-    expect(lines.join('\n')).toContain('Kill dotfiles?');
+    expect(lines.join('\n')).toContain('Kill %42: dotfiles?');
     expect(lines.join('\n')).not.toContain('[');
   });
 

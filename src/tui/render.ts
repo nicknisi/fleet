@@ -29,6 +29,7 @@ export function render(app: TuiApp, size: TerminalSize): string {
   }
 
   const footerLines = renderFooter(app, cols);
+  if (app.actionError) footerLines.unshift(truncateAnsi(`${C.red}${app.actionError}${C.reset}`, cols));
   // Every row between header and footer — all of them are written each frame
   // (the fill loop below), so no row can carry a stale previous frame.
   const contentRows = rows - headerLines.length - footerLines.length;
@@ -41,7 +42,7 @@ export function render(app: TuiApp, size: TerminalSize): string {
   // SEND/RENAME/CONFIRM_KILL share one modal shape: a spacer, then the modal's
   // lines. null = not a modal mode (or nothing selected — fill loop blanks it).
   const modalLines = ((): string[] | null => {
-    const selected = app.selectedState();
+    const selected = app.actionState() ?? app.actionTarget;
     if (!selected) return null;
     switch (app.mode) {
       case TuiMode.SEND:
@@ -68,12 +69,12 @@ export function render(app: TuiApp, size: TerminalSize): string {
     out.push('\x1b[K\r\n');
     linesWritten++;
     for (let i = 0; i < contentRows - 1 && i < modalLines.length; i++) {
-      out.push(modalLines[i]! + '\x1b[K\r\n');
+      out.push(truncateAnsi(modalLines[i]!, cols) + '\x1b[K\r\n');
       linesWritten++;
     }
   } else if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
-    const selected = app.selectedState();
     const isPassthrough = app.mode === TuiMode.PASSTHROUGH;
+    const selected = isPassthrough ? app.actionState() : app.selectedState();
     const listWidth = app.listWidth(cols);
     const previewWidth = cols - listWidth - 1;
 
@@ -83,7 +84,7 @@ export function render(app: TuiApp, size: TerminalSize): string {
     const sessionLines = renderSessionList(app, contentRows - 1, listWidth);
     const emptyPreview: PreviewRender = { lines: [], cursor: null };
     const preview = selected
-      ? renderPreviewWithCursor(selected, previewWidth, contentRows - 1, isPassthrough)
+      ? renderPreviewWithCursor(selected, previewWidth, contentRows - 1, isPassthrough, app.spinnerFrame, app.preview)
       : emptyPreview;
     const previewLines = preview.lines;
     // Map the preview-relative caret to an absolute screen cell. Preview array

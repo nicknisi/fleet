@@ -40,12 +40,18 @@ import {
   type DiscoveredAgent,
   type DoneTracking,
 } from '../agents/discovery.ts';
-import { listPanesResult, listPanesResultAsync, type ListPanesResult, type PaneInfo } from '../tmux/sessions.ts';
+import {
+  listPanesResult,
+  listPanesResultAsync,
+  processCaptureOutput,
+  type ListPanesResult,
+  type PaneInfo,
+} from '../tmux/sessions.ts';
 import { readGitMetadata, readGitMetadataAsync, branchLabel, type GitMetadata } from './git-metadata.ts';
 import type { TmuxControlClient } from '../tmux/control.ts';
 import { listPanesResultVia } from '../tmux/control-adapter.ts';
 import { flipControlDead, type ControlLatch } from '../tmux/control-router.ts';
-import { tmuxOrNull } from '../tmux/ipc.ts';
+import { tmuxOrNull, tmuxOrThrow } from '../tmux/ipc.ts';
 import { detectPorts, detectPortsAsync, type PanePort } from '../tmux/ports.ts';
 
 export function shortenPath(path: string): string {
@@ -549,6 +555,7 @@ export function refreshStates(
     states.push({
       paneId: pane.paneId,
       paneNum: pane.paneNum,
+      panePid: pane.panePid,
       session: pane.sessionName,
       window: pane.windowName,
       windowId: pane.windowId,
@@ -574,6 +581,42 @@ export function refreshStates(
   }
 
   return states;
+}
+
+// Interaction-time validation only: fresh identity, lifecycle files, and one
+// screen capture. Never run git, lsof or an all-pane scrape on a submit key.
+// A failed read is not IDLE; callers preserve the draft / decline the action.
+export function refreshActionState(target: AgentState, dirs: AgentDir[]): AgentState {
+  const panesResult = listPanesResult();
+  if (!panesResult.ok) throw new Error('Cannot verify target: tmux unavailable');
+  const hookStatuses = readAllStatusDirs(dirs);
+  const current = refreshStates(dirs, { panesResult, hookStatuses }).find((s) => s.paneId === target.paneId);
+  if (!current || current.panePid !== target.panePid || current.agentType !== target.agentType) {
+    throw new Error(`Target ${target.paneId} disappeared or changed`);
+  }
+  const lines = processCaptureOutput(
+    tmuxOrThrow(['capture-pane', '-p', '-t', target.paneId], 'Cannot verify target screen'),
+    50,
+  );
+  const manifest = loadDetectionManifest(current.agentType || 'claude');
+  const screen = detectFromPaneContent(lines, manifest);
+  const title = detectFromTitle(current.paneTitle ?? '', manifest);
+  const decision = current.decision;
+  if (decision && current.tracking === 'hook') {
+    // An old event must not authorize an action over a newer working hook.
+    const eventIsFresh = decision.eventTs !== null && decision.eventTs >= decision.hookTs;
+    current.status = fuseState({
+      hookState: hookStateForStatus(decision.candidates.hook ?? AgentStatus.IDLE),
+      hookTs: decision.hookTs,
+      eventStatus: eventIsFresh ? decision.candidates.event : null,
+      eventTs: decision.eventTs,
+      scrapeStatus: screen.status ?? title.status,
+      scrapeRuleId: screen.status !== null ? screen.ruleId : title.ruleId,
+    }).status;
+  } else if (screen.status !== null || title.status !== null) {
+    current.status = screen.status ?? title.status!;
+  }
+  return current;
 }
 
 // Full refresh: one list-panes + one status-dir read feed both the slow caches

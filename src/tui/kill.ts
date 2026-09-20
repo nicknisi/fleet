@@ -32,7 +32,7 @@ export function renderKillConfirm(state: AgentState): string[] {
   const agentName = agentSessionName(state);
   const label = agentName ? `${where} (${agentName})` : where;
 
-  lines.push(`${C.bold}Kill ${label}?${C.reset}`);
+  lines.push(`${C.bold}Kill ${state.paneId}: ${label}?${C.reset}`);
   lines.push('');
 
   if (!check.ok) {

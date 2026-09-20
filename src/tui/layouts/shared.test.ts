@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { agentRowLabel, stateIcon, windowLines, type LayoutLines } from './shared.ts';
+import { agentRowLabel, stateIcon, windowLines, WORKING_FRAMES, type LayoutLines } from './shared.ts';
+import { stripAnsi } from '../../terminal/ansi.ts';
 import { CARD_LAYOUT_MAX_COLS, pickLayout } from './index.ts';
 import { AgentStatus, type AgentState } from '../../state/types.ts';
 
@@ -38,13 +39,18 @@ describe('pickLayout', () => {
 });
 
 describe('stateIcon', () => {
-  test('busy icon renders the working glyph in both phases', () => {
-    expect(stateIcon(AgentStatus.BUSY, false)).toContain('◉');
-    expect(stateIcon(AgentStatus.BUSY, true)).toContain('◉');
+  test('working rotates through ten distinct frames, including without color', () => {
+    const frames = WORKING_FRAMES.map((_, i) => stripAnsi(stateIcon(AgentStatus.BUSY, i)));
+    expect(frames).toEqual([...WORKING_FRAMES]);
+    expect(new Set(frames).size).toBe(10);
+    expect(stateIcon(AgentStatus.BUSY, 10)).toBe(stateIcon(AgentStatus.BUSY, 0));
   });
-  test('non-busy states ignore the pulse phase entirely', () => {
-    expect(stateIcon(AgentStatus.PERMIT, true)).toBe(stateIcon(AgentStatus.PERMIT, false));
-    expect(stateIcon(AgentStatus.IDLE, true)).toBe(stateIcon(AgentStatus.IDLE, false));
+  test('non-working states are steady and ready differs from idle without color', () => {
+    for (const status of [AgentStatus.PERMIT, AgentStatus.QUESTION, AgentStatus.DONE, AgentStatus.IDLE]) {
+      expect(stateIcon(status, 9)).toBe(stateIcon(status, 0));
+    }
+    expect(stripAnsi(stateIcon(AgentStatus.DONE))).toBe('●');
+    expect(stripAnsi(stateIcon(AgentStatus.IDLE))).toBe('○');
   });
 });
 

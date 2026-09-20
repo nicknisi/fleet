@@ -69,7 +69,7 @@ export function chipSeparator(): string | null {
 // NOT a substitute: in a run-shell child it carries the tmux server's inherited
 // environment, which points at whatever pane happened to start the server.)
 // Only the sidebar sentinel reads it; switch/ack on an agent chip ignore it.
-const FROM_PANE_ARG = '--from \\"#{pane_id}\\"';
+const FROM_PANE_ARG = '--from \\"#{pane_id}\\" --client \\"#{client_name}\\"';
 
 // Clearing a notification by *reaching* the pane, not just by clicking its Fleet
 // chip. A pane-focus-in hook acks whatever pane just gained focus, so switching

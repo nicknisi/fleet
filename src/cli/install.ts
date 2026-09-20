@@ -16,7 +16,7 @@ const FLEET_TMUX_LINE = `run-shell "fleet statusline --inject" ${FLEET_MANAGED_M
 // child inherits the tmux *server's* TMUX_PANE, so with no explicit target the
 // toggle lands in whichever window happened to start the server. `#{pane_id}`
 // expands against the invoking client, same as the ☰ button's binding.
-const FLEET_KEYBIND_SIDEBAR = `bind-key f run-shell "fleet sidebar --from '#{pane_id}'" ${FLEET_MANAGED_MARKER}`;
+const FLEET_KEYBIND_SIDEBAR = `bind-key f run-shell "fleet sidebar --from '#{pane_id}' --client '#{client_name}'" ${FLEET_MANAGED_MARKER}`;
 const FLEET_KEYBIND_POPUP = `bind-key F display-popup -E -w 80% -h 60% fleet ${FLEET_MANAGED_MARKER}`;
 
 // Window state rollup opt-in: gate option + both window-status format overrides,

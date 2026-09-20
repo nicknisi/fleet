@@ -75,11 +75,11 @@ export function formatAgeDelta(deltaSecs: number): string {
 // The in-app TUI ignores this field and colors state via getStateColor()/the C
 // palette instead.
 export const STATUS_DISPLAY = {
-  [AgentStatus.PERMIT]: { icon: '⚠', label: 'waiting', color: 'yellow' },
-  [AgentStatus.QUESTION]: { icon: '?', label: 'asking', color: 'magenta' },
+  [AgentStatus.PERMIT]: { icon: '⚠', label: 'waiting', color: 'red' },
+  [AgentStatus.QUESTION]: { icon: '?', label: 'asking', color: 'red' },
   [AgentStatus.DONE]: { icon: '●', label: 'ready', color: 'green' },
-  [AgentStatus.BUSY]: { icon: '◉', label: 'working', color: 'brightred' },
-  [AgentStatus.IDLE]: { icon: '●', label: 'idle', color: 'blue' },
+  [AgentStatus.BUSY]: { icon: '⠋', label: 'working', color: 'yellow' },
+  [AgentStatus.IDLE]: { icon: '○', label: 'idle', color: 'brightblack' },
   [AgentStatus.SHELL]: { icon: '■', label: 'shell', color: 'brightblack' },
   [AgentStatus.DOWN]: { icon: '○', label: 'down', color: 'brightblack' },
 } satisfies Record<AgentStatus, { icon: string; label: string; color: string }>;
@@ -89,6 +89,8 @@ import type { GitMetadata } from './git-metadata.ts';
 export interface AgentState {
   paneId: string;
   paneNum: number;
+  // Pane process identity for guarding interactions across respawn-pane.
+  panePid?: number;
   session: string;
   window: string;
   windowId: string;

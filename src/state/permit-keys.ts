@@ -1,5 +1,7 @@
 import { getCompiledRegex, loadDetectionManifest, type DetectionManifest } from './detection.ts';
-import { capturePaneLines } from './scraper.ts';
+import { capturePaneLines, detectFromPaneContent } from './scraper.ts';
+import { AgentStatus } from './types.ts';
+import { stripAnsi } from '../terminal/ansi.ts';
 
 export type PermitAction = 'approve' | 'deny';
 
@@ -13,14 +15,19 @@ const FALLBACK_KEYS = { approve: ['y'], deny: ['n'] } satisfies Record<PermitAct
 // screen. Precedence: matched PERMIT rule's own keys > manifest defaults >
 // literal y/n. Matching walks the manifest's PERMIT rules in order (first match
 // wins, same contract as detection) over the same bottom window detection uses;
-// no match falls through to the manifest defaults — that covers hook- and
-// title-sourced PERMIT where the screen shows no known prompt text.
+// no live PERMIT match refuses the shortcut. A hook/title alone cannot prove
+// that sending an approval key to the current screen is safe.
 export function resolvePermitKeysFromLines(
   lines: string[],
   manifest: DetectionManifest,
   action: PermitAction,
 ): string[] {
-  const bottomText = lines.slice(-manifest.linesFromBottom).join('\n');
+  // Use the detector's FULL ordering, not just its permission rules: a busy
+  // indicator must beat an old approval prompt lingering in the transcript.
+  if (detectFromPaneContent(lines, manifest).status !== AgentStatus.PERMIT) {
+    throw new Error('No current permission dialog; inspect the target or use passthrough');
+  }
+  const bottomText = stripAnsi(lines.slice(-manifest.linesFromBottom).join('\n'));
 
   for (const rule of manifest.rules) {
     if (rule.state !== 'PERMIT') continue;

@@ -1,5 +1,6 @@
 import { AgentStatus, agentSessionName, compareStatus, windowLabel, type AgentState } from '../state/types.ts';
 import { repoLabelFromId } from '../state/repo-groups.ts';
+import type { PreviewSnapshot } from './preview.ts';
 
 // A rendered dashboard line: sessions with 2+ agents get a header row followed
 // by grouped (indented, window-named) agent rows; singletons render inline. In
@@ -53,6 +54,9 @@ export class TuiApp {
   private modeBeforeKill: TuiMode = TuiMode.DASHBOARD;
   sendBuffer: string = '';
   renameBuffer: string = '';
+  // An interaction owns a pane, independently of the browsing selection.
+  actionTarget: AgentState | null = null;
+  actionError: string | null = null;
   shouldQuit: boolean = false;
   tmuxDown: boolean = false;
   hooksMissing: boolean = false;
@@ -62,7 +66,8 @@ export class TuiApp {
   // only). Drives the divider's hover affordance so it reads as draggable.
   hoverDivider: boolean = false;
   hoverPaneId: string | null = null;
-  pulsePhase: boolean = false;
+  spinnerFrame: number = 0;
+  preview: PreviewSnapshot | null = null;
   // Opt-in repo-group view: groups panes by their git repository id (sibling
   // worktrees) instead of by tmux session. Off by default so ordering and
   // navigation are unchanged until the user presses `g`.
@@ -118,6 +123,16 @@ export class TuiApp {
     const selectedPaneId = this.selectedState()?.paneId ?? null;
     this.states = newStates;
     this.invalidateViews();
+
+    if (this.actionTarget && !this.actionState()) {
+      const pane = this.actionTarget.paneId;
+      if (this.mode === TuiMode.CONFIRM_KILL) this.exitKillConfirm();
+      if (this.mode === TuiMode.PASSTHROUGH) this.exitPassthrough();
+      if (this.mode === TuiMode.RENAME) this.exitRename();
+      // A send draft remains visible, bound to its original (now unavailable)
+      // target. Nothing may silently adopt the replacement selection.
+      this.actionError = `Target ${pane} disappeared or changed; nothing sent.`;
+    }
 
     if (this.hoverPaneId && !newStates.some((s) => s.paneId === this.hoverPaneId)) {
       this.hoverPaneId = null;
@@ -250,6 +265,10 @@ export class TuiApp {
     return this.filtering;
   }
 
+  acceptFilter(): void {
+    this.filtering = false;
+  }
+
   clearFilter(): void {
     this.filter = '';
     this.filtering = false;
@@ -257,7 +276,19 @@ export class TuiApp {
     this.invalidateViews();
   }
 
+  actionState(): AgentState | null {
+    const target = this.actionTarget;
+    if (!target) return null;
+    return (
+      this.states.find(
+        (s) => s.paneId === target.paneId && s.agentType === target.agentType && s.panePid === target.panePid,
+      ) ?? null
+    );
+  }
+
   enterSend(): void {
+    this.actionTarget = this.selectedState();
+    this.actionError = null;
     this.modeBeforeSend = this.mode;
     this.mode = TuiMode.SEND;
     this.sendBuffer = '';
@@ -265,10 +296,14 @@ export class TuiApp {
 
   exitSend(): void {
     this.mode = this.modeBeforeSend;
+    this.actionTarget = null;
+    this.actionError = null;
     this.sendBuffer = '';
   }
 
   enterRename(prefill: string): void {
+    this.actionTarget = this.selectedState();
+    this.actionError = null;
     this.modeBeforeRename = this.mode;
     this.mode = TuiMode.RENAME;
     this.renameBuffer = prefill;
@@ -277,23 +312,30 @@ export class TuiApp {
   exitRename(): void {
     this.mode = this.modeBeforeRename;
     this.renameBuffer = '';
+    this.actionTarget = null;
   }
 
   enterKillConfirm(): void {
+    this.actionTarget = this.selectedState();
+    this.actionError = null;
     this.modeBeforeKill = this.mode;
     this.mode = TuiMode.CONFIRM_KILL;
   }
 
   exitKillConfirm(): void {
     this.mode = this.modeBeforeKill;
+    this.actionTarget = null;
   }
 
   enterPassthrough(): void {
+    this.actionTarget = this.selectedState();
+    this.actionError = null;
     this.mode = TuiMode.PASSTHROUGH;
   }
 
   exitPassthrough(): void {
     this.mode = TuiMode.PREVIEW;
+    this.actionTarget = null;
   }
 
   moveUp(): void {

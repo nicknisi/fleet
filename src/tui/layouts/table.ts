@@ -58,7 +58,7 @@ function formatAgentRow(
   cols: number,
   selected: boolean,
   hovered: boolean,
-  pulse: boolean,
+  frame: number,
 ): string {
   const state = row.state;
   const stColor = getStateColor(state.status);
@@ -85,7 +85,7 @@ function formatAgentRow(
 
   const portStr = state.ports.length > 0 ? ` ${C.cyan}⌁${state.ports[0]}${C.reset}` : '';
 
-  const line = `${sel} ${stateIcon(state.status, pulse)} ${nameColor}${name}${C.reset}${C.gray}${padAnsi(truncateWidth(detail, widths.detail), widths.detail)}${C.reset}${branchPart} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
+  const line = `${sel} ${stateIcon(state.status, frame)} ${nameColor}${name}${C.reset}${C.gray}${padAnsi(truncateWidth(detail, widths.detail), widths.detail)}${C.reset}${branchPart} ${ageColor}${age.padEnd(4)}${C.reset}${portStr}`;
 
   return truncateAnsi(line, cols);
 }
@@ -108,7 +108,7 @@ export function buildTableLines(app: TuiApp, cols: number): LayoutLines {
           cols,
           row.state.paneId === selectedPane,
           row.state.paneId === app.hoverPaneId,
-          app.pulsePhase,
+          app.spinnerFrame,
         ),
       );
       states.push(row.state);

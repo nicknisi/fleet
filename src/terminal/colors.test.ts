@@ -23,18 +23,20 @@ describe('theme palettes', () => {
 
   test('defaults to dark (Catppuccin Mocha)', () => {
     expect(getThemeMode()).toBe('dark');
-    expect(stateThemeColor('permit')).toEqual({ kind: 'rgb', r: 249, g: 226, b: 175 });
-    expect(stateThemeColor('idle')).toEqual({ kind: 'rgb', r: 137, g: 180, b: 250 });
+    expect(stateThemeColor('permit')).toEqual({ kind: 'rgb', r: 243, g: 139, b: 168 });
+    expect(stateThemeColor('question')).toEqual(stateThemeColor('permit'));
+    expect(stateThemeColor('busy')).toEqual({ kind: 'rgb', r: 249, g: 226, b: 175 });
+    expect(stateThemeColor('idle')).toEqual({ kind: 'rgb', r: 147, g: 153, b: 178 });
   });
 
   test('light mode swaps to Catppuccin Latte', () => {
     setThemeMode('light');
     expect(getThemeMode()).toBe('light');
-    expect(stateThemeColor('permit')).toEqual({ kind: 'rgb', r: 223, g: 142, b: 29 });
-    expect(stateThemeColor('question')).toEqual({ kind: 'rgb', r: 136, g: 57, b: 239 });
+    expect(stateThemeColor('permit')).toEqual({ kind: 'rgb', r: 210, g: 15, b: 57 });
+    expect(stateThemeColor('question')).toEqual(stateThemeColor('permit'));
     expect(stateThemeColor('done')).toEqual({ kind: 'rgb', r: 64, g: 160, b: 43 });
-    expect(stateThemeColor('busy')).toEqual({ kind: 'rgb', r: 254, g: 100, b: 11 });
-    expect(stateThemeColor('idle')).toEqual({ kind: 'rgb', r: 30, g: 102, b: 245 });
+    expect(stateThemeColor('busy')).toEqual({ kind: 'rgb', r: 163, g: 103, b: 20 });
+    expect(stateThemeColor('idle')).toEqual({ kind: 'rgb', r: 108, g: 111, b: 133 });
     expect(stateThemeColor('shell')).toEqual({ kind: 'rgb', r: 156, g: 160, b: 176 });
     expect(stateThemeColor('down')).toEqual({ kind: 'rgb', r: 188, g: 192, b: 204 });
   });

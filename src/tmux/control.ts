@@ -62,9 +62,14 @@ export function nextSyncMarker(): string {
 }
 
 /** The three capturePane tmux commands, in order, using buffer `buf` + file. */
-export function captureCommands(buf: string, paneId: string, tempFile: string): readonly [string, string, string] {
+export function captureCommands(
+  buf: string,
+  paneId: string,
+  tempFile: string,
+  ansi = false,
+): readonly [string, string, string] {
   return [
-    `capture-pane -b ${buf} -t ${paneId}`,
+    `capture-pane${ansi ? ' -e' : ''} -b ${buf} -t ${paneId}`,
     `save-buffer -b ${buf} ${tempFile}`,
     `delete-buffer -b ${buf}`,
   ] as const;
@@ -160,16 +165,19 @@ export class TmuxControlClient {
    * even on error; the temp file is reused across calls and unlinked in
    * close().
    */
-  async capturePane(paneId: string): Promise<string> {
-    const [cap, save, del] = captureCommands(this.bufferName, paneId, this.tempFile);
-    try {
-      await this.run(cap);
-      await this.run(save);
-      return await Bun.file(this.tempFile).text();
-    } finally {
-      // delete-buffer on every path — never leak the named buffer.
-      await this.run(del).catch(() => {});
-    }
+  capturePane(paneId: string, ansi = false): Promise<string> {
+    // Serialize the entire buffer/file lifetime: preview and state scans can
+    // overlap, but must never overwrite each other's named buffer or file.
+    return this.serialize(async () => {
+      const [cap, save, del] = captureCommands(this.bufferName, paneId, this.tempFile, ansi);
+      try {
+        await this.runSerialized(cap);
+        await this.runSerialized(save);
+        return await Bun.file(this.tempFile).text();
+      } finally {
+        await this.runSerialized(del).catch(() => {});
+      }
+    });
   }
 
   /** Detach and reap the child; unlink the reusable temp file. */

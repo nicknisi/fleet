@@ -3,8 +3,15 @@ import { disableColors } from '../terminal/colors.ts';
 
 disableColors();
 
-import { computeColumnWidths, paneTitle, renderHeader, renderSessionList, stateAtLine } from './dashboard.ts';
-import { TuiApp } from './app.ts';
+import {
+  computeColumnWidths,
+  paneTitle,
+  renderHeader,
+  renderFooter,
+  renderSessionList,
+  stateAtLine,
+} from './dashboard.ts';
+import { TuiApp, TuiMode } from './app.ts';
 import { stripAnsi, visibleLength } from '../terminal/ansi.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 
@@ -72,6 +79,44 @@ describe('renderSessionList grouping', () => {
     const lines = renderSessionList(app, 20, 120).map(stripAnsi).join('\n');
     expect(lines).toContain('all quiet');
     expect(lines).not.toContain('No agents found');
+  });
+});
+
+describe('sidebar status chrome', () => {
+  test('attention and activity remain legible at sidebar widths', () => {
+    const app = makeApp([
+      makeState('permit', AgentStatus.PERMIT, '%1', 'main'),
+      makeState('question', AgentStatus.QUESTION, '%2', 'main'),
+      makeState('done', AgentStatus.DONE, '%3', 'main'),
+      makeState('working', AgentStatus.BUSY, '%4', 'main'),
+      makeState('idle', AgentStatus.IDLE, '%5', 'main'),
+    ]);
+    for (const width of [30, 34, 47]) {
+      const lines = renderHeader(app, width).map(stripAnsi);
+      expect(lines.join('\n')).toContain('2 need you');
+      expect(lines.join('\n')).toContain('1 ready');
+      expect(lines.join('\n')).toContain('1 working');
+      expect(lines.join('\n')).toContain('1 idle');
+      for (const line of lines) expect(visibleLength(line)).toBeLessThanOrEqual(width);
+    }
+  });
+  test('search and LIVE warnings take priority over generic hints', () => {
+    const app = makeApp([makeState('api', AgentStatus.IDLE, '%42', 'main')]);
+    for (const width of [30, 34, 47, 120]) {
+      app.setFilter('a'.repeat(100));
+      const filter = renderFooter(app, width).map(stripAnsi).join('\n');
+      expect(filter).toContain('/aaa');
+      expect(filter).toContain('Esc');
+      expect(visibleLength(filter)).toBeLessThanOrEqual(width);
+      app.clearFilter();
+      app.enterPassthrough();
+      const live = renderFooter(app, width).map(stripAnsi).join('\n');
+      expect(live).toContain('LIVE → %42');
+      expect(live).toContain('Esc');
+      expect(live).not.toContain('quit');
+      expect(visibleLength(live)).toBeLessThanOrEqual(width);
+      app.mode = TuiMode.DASHBOARD;
+    }
   });
 });
 
