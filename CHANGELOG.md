@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0](https://github.com/nicknisi/fleet/compare/v0.26.0...v0.27.0) (2026-09-20)
+
+
+### Features
+
+* add persistent sidebar with safer, faster interactions ([#91](https://github.com/nicknisi/fleet/issues/91)) ([a27aa92](https://github.com/nicknisi/fleet/commit/a27aa9298bcc2d9c58a8a8e5a35de0a82215b3ac))
+
+
+### Bug Fixes
+
+* submit prompts with bracketed paste ([#90](https://github.com/nicknisi/fleet/issues/90)) ([f8b8f62](https://github.com/nicknisi/fleet/commit/f8b8f629755daf0e263c44788625468a4d2901a9))
+
 ## [0.26.0](https://github.com/nicknisi/fleet/compare/v0.25.0...v0.26.0) (2026-09-15)
 
 
