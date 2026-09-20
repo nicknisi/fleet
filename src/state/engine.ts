@@ -1,4 +1,4 @@
-import { AgentStatus, type StateDecision } from './types.ts';
+import { AgentStatus, needsAttention, type StateDecision } from './types.ts';
 
 const WORKING_TIMEOUT_SECS = 180;
 
@@ -111,9 +111,12 @@ export function fuseState(input: FuseInput): FuseResult {
     decision.workingTimeoutFired = true;
   }
 
-  // Scraper BUSY is a positive activity read (running token counter on screen).
-  if (input.scrapeStatus === AgentStatus.BUSY) {
-    return finish(AgentStatus.BUSY, 'scrape', 'scraper saw a live token counter / esc-to-interrupt');
+  // A weak spinner corroborates activity, but cannot override an explicit
+  // question/permission/completion. Strong live working rules still can retire
+  // a stale prompt. This also keeps a late composer frame from undoing Stop.
+  const protectedFromSpinner = input.scrapeRuleId === 'busy.spinner-glyph' && needsAttention(derived);
+  if (input.scrapeStatus === AgentStatus.BUSY && !protectedFromSpinner) {
+    return finish(AgentStatus.BUSY, 'scrape', 'scraper saw a live working indicator');
   }
 
   // Scraper IDLE just means the live screen shows a bare prompt with no dialog

@@ -1,7 +1,6 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 import { disableColors } from '../terminal/colors.ts';
-import * as tmuxSessions from '../tmux/sessions.ts';
 import { TuiApp, TuiMode } from './app.ts';
 import { render } from './render.ts';
 
@@ -11,13 +10,6 @@ disableColors();
 // exactly what a Claude Code diff line looks like in `capturePane` output.
 const OPEN_BG = '\x1b[48;5;52m';
 const CAPTURED_DIFF_LINE = `${OPEN_BG}  4 -description`;
-
-// Stub capturePane without replacing the tmux exports used by other tests.
-let captureSpy: ReturnType<typeof spyOn<typeof tmuxSessions, 'capturePane'>>;
-beforeEach(() => {
-  captureSpy = spyOn(tmuxSessions, 'capturePane').mockReturnValue([CAPTURED_DIFF_LINE]);
-});
-afterEach(() => captureSpy.mockRestore());
 
 const makeState = (): AgentState => ({
   paneId: '%1',
@@ -36,11 +28,6 @@ const makeState = (): AgentState => ({
   agentType: 'claude',
 });
 
-test('preview capture mocking preserves unrelated tmux exports', async () => {
-  const sessions = await import('../tmux/sessions.ts');
-  expect(sessions.parsePanesOutput('')).toEqual([]);
-});
-
 describe('render grouped dashboard frame', () => {
   test('grouped session renders a header line and indented window rows in the frame', () => {
     const app = new TuiApp();
@@ -56,11 +43,27 @@ describe('render grouped dashboard frame', () => {
   });
 });
 
+test('narrow action dialogs cannot wrap the frame or hide the pinned pane id', async () => {
+  const { visibleLength } = await import('../terminal/ansi.ts');
+  const app = new TuiApp();
+  app.updateStates([
+    { ...makeState(), session: 'a-very-long-session-name-that-exceeds-sidebar-width', status: AgentStatus.IDLE },
+  ]);
+  app.enterSend();
+  app.sendBuffer = 'a'.repeat(80);
+  const frame = render(app, { cols: 34, rows: 30 });
+  expect(frame).toContain('Send to %1:');
+  expect(frame).toContain('cancel');
+  expect(frame).not.toContain('quit');
+  for (const line of frame.split('\r\n')) expect(visibleLength(line)).toBeLessThanOrEqual(34);
+});
+
 describe('render preview pane isolation', () => {
   test('open background in captured preview content is sealed before the row ends', () => {
     const app = new TuiApp();
     app.updateStates([makeState()]);
     app.mode = TuiMode.PREVIEW;
+    app.preview = { paneId: '%1', screen: CAPTURED_DIFF_LINE + '\n', cursor: null, at: 0 };
 
     const out = render(app, { cols: 100, rows: 40 });
 

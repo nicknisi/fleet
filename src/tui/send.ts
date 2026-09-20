@@ -28,16 +28,15 @@ export function renderSendMode(state: AgentState, buffer: string, cols: number):
   const lines: string[] = [];
   const check = canSendTo(state);
 
-  lines.push(`${C.bold}Send to ${state.session}${C.reset}`);
+  lines.push(`${C.bold}Send to ${state.paneId}: ${state.session}${C.reset}`);
   lines.push('');
 
   if (!check.ok) {
     lines.push(`${C.red}Cannot send: ${check.reason}${C.reset}`);
-    lines.push(`${C.gray}Press Esc to cancel${C.reset}`);
-    return lines;
+    lines.push(`${C.gray}Draft retained. Esc to cancel${C.reset}`);
+  } else {
+    lines.push(`${C.gray}Type your prompt, Enter to send, Esc to cancel${C.reset}`);
   }
-
-  lines.push(`${C.gray}Type your prompt, Enter to send, Esc to cancel${C.reset}`);
   lines.push('');
   lines.push(truncateAnsi(`${C.cyan}> ${C.reset}${buffer}█`, cols));
 

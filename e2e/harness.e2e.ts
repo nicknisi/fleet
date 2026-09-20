@@ -22,7 +22,7 @@ import { join } from 'node:path';
 
 import { loadAgentDirs, type AgentDir } from '../src/agents/config.ts';
 import type { JsonObject } from '../src/json.ts';
-import { fullRefreshStates, fullRefreshStatesTui } from '../src/state/refresh.ts';
+import { fullRefreshStates, fullRefreshStatesTui, refreshActionState } from '../src/state/refresh.ts';
 import { TmuxControlClient } from '../src/tmux/control.ts';
 import { resolvePermitKeys } from '../src/state/permit-keys.ts';
 import { sendKeyNames, sendRawKey } from '../src/tmux/send.ts';
@@ -272,6 +272,58 @@ suite('control-mode transport and fork fallback (in-process)', () => {
     const mine = states.find((s) => s.paneId === pane);
     expect(mine?.status).toBe(AgentStatus.BUSY); // fork fallback still produced state
     tm(['kill-session', '-t', name]);
+  });
+});
+
+suite('interaction-time validation', () => {
+  test('an old Stop cannot authorize sending over a newer working hook', () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'idle' });
+    const target = fullRefreshStates(dirs).find((s) => s.paneId === pane)!;
+    writeStatus(pane, name, { state: 'working', ts: nowSec() + 1 });
+    writeFileSync(eventsPath(pane), JSON.stringify({ event: 'Stop', ts: nowSec() - 10 }) + '\n');
+    expect(refreshActionState(target, dirs).status).toBe(AgentStatus.BUSY);
+  });
+  test('fresh screen permission evidence blocks a previously idle target', async () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'idle' });
+    const target = fullRefreshStates(dirs).find((s) => s.paneId === pane)!;
+    paintLiteral(pane, 'Do you want to proceed? [y/n]');
+    expect(await waitForScreen(pane, '[y/n]')).toBe(true);
+    expect(refreshActionState(target, dirs).status).toBe(AgentStatus.PERMIT);
+  });
+  test('a respawned pane rejects the action and raw input before the next observer tick', async () => {
+    const { name, pane } = newSession();
+    writeStatus(pane, name, { state: 'idle' });
+    const target = fullRefreshStates(dirs).find((s) => s.paneId === pane)!;
+    tm(['respawn-pane', '-k', '-t', pane]);
+    expect(() => refreshActionState(target, dirs)).toThrow('disappeared or changed');
+    sendRawKey(pane, Buffer.from('private-old-input'), target.panePid);
+    const currentPid = Number(tmOut(['display-message', '-p', '-t', pane, '#{pane_pid}']));
+    sendRawKey(pane, Buffer.from('current-input'), currentPid);
+    expect(await waitForScreen(pane, 'current-input')).toBe(true);
+    expect(tmOut(['capture-pane', '-p', '-t', pane])).not.toContain('private-old-input');
+  });
+  test('concurrent preview and scan captures never share another pane’s buffer', async () => {
+    const a = newSession();
+    const b = newSession();
+    paintLiteral(a.pane, 'ALPHA-CONTROL');
+    paintLiteral(b.pane, 'BETA-CONTROL');
+    expect(await waitForScreen(a.pane, 'ALPHA-CONTROL')).toBe(true);
+    expect(await waitForScreen(b.pane, 'BETA-CONTROL')).toBe(true);
+    const client = new TmuxControlClient();
+    await client.connect();
+    try {
+      const captures = await Promise.all(
+        Array.from({ length: 8 }, (_, i) => client.capturePane(i % 2 ? b.pane : a.pane, i % 2 === 0)),
+      );
+      for (let i = 0; i < captures.length; i++) {
+        expect(captures[i]).toContain(i % 2 ? 'BETA-CONTROL' : 'ALPHA-CONTROL');
+        expect(captures[i]).not.toContain(i % 2 ? 'ALPHA-CONTROL' : 'BETA-CONTROL');
+      }
+    } finally {
+      await client.close();
+    }
   });
 });
 

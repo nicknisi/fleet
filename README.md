@@ -81,7 +81,7 @@ This:
 2. Creates the pi status dir (`~/.cache/pi-status`)
 3. Registers `pi` in `~/.config/fleet/agents.json`
 
-The extension publishes fleet status from pi's lifecycle events, so pi panes appear on the dashboard labeled `pi` (working / idle / done). pi auto-runs its tools, so there is no permission-prompt state to surface. Question tools do surface QUESTION while awaiting input: `@juicesharp/rpiv-ask-user-question` via its stable blocked event, and compatibility-shimmed `AskUserQuestion` tools via pi's `tool_call` lifecycle. Homebrew upgrades update the registered package in place; in an already-running pi session, `/reload` picks it up. To reverse it (leaving your own pi extensions and packages intact):
+The extension publishes fleet status from pi's lifecycle events, so pi panes appear on the dashboard labeled `pi` (working / idle / done). A live composer spinner also corroborates working activity during long gaps between hook events, without overriding structured questions or completion. pi auto-runs its tools, so there is no permission-prompt state to surface. Question tools do surface QUESTION while awaiting input: `@juicesharp/rpiv-ask-user-question` via its stable blocked event, and compatibility-shimmed `AskUserQuestion` tools via pi's `tool_call` lifecycle. Homebrew upgrades update the registered package in place; in an already-running pi session, `/reload` picks it up. To reverse it (leaving your own pi extensions and packages intact):
 
 ```bash
 fleet uninstall pi
@@ -107,16 +107,24 @@ A few more cues while you work:
 
 - **Hover** — the row under your mouse underlines, so you can see what a click will select.
 - **Scroll indicators** — `↑ N more` / `↓ N more` appear when the list outruns the viewport.
-- **Busy pulse** — a working agent's `◉` icon pulses on each tick, so active turns read as alive at a glance.
+- **Working spinner** — a yellow braille spinner advances every 100ms without polling agent state faster. Red means input needed, green means ready, and muted outline circles mean idle. Only working indicators animate.
 
 ### Sidebar & popup
 
 `fleet install` offers two optional tmux keybindings (each confirm-gated, marked `# fleet-managed` so `fleet uninstall` strips them again):
 
-- **`prefix` + `f`** — open Fleet in a 34-column sidebar split on the left, alongside your work.
+- **`prefix` + `f`** — open or focus Fleet in a persistent 34-column sidebar on the left. Press it while inside the sidebar, or press `q`, to close.
 - **`prefix` + `F`** — open Fleet in a popup that floats over your current pane (`display-popup -E`).
 
-Below 48 columns — like that narrow sidebar — Fleet automatically reflows the table into stacked cards with a compact footer. Same binary, no flag: wide panes get the table, narrow ones get cards.
+The sidebar follows its invoking tmux client across windows and sessions. Enter, double-click, and `n` jump to an agent without closing Fleet; your selection, filter, preview, and resized width survive. Fleet moves the same pane and Bun process rather than starting a scanner in each window. Other clients do not pull it away. A detached sidebar stays parked until a single client returns to its window. If the sidebar is the only remaining pane in its window, it stays there rather than implicitly destroying that window or session. It also waits outside a zoomed destination until you unzoom, and preserves a split source window's zoom when leaving.
+
+Below 48 columns, Fleet reflows into stacked cards. Attention/ready counts and working/idle counts lead the sidebar; search and LIVE passthrough hints remain visible at narrow widths. Normal dashboard and popup launches still exit when you jump.
+
+After upgrading, re-run `fleet install` to migrate the managed binding, and `fleet statusline --inject --force` to refresh click bindings. Custom bindings should pass both targets:
+
+```tmux
+bind-key f run-shell "fleet sidebar --from '#{pane_id}' --client '#{client_name}'"
+```
 
 ### Keybindings
 
@@ -164,8 +172,8 @@ Fleet tracks seven states, sorted by urgency. The icon and color tell you what's
 | `⚠`  | **waiting** | Tool approval needed (`[y/n]` prompt)                           |
 | `?`  | **asking**  | Agent asked you a question (`AskUserQuestion`)                  |
 | `●`  | **ready**   | Turn ended — your move (finished, or asked in prose); green dot |
-| `◉`  | **working** | Thinking or running tools                                       |
-| `●`  | **idle**    | Up but no recent activity (blue dot)                            |
+| `⠋`  | **working** | Thinking or running tools (animated yellow spinner)             |
+| `○`  | **idle**    | Up but no recent activity (muted outline circle)                |
 | `■`  | **shell**   | No agent running (hidden by default)                            |
 | `○`  | **down**    | No live process (hidden by default)                             |
 
@@ -173,13 +181,13 @@ Fleet tracks seven states, sorted by urgency. The icon and color tell you what's
 
 ### Send Mode
 
-Press `s` to send a prompt to the selected agent. Fleet auto-selects the first sendable session if the current one is busy or waiting for approval.
+Press `s` to send a prompt to the selected agent. Fleet never substitutes another agent when the selected one is busy or waiting for input. Submission rechecks the original pane's identity, lifecycle state, and current screen; failed or rejected sends retain the draft. Delivery can fail partway through, so inspect the target before retrying.
 
 **State gating:** Fleet refuses to send to sessions with permission prompts (won't accidentally approve), sessions asking questions (won't answer for you), or dead sessions. Use `--force` in the CLI to override the busy check.
 
 ### Kill Session
 
-Press `x` to kill the selected session's pane. Fleet asks you to confirm (`y`) before closing it — any other key cancels.
+Press `x` to kill the selected session's pane. Fleet names the exact pane and asks you to confirm with `y`; any other key, including another `x`, cancels. Confirmation revalidates that original target. If it disappears or respawns, Fleet cancels rather than acting on the next row.
 
 **State gating:** Same philosophy as send. Fleet only reaps sessions that are finished, idle, or already dead. It refuses to kill a working agent, one waiting on a permission prompt, or one asking a question — so you don't discard work or a pending decision by reflex.
 
@@ -201,7 +209,7 @@ The preview shows:
 When the preview pane is open, Fleet shows context-aware actions at the bottom of the preview based on the agent's current state:
 
 - **waiting** — `y` to approve, `n` to deny the permission prompt
-- **asking** — `i` to answer inline via passthrough, `s` to send a prompt
+- **asking** — `i` to answer inline via passthrough
 - **ready/idle** — `i` for passthrough, `s` to send the next prompt
 - **working** — `i` for passthrough (watch and interact)
 
@@ -209,7 +217,7 @@ When the preview pane is open, Fleet shows context-aware actions at the bottom o
 
 Press `i` from the preview to enter passthrough mode. Every keystroke is forwarded directly to the agent's tmux pane — the preview updates live so you can see the result without leaving Fleet. Press `Esc` to exit back to the dashboard.
 
-This is the power feature: approve prompts, answer questions, type commands, and watch the output — all without switching panes. The footer shows `● LIVE` when passthrough is active.
+The footer shows `LIVE` and the exact target pane while passthrough is active. Forwarding stays bound to that pane and process; losing or respawning it stops forwarding instead of adopting another selection. Quick approval/denial requires a currently detected permission dialog, not just a cached hook state.
 
 ### Hook-less agents
 
@@ -480,7 +488,7 @@ fleet statusline --inject
 
 Each entry is clickable (tmux 3.2+). **Left-click** an agent name to switch to that session; **right-click** to mark it read in place without switching. When any agent is ready, a `✕ clear` chip appears at the end of the row — click it to dismiss every ready agent at once. Only agents whose turn it is for you appear: PERMIT (tool approval), QUESTION (a question to answer), and DONE/ready (finished, waiting on your next move). Working and idle sessions stay out of the bar — they don't need you to act, so they'd just be noise. Watch those in the dashboard instead.
 
-**The `☰` button** sits at the far left of the row and is always there, even when no agent needs you. Click it (either mouse button) to open the dashboard in a 34-column sidebar split; click again to close it. It toggles the window you're looking at, so it does the right thing with several clients attached to different windows. Same thing as `prefix+f`, minus the keyboard — and the same as `fleet sidebar`, which you can bind however you like.
+**The `☰` button** sits at the far left of the row and is always there, even when no agent needs you. Click it (either mouse button) to open or focus the persistent 34-column sidebar; click again while the sidebar is focused to close it. The sidebar follows the invoking client, including with several clients attached to different windows. Same thing as `prefix+f`, minus the keyboard — and the same as `fleet sidebar`, which you can bind however you like.
 
 After upgrading Fleet, run `fleet statusline --inject --force` once to update the click bindings and focus hook.
 
@@ -556,7 +564,7 @@ Fleet doesn't trust any single signal. It fuses three layers for high-confidence
 - **Click the `✕ clear` chip** at the end of the statusline — acknowledges every ready agent at once.
 - **`fleet ack <pane>`** — from the CLI, for scripting or bulk-clearing.
 
-A ready agent's completion can come from two independent places: the hook status file (`done`/`completed`) or an event-derived turn-end (a `Stop`/`SubagentStop` the status file may not reflect yet — the bar shows `ready` from the event stream while the file lags at `idle`). Acknowledgement retires both: it flips a ready status file to `idle`, and when the event stream shows a completion it appends an `Acknowledged` event so the derived `ready` can't re-assert. It survives Fleet restarts with no separate store. So: green `ready` = needs your eyes; blue `idle` = seen, nothing pending.
+A ready agent's completion can come from two independent places: the hook status file (`done`/`completed`) or an event-derived turn-end (a `Stop`/`SubagentStop` the status file may not reflect yet — the bar shows `ready` from the event stream while the file lags at `idle`). Acknowledgement retires both: it flips a ready status file to `idle`, and when the event stream shows a completion it appends an `Acknowledged` event so the derived `ready` can't re-assert. It survives Fleet restarts with no separate store. So: green `ready` = needs your eyes; muted `idle` = seen, nothing pending.
 
 **Decay:** `ready` never auto-decays — a finished turn is waiting on you and stays until you act on it (switch to it, send a prompt, or it starts working again). Only `working` times out to `idle`, after 3 minutes, so a crashed turn doesn't spin forever.
 
@@ -579,9 +587,11 @@ The TUI separates cheap and expensive operations:
 - **Every 500ms:** Re-read `.status` files + one `tmux list-panes` call + JSONL last-line read. No subprocesses beyond that.
 - **Every 5s:** Refresh port detection (`lsof`) and pane scraping (`tmux capture-pane` per pane, ~50ms each).
 - **Every 10s:** Refresh read-only git metadata with bounded, lock-free `git` argv spawns per unique pane cwd (identity, worktree root, branch/dirty/ahead-behind, diffstat). Zero git subprocesses on the fast tick.
-- **On keypress:** Zero subprocess calls. Just redraws from cached state.
+- **Rendering/navigation:** Redraws use cached state and preview snapshots, with no capture/cursor subprocess in the render path. Explicit sends, approvals, and deletes perform fresh safety checks.
 - **On switch:** Scrapes the target pane and corrects the status file before switching. Stale states are fixed the moment you navigate to them.
-- **During send/filter:** All refresh timers pause. The event loop is yours.
+- **During send/filter:** Observation continues; presentation can pause while typing. Hook watchers, timers, and control notifications share one coalescing refresh queue, so an in-flight scan never drops a later wake.
+- **Live preview:** Asynchronous ANSI capture and cursor reads use the existing control connection; fallback combines them in one async tmux call. Passthrough refreshes at 90ms without blocking keyboard rendering.
+- **Performance check:** `bun scripts/bench-sidebar.ts ./dist/fleet 12` runs an isolated tmux workload, reporting subprocess counts and median/p95 follow, input-delivery, and preview-echo latency. It requires tmux and Python's standard-library PTY and never touches your existing server.
 - **JSONL reads:** Only the last line is parsed (not the entire file).
 
 ## Agent Configuration

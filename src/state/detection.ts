@@ -440,16 +440,22 @@ export const OPENCODE_MANIFEST: DetectionManifest = {
 // scraping. The fleet-pi extension subscribes to pi's lifecycle events for
 // BUSY/DONE/IDLE and to rpiv-ask-user-question's stable blocked event for
 // QUESTION, writing each state to ~/.cache/pi-status. pi auto-runs its tools, so
-// there is no interactive "[y/n]" permission prompt to scrape. The manifest is
-// intentionally empty; it exists so `pi` resolves to a built-in (no "no
-// manifest" warning) and is a registered, known agent. A user can still drop a
-// ~/.config/fleet/detection/pi.json override to add scrape rules for another
-// question UI that does not publish a blocked event.
+// there is no interactive "[y/n]" permission prompt to scrape. A spinner-only
+// composer row corroborates work during long intervals with no hook writes.
+// Keep it anchored to the composer, not arbitrary braille in transcript text;
+// fusion keeps structured questions/completions above this weak activity signal.
 export const PI_MANIFEST: DetectionManifest = {
   agent: 'pi',
   linesFromBottom: 15,
   promptMarker: '',
-  rules: [],
+  rules: [
+    {
+      id: 'busy.spinner-glyph',
+      pattern: '^[│┃][ \\t]*[\\u2801-\\u28FF][ \\t]*[│┃][ \\t]*$',
+      flags: 'm',
+      state: 'BUSY',
+    },
+  ],
 };
 
 // --- loader: built-in, replaced wholesale by a valid override ---

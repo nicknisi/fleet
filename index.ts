@@ -1,9 +1,10 @@
 import { TuiApp, TuiMode } from './src/tui/app.ts';
 import { render } from './src/tui/render.ts';
-import { invalidatePreviewCache } from './src/tui/preview.ts';
+import { readPreview } from './src/tui/preview.ts';
+import { createRefreshQueue } from './src/tui/refresh-queue.ts';
 import { paneTitle, renderFooter, renderHeader, stateAtLine } from './src/tui/dashboard.ts';
 import { canSendTo } from './src/tui/send.ts';
-import { canKillSession } from './src/tui/kill.ts';
+import { handleSendInput, handleKillConfirmInput, handlePassthroughInput, type ActionIO } from './src/tui/actions.ts';
 import { parseKeyEvent, parseKeyEvents } from './src/terminal/input.ts';
 import { isMouseSequence, parseMouseEvent } from './src/terminal/mouse.ts';
 import {
@@ -34,6 +35,8 @@ import { formatStatusLine } from './src/cli/status.ts';
 import { runNext } from './src/cli/next.ts';
 import { chipSeparator, emitWindowColors, rollupEnabled } from './src/cli/statusline.ts';
 import { handleCli } from './src/cli/router.ts';
+import { buildMarkArgs, followSidebar, sidebarClients, SIDEBAR_CLIENT_FORMAT } from './src/cli/sidebar.ts';
+import { tmux, tmuxOrNull } from './src/tmux/ipc.ts';
 import {
   refreshStates,
   fullRefreshStates,
@@ -43,6 +46,7 @@ import {
   acknowledgePane,
   reloadRenameCache,
   getLastTmuxOk,
+  refreshActionState,
 } from './src/state/refresh.ts';
 import { writeSegmentCache } from './src/state/segment-cache.ts';
 import { writeAgentSnapshot } from './src/state/snapshot-cache.ts';
@@ -64,8 +68,7 @@ const DIVIDER_GRAB = 3;
 function handleFilterInput(
   app: TuiApp,
   key: ReturnType<typeof parseKeyEvent>,
-  finish: (code: number) => void,
-  statusDirs: string[],
+  jump: (state: AgentState) => void,
 ): void {
   switch (key.type) {
     case 'escape':
@@ -90,42 +93,8 @@ function handleFilterInput(
     case 'enter': {
       const selected = app.selectedState();
       if (selected) {
-        // Switch before the verify/ack spawns so the jump isn't gated on
-        // them; the writes still complete synchronously before process exit.
-        switchClient(selected.paneId);
-        finish(0);
-        verifyPaneState(selected, statusDirs);
-        acknowledgePane(selected.paneId, statusDirs);
+        jump(selected);
       }
-      break;
-    }
-  }
-}
-
-function handleSendInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, _finish: (code: number) => void): void {
-  switch (key.type) {
-    case 'escape':
-      app.exitSend();
-      break;
-    case 'backspace':
-      app.sendBuffer = app.sendBuffer.slice(0, -1);
-      break;
-    case 'char':
-      app.sendBuffer += key.char;
-      break;
-    case 'enter': {
-      const selected = app.selectedState();
-      if (selected && app.sendBuffer.length > 0) {
-        const check = canSendTo(selected);
-        if (check.ok) {
-          try {
-            sendKeys(selected.paneId, app.sendBuffer);
-          } catch {
-            // Silently fail
-          }
-        }
-      }
-      app.exitSend();
       break;
     }
   }
@@ -143,7 +112,7 @@ function handleRenameInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, d
       app.renameBuffer += key.char;
       break;
     case 'enter': {
-      const selected = app.selectedState();
+      const selected = app.actionState();
       if (selected) {
         saveRename(selected.session, app.renameBuffer); // empty buffer clears
         reloadRenameCache();
@@ -155,49 +124,22 @@ function handleRenameInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, d
   }
 }
 
-function handleKillConfirmInput(app: TuiApp, key: ReturnType<typeof parseKeyEvent>, dirs: AgentDir[]): void {
-  if (key.type === 'char' && (key.char === 'y' || key.char === 'x')) {
-    const selected = app.selectedState();
-    if (selected && canKillSession(selected).ok) {
-      try {
-        killPane(selected.paneId);
-      } catch {
-        // Pane may already be gone — refresh will drop it either way
-      }
-      app.updateStates(fullRefreshStates(dirs));
-    }
-  }
-  // Any other key (or a rejected confirm) just returns to the prior mode.
-  app.exitKillConfirm();
-}
-
-function handlePassthroughInput(app: TuiApp, buf: Buffer): void {
-  const selected = app.selectedState();
-  if (!selected) {
-    app.exitPassthrough();
-    return;
-  }
-
-  const first = buf[0];
-  if (first === 0x1b && buf.length === 1) {
-    app.exitPassthrough();
-    return;
-  }
-
-  try {
-    sendRawKey(selected.paneId, buf);
-  } catch {
-    // Silently fail — pane may have closed
-  }
-}
-
 async function launchTui(): Promise<number> {
   const registry = new AgentRegistry();
   const dirs = registry.all(); // read path (agent name rides with each status)
   const statusDirs = registry.statusDirs(); // watcher + file-locating write helpers
   const app = new TuiApp();
+  const actionIO: ActionIO = {
+    readState: (target) => refreshActionState(target, dirs),
+    send: sendKeys,
+    kill: killPane,
+    forward: sendRawKey,
+  };
 
   const args = process.argv.slice(2);
+  const sidebarPane = args.includes('--sidebar') ? (process.env.TMUX_PANE ?? null) : null;
+  let sidebarClientPid = sidebarPane ? (process.env.FLEET_SIDEBAR_CLIENT ?? null) : null;
+  if (sidebarPane) tmux(buildMarkArgs(sidebarPane));
   const size = getTerminalSize();
   if (args.includes('--no-preview')) {
     app.mode = TuiMode.DASHBOARD;
@@ -279,23 +221,13 @@ async function launchTui(): Promise<number> {
     }
   };
 
-  const doRefresh = () => applyStates(refreshStates(dirs));
-
   const doFullRefresh = () => applyStates(fullRefreshStates(dirs));
 
   reloadRenameCache();
   doFullRefresh();
 
-  // Debounce watcher-triggered refreshes — hooks fire rapidly
   let watcherTimeout: ReturnType<typeof setTimeout> | null = null;
-  const stopWatching = watchStatusDirs(statusDirs, () => {
-    if (watcherTimeout !== null) return;
-    watcherTimeout = setTimeout(() => {
-      watcherTimeout = null;
-      doRefresh();
-      draw();
-    }, 100);
-  });
+  let stopWatching = () => {};
 
   return await new Promise<number>((resolve) => {
     let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -305,6 +237,7 @@ async function launchTui(): Promise<number> {
     let slowTimer: ReturnType<typeof setInterval> | null = null;
     // Live preview repaint, armed only while in passthrough (see tick()).
     let passthroughTimer: ReturnType<typeof setInterval> | null = null;
+    let animationTimer: ReturnType<typeof setInterval> | null = null;
     let finished = false;
 
     // Control-mode fast path: one long-lived `tmux -C` child replaces a fork
@@ -315,10 +248,10 @@ async function launchTui(): Promise<number> {
     const controlEnabled = shouldAttemptControl(process.env);
     const controlLatch: ControlLatch = { dead: false };
     let controlClient: TmuxControlClient | null = null;
-    // Guards against overlapping ticks: control reads are async, so a slow
-    // tick could still be draining when the fast interval fires. Skip the
-    // tick if the previous one is still running — do not queue.
-    let tickInFlight = false;
+    let stopRefresh = () => {};
+    let previewInFlight = false;
+    let previewAttemptAt = 0;
+    let previewAttemptPane: string | null = null;
 
     const safeCloseControl = async () => {
       const c = controlClient;
@@ -336,8 +269,10 @@ async function launchTui(): Promise<number> {
       if (refreshTimer !== null) clearInterval(refreshTimer);
       if (slowTimer !== null) clearInterval(slowTimer);
       if (passthroughTimer !== null) clearInterval(passthroughTimer);
+      if (animationTimer !== null) clearInterval(animationTimer);
       if (watcherTimeout !== null) clearTimeout(watcherTimeout);
       stopWatching();
+      stopRefresh();
       process.stdin.removeAllListeners('data');
       // Close the control client best-effort on exit (detach + reap + unlink
       // the capture temp file). Fire-and-forget: finish() is called from sync
@@ -348,10 +283,67 @@ async function launchTui(): Promise<number> {
       resolve(code);
     };
 
-    // Arm/disarm the live preview repaint to match passthrough mode. Each tick
-    // drops the selected pane's capture cache and forces a draw, so the preview
-    // reflects keystroke echo and streaming output within ~90ms instead of
-    // waiting on the 500ms fast timer. Torn down the moment passthrough exits.
+    let lastJumpPane: string | undefined;
+    const jump = (selected: AgentState) => {
+      if (sidebarPane) {
+        const clients = sidebarClients(tmuxOrNull(['list-clients', '-F', SIDEBAR_CLIENT_FORMAT]) ?? '');
+        const client = clients.find((c) => c.pid === sidebarClientPid);
+        if (!client) return; // No owner: never redirect some other attached client.
+        switchClient(selected.paneId, client.name);
+        tmux(['select-window', '-t', selected.paneId, ';', 'select-pane', '-t', selected.paneId]);
+        // Keep the query, but leave its input mode once focus goes to the agent.
+        // Otherwise a persistent, filtered sidebar would pause slow refreshes
+        // and animation indefinitely while the user works elsewhere.
+        app.acceptFilter();
+        lastJumpPane = selected.paneId;
+      } else {
+        switchClient(selected.paneId);
+        finish(0);
+      }
+      verifyPaneState(selected, statusDirs);
+      acknowledgePane(selected.paneId, statusDirs);
+    };
+
+    const refreshPreview = async () => {
+      if (finished || previewInFlight || (app.mode !== TuiMode.PREVIEW && app.mode !== TuiMode.PASSTHROUGH)) return;
+      const selected = app.mode === TuiMode.PASSTHROUGH ? app.actionState() : app.selectedState();
+      if (!selected) return;
+      const ttl = app.mode === TuiMode.PASSTHROUGH ? PASSTHROUGH_REFRESH_MS : 400;
+      if (previewAttemptPane === selected.paneId && Date.now() - previewAttemptAt < ttl) return;
+      previewAttemptPane = selected.paneId;
+      previewAttemptAt = Date.now();
+      previewInFlight = true;
+      try {
+        let snapshot;
+        try {
+          snapshot = await readPreview(selected.paneId, controlLatch.dead ? null : controlClient);
+        } catch {
+          // A dead control transport takes the existing permanent fork fallback.
+          if (controlClient && !controlLatch.dead) {
+            controlLatch.dead = true;
+            void safeCloseControl();
+          }
+          snapshot = await readPreview(selected.paneId);
+        }
+        if (finished) return;
+        const current = app.mode === TuiMode.PASSTHROUGH ? app.actionState() : app.selectedState();
+        if (current?.paneId !== selected.paneId || current.panePid !== selected.panePid) return;
+        app.preview = snapshot;
+        needsRender = true;
+        tick();
+      } catch {
+        if (!finished) {
+          app.actionError = 'Preview unavailable';
+          needsRender = true;
+          tick();
+        }
+      } finally {
+        previewInFlight = false;
+      }
+    };
+
+    // Refresh observation asynchronously; rendering and key handling only read
+    // the last snapshot. No capture/cursor subprocess can block a typing frame. Torn down the moment passthrough exits.
     const syncPassthroughTimer = () => {
       const active = app.mode === TuiMode.PASSTHROUGH;
       if (active && passthroughTimer === null && !finished) {
@@ -363,9 +355,7 @@ async function launchTui(): Promise<number> {
             }
             return;
           }
-          const sel = app.selectedState();
-          if (sel) invalidatePreviewCache(sel.paneId);
-          draw();
+          void refreshPreview();
         }, PASSTHROUGH_REFRESH_MS);
       } else if (!active && passthroughTimer !== null) {
         clearInterval(passthroughTimer);
@@ -380,9 +370,25 @@ async function launchTui(): Promise<number> {
       }
       syncPassthroughTimer();
       if (app.shouldQuit) finish(0);
+      else void refreshPreview();
     };
 
     const handleInput = (buf: Buffer) => {
+      // Emergency exit must bypass the error-dismissal guard, including when
+      // repeated preview failures would otherwise swallow every Ctrl-C.
+      if (buf[0] === 0x03) {
+        app.shouldQuit = true;
+        needsRender = true;
+        return;
+      }
+      if (app.actionError && !app.actionTarget) {
+        // Dismiss the error with a fresh input chunk. Never reinterpret bytes
+        // intended for a vanished passthrough/confirmation target as shortcuts
+        // against whichever row selection fell back to.
+        app.actionError = null;
+        needsRender = true;
+        return;
+      }
       if (isMouseSequence(buf)) {
         const mouse = parseMouseEvent(buf);
         if (!mouse) return;
@@ -396,7 +402,8 @@ async function launchTui(): Promise<number> {
           const inList = app.mode === TuiMode.DASHBOARD || mx <= app.listWidth(sz.cols);
           if (!inList) return null;
           const headerHeight = renderHeader(app, sz.cols).length;
-          const contentRows = sz.rows - headerHeight - renderFooter(app, sz.cols).length - 1;
+          const contentRows =
+            sz.rows - headerHeight - renderFooter(app, sz.cols).length - (app.actionError ? 1 : 0) - 1;
           const lineIdx = my - headerHeight - 2;
           if (lineIdx < 0) return null;
           const listCols = app.mode === TuiMode.DASHBOARD ? sz.cols : app.listWidth(sz.cols);
@@ -455,10 +462,7 @@ async function launchTui(): Promise<number> {
           if (sel) {
             if (app.registerClick(sel.paneId, Date.now())) {
               // Double-click → jump to the agent, mirroring the Enter handler.
-              switchClient(sel.paneId);
-              finish(0);
-              verifyPaneState(sel, statusDirs);
-              acknowledgePane(sel.paneId, statusDirs);
+              jump(sel);
               return;
             }
             const idx = app.visibleStates().findIndex((s) => s.paneId === sel.paneId);
@@ -477,13 +481,7 @@ async function launchTui(): Promise<number> {
 
       // Passthrough mode — forward raw bytes, only Esc and Ctrl-C escape
       if (app.mode === TuiMode.PASSTHROUGH) {
-        const first = buf[0];
-        if (first === 0x03) {
-          app.shouldQuit = true;
-          needsRender = true;
-          return;
-        }
-        handlePassthroughInput(app, buf);
+        handlePassthroughInput(app, buf, actionIO);
         needsRender = true;
         return;
       }
@@ -493,6 +491,7 @@ async function launchTui(): Promise<number> {
       for (const key of parseKeyEvents(buf)) {
         if (finished || app.shouldQuit) break;
         handleKey(key);
+        if (app.actionError && !app.actionTarget) break;
       }
     };
 
@@ -510,13 +509,13 @@ async function launchTui(): Promise<number> {
       }
 
       if (app.mode === TuiMode.CONFIRM_KILL) {
-        handleKillConfirmInput(app, key, dirs);
+        handleKillConfirmInput(app, key, actionIO);
         needsRender = true;
         return;
       }
 
       if (app.mode === TuiMode.SEND) {
-        handleSendInput(app, key, finish);
+        handleSendInput(app, key, actionIO);
         needsRender = true;
         return;
       }
@@ -529,14 +528,15 @@ async function launchTui(): Promise<number> {
 
       // Filter mode
       if (app.isFiltering()) {
-        handleFilterInput(app, key, finish, statusDirs);
+        handleFilterInput(app, key, jump);
         needsRender = true;
         return;
       }
 
       switch (key.type) {
         case 'escape':
-          app.shouldQuit = true;
+          if (app.getFilter().length > 0) app.clearFilter();
+          else app.shouldQuit = true;
           break;
         case 'char':
           switch (key.char) {
@@ -565,8 +565,12 @@ async function launchTui(): Promise<number> {
                   // codex/opencode want Enter, a genuine [y/n] prompt wants a
                   // literal 'y' — resolved per agent + on-screen dialog (#40).
                   try {
+                    if (refreshActionState(sel, dirs).status !== AgentStatus.PERMIT)
+                      throw new Error('Permission state changed');
                     sendKeyNames(sel.paneId, resolvePermitKeys(sel.paneId, sel.agentType, 'approve'));
-                  } catch {}
+                  } catch (error) {
+                    app.actionError = error instanceof Error ? error.message : 'Approval failed';
+                  }
                 }
               }
               break;
@@ -575,28 +579,34 @@ async function launchTui(): Promise<number> {
                 const sel = app.selectedState();
                 if (sel && sel.status === AgentStatus.PERMIT) {
                   try {
+                    if (refreshActionState(sel, dirs).status !== AgentStatus.PERMIT)
+                      throw new Error('Permission state changed');
                     sendKeyNames(sel.paneId, resolvePermitKeys(sel.paneId, sel.agentType, 'deny'));
-                  } catch {}
+                  } catch (error) {
+                    app.actionError = error instanceof Error ? error.message : 'Denial failed';
+                  }
                   break;
                 }
               }
               {
                 const states = fullRefreshStates(dirs);
-                runNext(states);
-                finish(0);
+                runNext(
+                  states,
+                  (pane) => {
+                    const selected = states.find((s) => s.paneId === pane);
+                    if (selected) jump(selected);
+                  },
+                  sidebarPane ? (lastJumpPane ?? app.selectedState()?.paneId) : undefined,
+                );
+                if (!sidebarPane) finish(0);
                 return;
               }
             case 's': {
               const selected = app.selectedState();
-              if (selected && canSendTo(selected).ok) {
-                app.enterSend();
-              } else {
-                const visible = app.visibleStates();
-                const sendableIdx = visible.findIndex((s) => canSendTo(s).ok);
-                if (sendableIdx >= 0) {
-                  app.selectedIndex = sendableIdx;
-                  app.enterSend();
-                }
+              if (selected) {
+                const check = canSendTo(selected);
+                if (check.ok) app.enterSend();
+                else app.actionError = check.reason;
               }
               break;
             }
@@ -632,10 +642,7 @@ async function launchTui(): Promise<number> {
         case 'enter': {
           const selected = app.selectedState();
           if (selected) {
-            switchClient(selected.paneId);
-            finish(0);
-            verifyPaneState(selected, statusDirs);
-            acknowledgePane(selected.paneId, statusDirs);
+            jump(selected);
             return;
           }
           break;
@@ -673,47 +680,41 @@ async function launchTui(): Promise<number> {
 
     const isTyping = () => app.mode === TuiMode.SEND || app.mode === TuiMode.RENAME || app.isFiltering();
 
-    // Async ticks: route list-panes + capture through the control client when
-    // it's live, fall back to the fork path (permanently) on any error. The
-    // in-flight guard skips a tick if the previous one is still draining — it
-    // never queues, so a slow control batch simply stretches the interval.
-    const runFastTick = async () => {
-      if (tickInFlight || finished) return;
-      tickInFlight = true;
+    const refreshQueue = createRefreshQueue(async (slow) => {
+      if (finished) return;
       try {
-        const states = await refreshStatesTui(dirs, controlClient, controlLatch);
+        const states = slow
+          ? await fullRefreshStatesTui(dirs, controlClient, controlLatch)
+          : await refreshStatesTui(dirs, controlClient, controlLatch);
         if (finished) return;
-        maybeNotify(states);
-        if (isTyping()) return;
-        applyStates(states);
-        if (app.visibleStates().some((s) => s.status === AgentStatus.BUSY)) {
-          app.pulsePhase = !app.pulsePhase;
-          needsRender = true;
+        if (sidebarPane) {
+          sidebarClientPid = await followSidebar(
+            sidebarPane,
+            sidebarClientPid,
+            states,
+            getTerminalSize().cols,
+            controlClient && !controlLatch.dead
+              ? () => controlClient!.run(`list-clients -F '${SIDEBAR_CLIENT_FORMAT}'`)
+              : undefined,
+          );
+          if (finished) return;
         }
-        tick();
+        maybeNotify(states);
+        const typing = isTyping();
+        applyStates(states); // keep target validation current, even while typing
+        if (!typing || app.actionError) tick();
       } catch {
-        // Defensive: refreshStatesTui already falls back to fork, but never
-        // let an unexpected throw crash the TUI.
-      } finally {
-        tickInFlight = false;
+        // Never let an unavailable observer crash the TUI.
       }
-    };
-
-    const runSlowTick = async () => {
-      if (tickInFlight || finished) return;
-      if (isTyping()) return;
-      tickInFlight = true;
-      try {
-        const states = await fullRefreshStatesTui(dirs, controlClient, controlLatch);
-        if (finished) return;
-        applyStates(states);
-        tick();
-      } catch {
-        // Defensive: fullRefreshStatesTui already falls back to fork.
-      } finally {
-        tickInFlight = false;
-      }
-    };
+    });
+    stopRefresh = () => refreshQueue.stop();
+    stopWatching = watchStatusDirs(statusDirs, () => {
+      if (watcherTimeout !== null) return;
+      watcherTimeout = setTimeout(() => {
+        watcherTimeout = null;
+        void refreshQueue.request();
+      }, 100);
+    });
 
     // Attempt the control-mode connection (TUI-only, opt-in). Connect failure
     // is silent: controlClient stays null and every tick uses the fork path
@@ -721,7 +722,10 @@ async function launchTui(): Promise<number> {
     // tick reads via control; onWake (debounced ~100ms inside control.ts)
     // triggers an immediate fast tick, respecting the in-flight guard.
     if (controlEnabled) {
-      const candidate = new TmuxControlClient({ onWake: () => void runFastTick() });
+      const candidate = new TmuxControlClient({
+        onWake: () => void refreshQueue.request(),
+        wakeDebounceMs: sidebarPane ? 25 : 100,
+      });
       void candidate
         .connect()
         .then(() => {
@@ -732,16 +736,26 @@ async function launchTui(): Promise<number> {
         });
     }
 
+    // Animation is independent of observation: smooth motion without polling
+    // hooks/tmux any faster. Quiet dashboards and input modes do no extra work.
+    animationTimer = setInterval(() => {
+      if (finished || isTyping() || (app.mode !== TuiMode.DASHBOARD && app.mode !== TuiMode.PREVIEW)) return;
+      if (app.summary().busy === 0) return;
+      app.spinnerFrame = (app.spinnerFrame + 1) % 10;
+      needsRender = true;
+      tick();
+    }, 100);
+
     // Fast timer: keep running in passthrough (preview needs live updates).
     // Notification detection runs every tick even while typing — only the list
     // refresh + render pause, so a background agent finishing still toasts.
     refreshTimer = setInterval(() => {
-      void runFastTick();
+      void refreshQueue.request();
     }, FAST_REFRESH_MS);
 
-    // Slow timer: skip if user is actively typing
+    // Background discovery must not starve while a draft/query is being typed.
     slowTimer = setInterval(() => {
-      void runSlowTick();
+      void refreshQueue.request(true);
     }, SLOW_REFRESH_MS);
 
     tick();

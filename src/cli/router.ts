@@ -68,7 +68,7 @@ export function printHelp(): number {
       `    ${C.idle}fleet status${C.reset} [--tmux] <session>  ${C.gray}Query agent state${C.reset}`,
       `    ${C.idle}fleet status${C.reset} --statusline        ${C.gray}Render multi-agent tmux status line${C.reset}`,
       `    ${C.idle}fleet next${C.reset}                       ${C.gray}Jump to next waiting agent${C.reset}`,
-      `    ${C.idle}fleet sidebar${C.reset}                    ${C.gray}Toggle the ☰ sidebar split${C.reset}`,
+      `    ${C.idle}fleet sidebar${C.reset}                    ${C.gray}Open/focus the persistent sidebar${C.reset}`,
       `    ${C.idle}fleet send${C.reset} <session> <prompt>    ${C.gray}Send prompt to session${C.reset}`,
       `    ${C.idle}fleet wait${C.reset} <sel> --state <s>     ${C.gray}Block until agent reaches state${C.reset}`,
       `    ${C.idle}fleet explain${C.reset} <session>          ${C.gray}Trace how a session's state was decided${C.reset}`,
@@ -95,7 +95,7 @@ export function printHelp(): number {
       `    ${C.idle}fleet statusline${C.reset} --inject --force ${C.gray}Re-apply even if already injected${C.reset}`,
       `    ${C.idle}fleet statusline${C.reset} --remove        ${C.gray}Remove fleet status from tmux${C.reset}`,
       '',
-      `  ${C.permit}⚠ waiting${C.reset}  ${C.question}? asking${C.reset}  ${C.done}✓ done${C.reset}  ${C.busy}◉ working${C.reset}  ${C.idle}● idle${C.reset}`,
+      `  ${C.permit}⚠ waiting${C.reset}  ${C.question}? asking${C.reset}  ${C.done}✓ done${C.reset}  ${C.busy}⠋ working${C.reset}  ${C.idle}○ idle${C.reset}`,
       '',
     ].join('\n'),
   );
@@ -126,7 +126,7 @@ export async function handleCli(args: string[]): Promise<number | null> {
   if (args.includes('--help') || args.includes('-h')) return printHelp();
 
   const command = args[0];
-  if (!command) return null;
+  if (!command || command === '--sidebar') return null;
 
   const registry = new AgentRegistry();
   const dirs = registry.all(); // AgentDir[] for the read path (name rides with the data)
@@ -278,8 +278,8 @@ export async function handleCli(args: string[]): Promise<number | null> {
       return 0;
     }
     case 'sidebar': {
-      // Open the fleet sidebar split, or close it if it's already up. Same entry
-      // point the status-line button routes to.
+      // Open/re-enter the persistent sidebar; close when invoked from inside it.
+      // Same entry point the status-line button routes to.
       return runSidebar(args.slice(1));
     }
     case 'send': {

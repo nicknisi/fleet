@@ -46,7 +46,7 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
     const gap = ' '.repeat(Math.max(1, nameW - visibleLength(name) + 1));
     lines.push(
       truncateAnsi(
-        `${bar} ${stateIcon(st.status, app.pulsePhase)} ${agentNameStyle(st)}${hovered ? C.underline : ''}${name}${C.reset}${gap}${getAgeColor(st.ts)}${age}${C.reset}`,
+        `${bar} ${stateIcon(st.status, app.spinnerFrame)} ${agentNameStyle(st)}${hovered ? C.underline : ''}${name}${C.reset}${gap}${getAgeColor(st.ts)}${age}${C.reset}`,
         cols,
       ),
     );

@@ -37,7 +37,20 @@ const ARROW_NAMES = new Map<number, string>([
   [0x44, 'Left'],
 ]);
 
-export function sendRawKey(paneId: string, data: Buffer): void {
+export function sendRawKey(paneId: string, data: Buffer, expectedPid?: number): void {
+  const send = (args: string[], label: string) => {
+    if (expectedPid === undefined) {
+      tmuxOrThrow(args, label);
+      return;
+    }
+    if (!/^%\d+$/.test(paneId) || !Number.isSafeInteger(expectedPid) || expectedPid <= 0) {
+      throw new Error('Invalid passthrough target');
+    }
+    // Raw batches contain only hex bytes / fixed tmux key names. Check process
+    // identity inside tmux's command queue, with no additional read or fork.
+    // A respawn between observer ticks must not receive the previous agent's input.
+    tmuxOrThrow(['if-shell', '-F', '-t', paneId, `#{==:#{pane_pid},${expectedPid}}`, args.join(' ')], label);
+  };
   // Keep tmux's encoding for recognized leading keys: named arrows work in
   // copy mode and adapt to the target's application cursor mode. Consume the
   // whole recognized prefix rather than dropping everything after its first key.
@@ -58,7 +71,7 @@ export function sendRawKey(paneId: string, data: Buffer): void {
       offset += arrow === undefined ? 1 : 3;
     }
     if (keys.length === 0) break;
-    tmuxOrThrow(['send-keys', '-t', paneId, '--', ...keys], 'send-keys named keys failed');
+    send(['send-keys', '-t', paneId, '--', ...keys], 'send-keys named keys failed');
   }
 
   // Forward the rest unchanged. In particular, an unrecognized escape
@@ -67,7 +80,7 @@ export function sendRawKey(paneId: string, data: Buffer): void {
   // Bound both paths so large reads fit within tmux's message size limit.
   for (; offset < data.length; offset += KEYS_PER_COMMAND) {
     const chunk = data.subarray(offset, offset + KEYS_PER_COMMAND);
-    tmuxOrThrow(
+    send(
       ['send-keys', '-t', paneId, '-H', ...Array.from(chunk, (byte) => byte.toString(16).padStart(2, '0'))],
       'send-keys raw bytes failed',
     );

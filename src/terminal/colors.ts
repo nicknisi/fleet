@@ -41,24 +41,25 @@ function stateColor(color: ThemeColor): string {
   return serializeThemeColor(color);
 }
 
-// Catppuccin Mocha (dark terminals): yellow, mauve, green, peach, blue, overlay0, surface1
+// Reserve red for intervention, yellow for work, green for unseen completion.
+// Idle is muted; glyphs and labels distinguish states without color.
 const MOCHA: StatePalette = {
-  permit: rgb(249, 226, 175),
-  question: rgb(203, 166, 247),
+  permit: rgb(243, 139, 168),
+  question: rgb(243, 139, 168),
   done: rgb(166, 227, 161),
-  busy: rgb(250, 179, 135),
-  idle: rgb(137, 180, 250),
+  busy: rgb(249, 226, 175),
+  idle: rgb(147, 153, 178),
   shell: rgb(108, 112, 134),
   down: rgb(69, 71, 90),
 };
 
 // Catppuccin Latte (light terminals): same roles, legible on white
 const LATTE: StatePalette = {
-  permit: rgb(223, 142, 29),
-  question: rgb(136, 57, 239),
+  permit: rgb(210, 15, 57),
+  question: rgb(210, 15, 57),
   done: rgb(64, 160, 43),
-  busy: rgb(254, 100, 11),
-  idle: rgb(30, 102, 245),
+  busy: rgb(163, 103, 20),
+  idle: rgb(108, 111, 133),
   shell: rgb(156, 160, 176),
   down: rgb(188, 192, 204),
 };

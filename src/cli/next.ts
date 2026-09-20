@@ -1,8 +1,11 @@
 import { compareStatus, needsAttention, type AgentState } from '../state/types.ts';
 import { switchClient, displayMessage, currentPaneId } from '../tmux/sessions.ts';
 
-export function runNext(states: AgentState[]): number {
-  const currentPane = currentPaneId();
+export function runNext(
+  states: AgentState[],
+  navigate: (pane: string) => void = switchClient,
+  currentPane: string | null = currentPaneId(),
+): number {
   const waiting = states.filter((s) => needsAttention(s.status)).sort((a, b) => compareStatus(a.status, b.status));
 
   if (waiting.length === 0) {
@@ -19,7 +22,7 @@ export function runNext(states: AgentState[]): number {
   }
 
   try {
-    switchClient(target.paneId);
+    navigate(target.paneId);
     return 0;
   } catch {
     displayMessage(`Failed to switch to ${target.paneId}`);

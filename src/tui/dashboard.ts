@@ -5,28 +5,9 @@ import { TuiMode, type TuiApp } from './app.ts';
 import { buildTableLines } from './layouts/table.ts';
 import { buildCardLines } from './layouts/cards.ts';
 import { pickLayout } from './layouts/index.ts';
-import { chip, windowLines, type LayoutLines } from './layouts/shared.ts';
+import { chip, stateIcon, windowLines, type LayoutLines } from './layouts/shared.ts';
 
 const BOX_H = '─';
-
-const QUIPS = [
-  'herding agents',
-  'cat wrangling',
-  'vibes: immaculate',
-  'all hands on deck',
-  'in the trenches',
-  'agents assemble',
-  'mission control',
-  'fleet HQ',
-  'the war room',
-  'pane management',
-];
-
-let cachedQuip: string | null = null;
-function getQuip(): string {
-  if (!cachedQuip) cachedQuip = QUIPS[Math.floor(Math.random() * QUIPS.length)]!;
-  return cachedQuip;
-}
 
 function logo(): string {
   return `${C.permit}f${C.question}l${C.done}e${C.busy}e${C.idle}t${C.reset}`;
@@ -57,7 +38,15 @@ export function renderHeader(app: TuiApp, cols: number): string[] {
   if (s.done > 0) badges.push(`${C.done}${s.done} ready${C.reset}`);
   if (idle > 0) badges.push(`${C.gray}${idle} idle${C.reset}`);
 
-  const title = ` ${C.bold}${logo()}${C.reset} ${C.gray}${BOX_H} ${agentCount} agents · ${getQuip()}${C.reset}`;
+  if (pickLayout(cols) === 'cards') {
+    const attention = [`${C.permit}${needsYou} need you${C.reset}`, `${C.done}${s.done} ready${C.reset}`].join(
+      ` ${C.gray}·${C.reset} `,
+    );
+    const activity = `${stateIcon(AgentStatus.BUSY, app.spinnerFrame)} ${s.busy} working  ${C.idle}○ ${idle} idle${C.reset}`;
+    return [truncateAnsi(`${C.bold}fleet${C.reset}  ${attention}`, cols), truncateAnsi(activity, cols)];
+  }
+
+  const title = ` ${C.bold}${logo()}${C.reset} ${C.gray}${BOX_H} ${agentCount} agents${C.reset}`;
   const badgeStr = badges.length > 0 ? `  ${badges.join(` ${C.dim}·${C.reset} `)}` : '';
   return [truncateAnsi(`${C.gray}┌${BOX_H}${C.reset}${title}${badgeStr}`, cols)];
 }
@@ -96,7 +85,7 @@ export function renderSessionList(app: TuiApp, maxRows: number, cols: number): s
           cols,
         ),
       );
-    } else if (app.isFiltering()) {
+    } else if (app.getFilter().length > 0) {
       lines.push(truncateAnsi(`${C.gray}  no agents match "${app.getFilter()}"${C.reset}`, cols));
     } else {
       lines.push(truncateAnsi(`${C.idle}  ● all quiet${C.reset}`, cols));
@@ -119,6 +108,22 @@ export function stateAtLine(app: TuiApp, lineIdx: number, maxRows: number, cols:
 }
 
 export function renderFooter(app: TuiApp, cols: number): string[] {
+  // Input mode is safety-critical chrome, even in a 34-column sidebar.
+  if (app.mode === TuiMode.SEND || app.mode === TuiMode.RENAME || app.mode === TuiMode.CONFIRM_KILL) {
+    const confirm =
+      app.mode === TuiMode.CONFIRM_KILL
+        ? `${chip('y')} confirm`
+        : `${chip('Enter')} ${app.mode === TuiMode.SEND ? 'send' : 'save'}`;
+    return [truncateAnsi(`${confirm}  ${chip('Esc')} cancel`, cols)];
+  }
+  if (app.mode === TuiMode.PASSTHROUGH) {
+    return [truncateAnsi(`${C.cyan}LIVE → ${app.actionTarget?.paneId ?? '?'}${C.reset}  ${chip('Esc')} exit`, cols)];
+  }
+  if (app.isFiltering() || app.getFilter().length > 0) {
+    const hint = ` ${chip('Esc')} clear`;
+    const query = `${C.cyan}/${app.getFilter()}${C.reset}${app.isFiltering() ? '█' : ''}`;
+    return [truncateAnsi(truncateAnsi(query, Math.max(1, cols - 13)) + hint, cols)];
+  }
   if (pickLayout(cols) === 'cards') {
     const hints = [
       `${chip('⏎')} ${C.gray}switch${C.reset}`,
@@ -133,27 +138,13 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
   const legend = [
     `${C.permit}⚠ ${C.gray}waiting${C.reset}`,
     `${C.question}? ${C.gray}asking${C.reset}`,
-    `${C.busy}◉ ${C.gray}working${C.reset}`,
+    `${C.busy}⠋ ${C.gray}working${C.reset}`,
     `${C.done}● ${C.gray}ready${C.reset}`,
-    `${C.idle}● ${C.gray}idle${C.reset}`,
+    `${C.idle}○ ${C.gray}idle${C.reset}`,
   ];
   lines.push(truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${legend.join('  ')}`, cols));
 
-  if (app.mode === TuiMode.PASSTHROUGH) {
-    lines.push(
-      truncateAnsi(
-        `${C.gray}${BOX_H}${C.reset} ${C.cyan}● LIVE${C.reset} ${C.gray}— keystrokes forwarded to pane${C.reset}  ${chip('Esc')} ${C.gray}exit${C.reset}`,
-        cols,
-      ),
-    );
-  } else if (app.isFiltering()) {
-    lines.push(
-      truncateAnsi(
-        `${C.gray}${BOX_H}${C.reset} ${C.cyan}/${app.getFilter()}${C.reset}█ ${C.gray}${BOX_H} ${C.reset}${chip('Esc')} ${C.gray}clear${C.reset}`,
-        cols,
-      ),
-    );
-  } else if (app.mode === TuiMode.PREVIEW) {
+  if (app.mode === TuiMode.PREVIEW) {
     const selected = app.selectedState();
     const hints = [`${chip('↑↓')} ${C.gray}nav${C.reset}`, `${chip('i')} ${C.gray}passthrough${C.reset}`];
     if (selected?.status === AgentStatus.PERMIT) {

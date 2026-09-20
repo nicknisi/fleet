@@ -1,10 +1,9 @@
-import { C, serializeThemeColor, stateThemeColor } from '../../terminal/colors.ts';
+import { C } from '../../terminal/colors.ts';
 import {
   AgentStatus,
   STATUS_DISPLAY,
   agentSessionName,
   formatAgeDelta,
-  needsAttention,
   sessionDisplay,
   windowLabel,
   type AgentState,
@@ -39,15 +38,10 @@ export function agentRowLabel(row: Extract<DashboardRow, { kind: 'agent' }>): st
   return label === row.state.session ? session : `${session} · ${label}`;
 }
 
-// Style prefix for the row's primary label: bold + a dedicated accent hue (the
-// 'question' mauve doubles as the identity lane), switching to the row's state
-// color when the row needs you (permit/question/done) so attention rows light
-// up. Serializers return '' when colors are disabled, degrading to plain text.
+// Identity follows the same semantic color as the indicator. In particular,
+// idle labels must not borrow an attention color and compete with blocked work.
 export function agentNameStyle(state: AgentState): string {
-  const fg = needsAttention(state.status)
-    ? getStateColor(state.status)
-    : serializeThemeColor(stateThemeColor('question'));
-  return `${C.bold}${fg}`;
+  return `${C.bold}${getStateColor(state.status)}`;
 }
 
 export function getStateColor(status: AgentStatus): string {
@@ -69,12 +63,16 @@ export function getStateColor(status: AgentStatus): string {
   }
 }
 
-// BUSY breathes: alternate dim/normal each fast tick. Everything else is steady.
-export function stateIcon(status: AgentStatus, pulsePhase: boolean): string {
-  const icon = STATUS_DISPLAY[status].icon;
-  const color = getStateColor(status);
-  if (status === AgentStatus.BUSY && pulsePhase) return `${C.dim}${color}${icon}${C.reset}`;
-  return `${color}${icon}${C.reset}`;
+export const WORKING_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
+
+// Motion means working. Attention and completion stay steady, including under
+// NO_COLOR; their glyphs remain distinct from the idle outline circle.
+export function stateIcon(status: AgentStatus, frame: number = 0): string {
+  const icon =
+    status === AgentStatus.BUSY
+      ? (WORKING_FRAMES[frame % WORKING_FRAMES.length] ?? WORKING_FRAMES[0])
+      : STATUS_DISPLAY[status].icon;
+  return `${getStateColor(status)}${icon}${C.reset}`;
 }
 
 export function getAgeColor(ts: number): string {

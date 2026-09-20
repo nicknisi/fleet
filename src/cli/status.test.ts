@@ -196,34 +196,34 @@ describe('formatStatusLine', () => {
       makeState({ status: AgentStatus.PERMIT, session: 'mysession', window: 'task-window', ts: now - 10 }),
     ];
     const result = formatStatusLine(states);
-    // Icon for PERMIT is ⚠ in the terminal's yellow (theme-aware named color)
-    expect(result).toContain('#[fg=yellow]');
+    // Permission and question indicators reserve red for intervention.
+    expect(result).toContain('#[fg=red]');
     expect(result).toContain('⚠');
     // The label wears the same state color — every chip is an attention state.
-    expect(result).toContain('#[fg=yellow,bold]task-window#[nobold,fg=default]');
+    expect(result).toContain('#[fg=red,bold]task-window#[nobold,fg=default]');
     expect(result).toContain('10s');
   });
 
-  test('label color tracks the state: permit yellow, question magenta, done green', () => {
+  test('label color tracks the state: permit/question red, done green', () => {
     const states = [
       makeState({ status: AgentStatus.PERMIT, window: 'perm-win', paneId: '%1' }),
       makeState({ status: AgentStatus.QUESTION, window: 'ques-win', paneId: '%2' }),
       makeState({ status: AgentStatus.DONE, window: 'done-win', paneId: '%3' }),
     ];
     const result = formatStatusLine(states);
-    expect(result).toContain('#[fg=yellow,bold]perm-win');
-    expect(result).toContain('#[fg=magenta,bold]ques-win');
+    expect(result).toContain('#[fg=red,bold]perm-win');
+    expect(result).toContain('#[fg=red,bold]ques-win');
     expect(result).toContain('#[fg=green,bold]done-win');
   });
 
   test('falls back to the session name when the window is empty', () => {
     const states = [makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', window: '' })];
-    expect(formatStatusLine(states)).toContain('#[fg=yellow,bold]dotfiles#[nobold,fg=default]');
+    expect(formatStatusLine(states)).toContain('#[fg=red,bold]dotfiles#[nobold,fg=default]');
   });
 
   test('falls back to the session name when the window equals the session', () => {
     const states = [makeState({ status: AgentStatus.PERMIT, session: 'dotfiles', window: 'dotfiles' })];
-    expect(formatStatusLine(states)).toContain('#[fg=yellow,bold]dotfiles#[nobold,fg=default]');
+    expect(formatStatusLine(states)).toContain('#[fg=red,bold]dotfiles#[nobold,fg=default]');
   });
 
   test('two same-session agents in different windows render distinguishable chips', () => {
@@ -328,18 +328,18 @@ describe('windowColorArgs', () => {
       makeState({ windowId: '@1', status: AgentStatus.PERMIT, paneId: '%1' }),
       makeState({ windowId: '@2', status: AgentStatus.IDLE, paneId: '%2' }),
     ]);
-    expect(argsFor(args, '@1')).toEqual(['set', '-w', '-t', '@1', '@fleet_state', 'yellow']);
+    expect(argsFor(args, '@1')).toEqual(['set', '-w', '-t', '@1', '@fleet_state', 'red']);
     expect(argsFor(args, '@2')).toEqual(['set', '-w', '-u', '-t', '@2', '@fleet_state']);
   });
 
-  test('maps PERMIT→yellow, QUESTION→magenta, DONE→green', () => {
+  test('maps PERMIT/QUESTION→red, DONE→green', () => {
     const args = windowColorArgs([
       makeState({ windowId: '@1', status: AgentStatus.PERMIT, paneId: '%1' }),
       makeState({ windowId: '@2', status: AgentStatus.QUESTION, paneId: '%2' }),
       makeState({ windowId: '@3', status: AgentStatus.DONE, paneId: '%3' }),
     ]);
-    expect(argsFor(args, '@1')).toEqual(['set', '-w', '-t', '@1', '@fleet_state', 'yellow']);
-    expect(argsFor(args, '@2')).toEqual(['set', '-w', '-t', '@2', '@fleet_state', 'magenta']);
+    expect(argsFor(args, '@1')).toEqual(['set', '-w', '-t', '@1', '@fleet_state', 'red']);
+    expect(argsFor(args, '@2')).toEqual(['set', '-w', '-t', '@2', '@fleet_state', 'red']);
     expect(argsFor(args, '@3')).toEqual(['set', '-w', '-t', '@3', '@fleet_state', 'green']);
   });
 
@@ -368,7 +368,7 @@ describe('windowColorArgs', () => {
       makeState({ windowId: '@1', status: AgentStatus.PERMIT, paneId: '%2' }),
     ]);
     expect(args).toHaveLength(1);
-    expect(args[0]).toEqual(['set', '-w', '-t', '@1', '@fleet_state', 'yellow']);
+    expect(args[0]).toEqual(['set', '-w', '-t', '@1', '@fleet_state', 'red']);
   });
 
   test('every distinct window id produces exactly one arg list', () => {
@@ -388,7 +388,7 @@ describe('windowColorArgs', () => {
       makeState({ windowId: '@2', status: AgentStatus.QUESTION, paneId: '%2' }),
     ]);
     expect(args).toHaveLength(1);
-    expect(argsFor(args, '@2')).toEqual(['set', '-w', '-t', '@2', '@fleet_state', 'magenta']);
+    expect(argsFor(args, '@2')).toEqual(['set', '-w', '-t', '@2', '@fleet_state', 'red']);
     // No arg list contains an empty target.
     expect(args.some((a) => a.includes(''))).toBe(false);
   });

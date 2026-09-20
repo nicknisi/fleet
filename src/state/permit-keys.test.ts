@@ -39,11 +39,9 @@ describe('claude', () => {
     expect(resolvePermitKeysFromLines(lines, CLAUDE_MANIFEST, 'deny')).toEqual(['n']);
   });
 
-  test('hook-sourced PERMIT with no on-screen match falls to the manifest default', () => {
-    // The dialog scrolled away (or the scrape missed it) but the hook still
-    // says PERMIT — the manifest default answers the agent's native dialog.
-    expect(resolvePermitKeysFromLines(['❯'], CLAUDE_MANIFEST, 'approve')).toEqual(['1']);
-    expect(resolvePermitKeysFromLines([], CLAUDE_MANIFEST, 'deny')).toEqual(['Escape']);
+  test('a vanished or unreadable permission dialog refuses the shortcut', () => {
+    expect(() => resolvePermitKeysFromLines(['❯'], CLAUDE_MANIFEST, 'approve')).toThrow('No current permission');
+    expect(() => resolvePermitKeysFromLines([], CLAUDE_MANIFEST, 'deny')).toThrow('No current permission');
   });
 });
 
@@ -71,9 +69,9 @@ describe('codex', () => {
 describe('fallback', () => {
   const bare: DetectionManifest = { agent: 'mystery', linesFromBottom: 15, promptMarker: '', rules: [] };
 
-  test('a manifest with no rules and no defaults falls back to literal y/n', () => {
-    expect(resolvePermitKeysFromLines(['something? [y/n]'], bare, 'approve')).toEqual(['y']);
-    expect(resolvePermitKeysFromLines(['something? [y/n]'], bare, 'deny')).toEqual(['n']);
+  test('unknown agents without detection rules cannot approve by guessing', () => {
+    expect(() => resolvePermitKeysFromLines(['something? [y/n]'], bare, 'approve')).toThrow('No current permission');
+    expect(() => resolvePermitKeysFromLines(['something? [y/n]'], bare, 'deny')).toThrow('No current permission');
   });
 
   test('a matched PERMIT rule without keys on a manifest without defaults falls back to y/n', () => {
@@ -92,10 +90,10 @@ describe('fallback', () => {
       approveKeys: ['Enter'],
     };
     const lines = ['old prompt [y/n]', 'line', 'line'];
-    expect(resolvePermitKeysFromLines(lines, m, 'approve')).toEqual(['Enter']);
+    expect(() => resolvePermitKeysFromLines(lines, m, 'approve')).toThrow('No current permission');
   });
 
-  test('first matching PERMIT rule wins; non-PERMIT rules are skipped', () => {
+  test('a higher-priority BUSY rule refuses approval of a lingering prompt', () => {
     const m: DetectionManifest = {
       ...bare,
       rules: [
@@ -104,6 +102,7 @@ describe('fallback', () => {
         { id: 'permit.b', pattern: 'confirm', state: 'PERMIT', approveKeys: ['z'] },
       ],
     };
-    expect(resolvePermitKeysFromLines(['tokens · confirm'], m, 'approve')).toEqual(['Enter']);
+    expect(() => resolvePermitKeysFromLines(['tokens · confirm'], m, 'approve')).toThrow('No current permission');
+    expect(resolvePermitKeysFromLines(['confirm'], m, 'approve')).toEqual(['Enter']);
   });
 });

@@ -56,6 +56,41 @@ describe('TuiApp', () => {
     expect(visible[0]!.session).toBe('dotfiles');
   });
 
+  test('accepting a sidebar query preserves the view but resumes normal navigation', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      makeState('api', AgentStatus.IDLE, '%1'),
+      makeState('api', AgentStatus.IDLE, '%2'),
+      makeState('other', AgentStatus.IDLE, '%3'),
+    ]);
+    app.setFilter('api');
+    app.moveDown();
+    app.acceptFilter();
+    expect(app.getFilter()).toBe('api');
+    expect(app.isFiltering()).toBe(false);
+    expect(app.selectedState()?.paneId).toBe('%2');
+    expect(app.visibleStates()).toHaveLength(2);
+  });
+
+  test('a vanished kill target cancels confirmation rather than adopting the next row', () => {
+    const app = new TuiApp();
+    const a = makeState('a', AgentStatus.IDLE, '%1');
+    const b = makeState('b', AgentStatus.IDLE, '%2');
+    app.updateStates([a, b]);
+    app.enterKillConfirm();
+    app.updateStates([b]);
+    expect(app.selectedState()?.paneId).toBe('%2');
+    expect(app.mode).toBe(TuiMode.DASHBOARD);
+  });
+
+  test('a vanished passthrough target stops forwarding before selection falls back', () => {
+    const app = new TuiApp();
+    app.updateStates([makeState('a', AgentStatus.IDLE, '%1'), makeState('b', AgentStatus.IDLE, '%2')]);
+    app.enterPassthrough();
+    app.updateStates([makeState('b', AgentStatus.IDLE, '%2')]);
+    expect(app.mode).toBe(TuiMode.PREVIEW);
+  });
+
   test('mode transitions', () => {
     const app = new TuiApp();
     expect<TuiMode>(app.mode).toBe(TuiMode.DASHBOARD);
