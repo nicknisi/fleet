@@ -10,6 +10,7 @@ export function renderHelp(): string[] {
   lines.push(`  ${C.yellowBold}n${C.reset}${C.gray}           Jump to next waiting agent${C.reset}`);
   lines.push(`  ${C.yellowBold}p${C.reset}${C.gray}           Toggle preview pane${C.reset}`);
   lines.push(`  ${C.yellowBold}s${C.reset}${C.gray}           Send prompt to session${C.reset}`);
+  lines.push(`  ${C.gray}              (answers a Claude question in place; Esc keeps it open)${C.reset}`);
   lines.push(`  ${C.yellowBold}/${C.reset}${C.gray}           Filter sessions by name${C.reset}`);
   lines.push(`  ${C.yellowBold}x${C.reset}${C.gray}           Kill selected session (asks to confirm)${C.reset}`);
   lines.push(`  ${C.yellowBold}R${C.reset}${C.gray}           Rename selected session${C.reset}`);

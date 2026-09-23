@@ -72,8 +72,8 @@ export function render(app: TuiApp, size: TerminalSize): string {
       out.push(truncateAnsi(modalLines[i]!, cols) + '\x1b[K\r\n');
       linesWritten++;
     }
-  } else if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
-    const isPassthrough = app.mode === TuiMode.PASSTHROUGH;
+  } else if (app.mode === TuiMode.PREVIEW || app.isLive()) {
+    const isPassthrough = app.isLive();
     const selected = isPassthrough ? app.actionState() : app.selectedState();
     const listWidth = app.listWidth(cols);
     const previewWidth = cols - listWidth - 1;
@@ -84,7 +84,15 @@ export function render(app: TuiApp, size: TerminalSize): string {
     const sessionLines = renderSessionList(app, contentRows - 1, listWidth);
     const emptyPreview: PreviewRender = { lines: [], cursor: null };
     const preview = selected
-      ? renderPreviewWithCursor(selected, previewWidth, contentRows - 1, isPassthrough, app.spinnerFrame, app.preview)
+      ? renderPreviewWithCursor(
+          selected,
+          previewWidth,
+          contentRows - 1,
+          isPassthrough,
+          app.spinnerFrame,
+          app.preview,
+          app.mode === TuiMode.ANSWER ? 'ANSWER' : 'LIVE',
+        )
       : emptyPreview;
     const previewLines = preview.lines;
     // Map the preview-relative caret to an absolute screen cell. Preview array

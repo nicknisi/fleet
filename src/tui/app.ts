@@ -17,6 +17,7 @@ export const TuiMode = {
   HELP: 'HELP',
   DECISION: 'DECISION',
   PASSTHROUGH: 'PASSTHROUGH',
+  ANSWER: 'ANSWER',
   CONFIRM_KILL: 'CONFIRM_KILL',
 } as const;
 
@@ -52,6 +53,7 @@ export class TuiApp {
   private modeBeforeSend: TuiMode = TuiMode.DASHBOARD;
   private modeBeforeRename: TuiMode = TuiMode.DASHBOARD;
   private modeBeforeKill: TuiMode = TuiMode.DASHBOARD;
+  private modeBeforeAnswer: TuiMode = TuiMode.DASHBOARD;
   sendBuffer: string = '';
   renameBuffer: string = '';
   // An interaction owns a pane, independently of the browsing selection.
@@ -128,6 +130,7 @@ export class TuiApp {
       const pane = this.actionTarget.paneId;
       if (this.mode === TuiMode.CONFIRM_KILL) this.exitKillConfirm();
       if (this.mode === TuiMode.PASSTHROUGH) this.exitPassthrough();
+      if (this.mode === TuiMode.ANSWER) this.exitAnswer();
       if (this.mode === TuiMode.RENAME) this.exitRename();
       // A send draft remains visible, bound to its original (now unavailable)
       // target. Nothing may silently adopt the replacement selection.
@@ -335,6 +338,25 @@ export class TuiApp {
 
   exitPassthrough(): void {
     this.mode = TuiMode.PREVIEW;
+    this.actionTarget = null;
+  }
+
+  // Passthrough and answering both forward keys to a live preview of one pane.
+  isLive(): boolean {
+    return this.mode === TuiMode.PASSTHROUGH || this.mode === TuiMode.ANSWER;
+  }
+
+  // A passthrough limited to one native question form: it owns the selected
+  // pane like passthrough, and returns to the previous view once it closes.
+  enterAnswer(): void {
+    this.modeBeforeAnswer = this.mode === TuiMode.PREVIEW ? TuiMode.PREVIEW : TuiMode.DASHBOARD;
+    this.actionTarget = this.selectedState();
+    this.actionError = null;
+    this.mode = TuiMode.ANSWER;
+  }
+
+  exitAnswer(): void {
+    this.mode = this.modeBeforeAnswer;
     this.actionTarget = null;
   }
 
