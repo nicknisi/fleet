@@ -27,7 +27,7 @@ export function render(app: TuiApp, size: TerminalSize): string {
   out.push(SYNC_BEGIN, '\x1b[?25l', '\x1b[H');
 
   if (cols < 20 || rows < 6) {
-    out.push(`${C.gray}Terminal too small${C.reset}\x1b[K`, SYNC_END);
+    out.push(`${C.gray}Terminal too small${C.reset}\x1b[K`, '\x1b[?25l', SYNC_END);
     return out.join('');
   }
 

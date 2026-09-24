@@ -51,7 +51,7 @@ test('each frame is one synchronized update with the cursor hidden until the car
   expect(frame.endsWith('\x1b[?25l\x1b[?2026l')).toBe(true);
   const tiny = render(app, { cols: 10, rows: 4 });
   expect(tiny.startsWith('\x1b[?2026h\x1b[?25l')).toBe(true);
-  expect(tiny.endsWith('\x1b[?2026l')).toBe(true);
+  expect(tiny.endsWith('\x1b[?25l\x1b[?2026l')).toBe(true);
 
   app.mode = TuiMode.PREVIEW;
   app.enterPassthrough();
