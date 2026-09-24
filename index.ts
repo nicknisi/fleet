@@ -518,8 +518,13 @@ async function launchTui(): Promise<number> {
       // paste) — dispatch every parsed key, stopping if a key quit the app.
       for (const key of parseKeyEvents(buf)) {
         if (finished || app.shouldQuit) break;
+        const wasLive = app.isLive();
         handleKey(key);
         if (app.actionError && !app.actionTarget) break;
+        // Keys that follow `s` or `i` in one read were meant for the agent, but
+        // the answer form or live view has not been drawn yet. Drop them rather
+        // than run them as shortcuts: "sq" would quit, "ixy" would kill the pane.
+        if (!wasLive && app.isLive()) break;
       }
     };
 

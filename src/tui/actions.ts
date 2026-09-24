@@ -1,5 +1,5 @@
 import type { AgentState } from '../state/types.ts';
-import type { KeyEvent } from '../terminal/input.ts';
+import { parseKeyEvents, type KeyEvent } from '../terminal/input.ts';
 import { type TuiApp } from './app.ts';
 import { canSendTo } from './send.ts';
 import { canKillSession } from './kill.ts';
@@ -79,9 +79,11 @@ export function handlePassthroughInput(app: TuiApp, data: Buffer, io: Pick<Actio
 }
 
 export function handleAnswerInput(app: TuiApp, data: Buffer, io: Pick<ActionIO, 'forward' | 'capture'>): void {
-  // Fleet keeps Escape, so leaving never cancels the native question. (A leading
-  // Ctrl-C already quits Fleet; one inside a batch is never sent as an interrupt.)
-  if ((data.length === 1 && data[0] === 0x1b) || data.includes(0x03)) {
+  // Fleet keeps Escape, so leaving never cancels the native question, even when
+  // one read coalesces it with other keys; arrow sequences are not Escape. (A
+  // leading Ctrl-C already quits Fleet; one inside a batch is never sent as an
+  // interrupt.)
+  if (data.includes(0x03) || parseKeyEvents(data).some((key) => key.type === 'escape')) {
     app.exitAnswer();
     return;
   }

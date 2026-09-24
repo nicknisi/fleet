@@ -178,7 +178,8 @@ describe('answering a native question in place', () => {
     expect(app.actionTarget).toBeNull();
   });
   test('Escape and an embedded interrupt leave without reaching the question', () => {
-    for (const key of ['\x1b', 'a\x03']) {
+    // A coalesced read can carry Escape before or after other keys.
+    for (const key of ['\x1b', 'a\x03', '\x1bj', '1\x1b', '\x1b[B\x1b']) {
       const { app, io, calls } = setup();
       app.enterAnswer();
       handleAnswerInput(app, Buffer.from(key), io);
