@@ -66,13 +66,41 @@ describe('pure preview rendering', () => {
     expect(result.cursor).toEqual({ row: 3, col: 7 });
     expect(result.lines[2]).toBe('l5');
   });
-  test('offscreen cursors and non-passthrough renders have no caret', () => {
-    expect(
-      renderPreviewWithCursor(makeState(AgentStatus.BUSY), 80, 5, true, 0, snapshot({ x: 0, y: 2 })).cursor,
-    ).toBeNull();
+  test('a caret above the bottom rows brings the window to it', () => {
+    const result = renderPreviewWithCursor(makeState(AgentStatus.BUSY), 80, 5, true, 0, snapshot({ x: 0, y: 2 }));
+    expect(result.cursor).toEqual({ row: 2, col: 0 });
+    expect(result.lines.slice(2)).toEqual(['l2', 'l3', 'l4']);
+  });
+  test('non-passthrough renders and carets beyond the preview width have no caret', () => {
     expect(
       renderPreviewWithCursor(makeState(AgentStatus.BUSY), 80, 20, false, 0, snapshot({ x: 0, y: 2 })).cursor,
     ).toBeNull();
+    expect(
+      renderPreviewWithCursor(makeState(AgentStatus.BUSY), 80, 20, true, 0, snapshot({ x: 80, y: 7 })).cursor,
+    ).toBeNull();
+  });
+  // Claude Code draws its slash-command menu below the prompt. In a pane taller
+  // than the preview, the menu and the blank rows under it used to hide the prompt.
+  test('shows a Claude prompt above its slash-command menu in a tall, mostly blank pane', () => {
+    const menu = Array.from({ length: 33 }, (_, i) => `  /skill-${i}   description`);
+    const rows = [' Claude Code', '', '─'.repeat(40), '❯ /s', '─'.repeat(40), ...menu, ...Array<string>(30).fill('')];
+    const shot = { ...snapshot({ x: 4, y: 3 }), screen: rows.join('\n') + '\n' };
+    const result = renderPreviewWithCursor(makeState(AgentStatus.IDLE), 120, 51, true, 0, shot);
+    expect(result.cursor).toEqual({ row: 5, col: 4 });
+    expect(result.lines[5]).toBe('❯ /s');
+    expect(result.lines[7]).toBe('  /skill-0   description');
+  });
+  test('keeps a quarter of the view above a caret whose menu overflows the preview', () => {
+    const rows = [
+      ...Array.from({ length: 30 }, (_, i) => `t${i}`),
+      '❯ /s',
+      ...Array.from({ length: 37 }, (_, i) => `m${i}`),
+    ];
+    const shot = { ...snapshot({ x: 4, y: 30 }), screen: rows.join('\n') + '\n' };
+    const result = renderPreviewWithCursor(makeState(AgentStatus.IDLE), 80, 22, true, 0, shot);
+    expect(result.cursor).toEqual({ row: 7, col: 4 });
+    expect(result.lines.slice(2, 8)).toEqual(['t25', 't26', 't27', 't28', 't29', '❯ /s']);
+    expect(result.lines[21]).toBe('m13');
   });
   test('never shows another pane’s late snapshot', () => {
     const result = renderPreviewWithCursor(

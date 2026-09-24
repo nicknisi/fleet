@@ -127,7 +127,7 @@ export function renderPreviewWithCursor(
   if (!snapshot || snapshot.paneId !== state.paneId) {
     paneLines = [`${C.gray}Loading preview…${C.reset}`];
   } else if (passthrough) {
-    const aligned = processCaptureAligned(snapshot.screen, Math.max(1, maxContentLines));
+    const aligned = processCaptureAligned(snapshot.screen, Math.max(1, maxContentLines), snapshot.cursor?.y);
     paneLines = aligned.lines;
     const pc = snapshot.cursor;
     if (pc) {
