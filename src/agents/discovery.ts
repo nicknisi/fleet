@@ -145,12 +145,16 @@ export function discoverAgents(
   }
 
   for (const [paneId, agentType] of agentByPane) {
-    const glyph = GLYPH.test(captures.get(paneId) ?? '');
+    // Codex also paints ambient braille particles around an idle composer.
+    // Its native working text/title and blocked-state rules are the evidence
+    // used by resolveDiscoveredStatus; an arbitrary screen glyph is ambiguous.
+    const usesScreenGlyph = agentType !== 'codex';
+    const glyph = usesScreenGlyph && GLYPH.test(captures.get(paneId) ?? '');
     if (glyph) {
       nextLastWorking.set(paneId, opts.now);
       agents.push({ paneId, agentType, working: true });
     } else {
-      const last = opts.lastWorking.get(paneId);
+      const last = usesScreenGlyph ? opts.lastWorking.get(paneId) : undefined;
       if (last !== undefined) nextLastWorking.set(paneId, last); // keep grace anchored to last glyph
       const working = last !== undefined && opts.now - last < opts.idleSecs;
       agents.push({ paneId, agentType, working });
