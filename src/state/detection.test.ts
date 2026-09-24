@@ -99,6 +99,66 @@ describe('CLAUDE_MANIFEST reproduces the pre-Phase-2 scraper', () => {
   }
 });
 
+describe('busy.spinner-elapsed: Claude Code 2.1.28x spinner lines', () => {
+  const cases: Array<{ name: string; lines: string[]; status: AgentStatus | null; ruleId: string | null }> = [
+    {
+      name: 'while a hook runs',
+      lines: ['✻ Choreographing… (running PreToolUse hook · 1m 44s · ↓ 6.8k tokens)', '', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.spinner-elapsed',
+    },
+    {
+      name: 'still thinking after the token count',
+      lines: ['✻ Pondering… (1m 11s · ↓ 3.7k tokens · still thinking with xhigh effort)', '', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.spinner-elapsed',
+    },
+    {
+      name: 'past an hour',
+      lines: ['✻ Pondering… (1h 2m 3s · ↓ 120k tokens)', '', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.spinner-elapsed',
+    },
+    {
+      name: 'before the first token',
+      lines: ['✻ Thinking… (3s)', '', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.spinner-elapsed',
+    },
+    {
+      name: 'outranks an answered prompt still in the bottom window, like the token counter',
+      lines: ['Do you want to proceed?', '● Bash(ls)', '✻ Pondering… (running PreToolUse hook · 4s)', '', '❯'],
+      status: AgentStatus.BUSY,
+      ruleId: 'busy.spinner-elapsed',
+    },
+    {
+      name: 'a finished turn summary is not busy',
+      lines: ['✻ Cooked for 2m 42s · done 2:46 PM', '', '❯'],
+      status: AgentStatus.IDLE,
+      ruleId: 'idle.prompt',
+    },
+    {
+      name: 'collapsed tool output is not busy',
+      lines: ['● Bash(tail -n 3 run.log…)', '     … +8 lines (ctrl+o to expand)', '', '❯'],
+      status: AgentStatus.IDLE,
+      ruleId: 'idle.prompt',
+    },
+    {
+      name: 'a parenthesised duration in prose is not busy',
+      lines: ['The build took a while (2m 3s) to finish.', '', '❯'],
+      status: AgentStatus.IDLE,
+      ruleId: 'idle.prompt',
+    },
+  ];
+  for (const c of cases) {
+    test(c.name, () => {
+      const r = detectFromPaneContent(c.lines, CLAUDE_MANIFEST);
+      expect(r.status).toBe(c.status);
+      expect(r.ruleId).toBe(c.ruleId);
+    });
+  }
+});
+
 // 1b. Phase 1 — braille working-glyph BUSY rule (busy.spinner-glyph). The animated
 //     braille glyph (U+2800–U+28FF) is a positive "working" signal no English string
 //     can spoof; a pane that merely QUOTES `esc to interrupt` (no live glyph) must not
