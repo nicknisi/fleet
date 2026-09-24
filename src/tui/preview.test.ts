@@ -38,9 +38,19 @@ describe('previewActions', () => {
     expect(previewActions(makeState(AgentStatus.PERMIT))).toContain('approve');
     expect(previewActions(makeState(AgentStatus.PERMIT))).toContain('deny');
   });
-  test('QUESTION only offers inline answer, not an unsafe send', () => {
-    expect(previewActions(makeState(AgentStatus.QUESTION))).toContain('answer inline');
+  test('QUESTION offers answering, never an unsafe send', () => {
+    // Claude's question form is answered in place with S; others answer inline.
+    expect(previewActions(makeState(AgentStatus.QUESTION))).toContain('[s] answer');
     expect(previewActions(makeState(AgentStatus.QUESTION))).not.toContain('send');
+    const codex = { ...makeState(AgentStatus.QUESTION), agentType: 'codex' };
+    expect(previewActions(codex)).toContain('answer inline');
+    expect(previewActions(codex)).not.toContain('send');
+  });
+  test('the live header names answering distinctly from passthrough', () => {
+    const live = (tag?: 'LIVE' | 'ANSWER') =>
+      renderPreviewWithCursor(makeState(AgentStatus.QUESTION), 80, 6, true, 0, snapshot(null), tag).lines[0];
+    expect(live()).toContain('● LIVE');
+    expect(live('ANSWER')).toContain('● ANSWER');
   });
   test('DONE shows passthrough and send', () => {
     expect(previewActions(makeState(AgentStatus.DONE))).toContain('passthrough');

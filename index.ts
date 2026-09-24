@@ -4,7 +4,14 @@ import { readPreview } from './src/tui/preview.ts';
 import { createRefreshQueue } from './src/tui/refresh-queue.ts';
 import { paneTitle, renderFooter, renderHeader, stateAtLine } from './src/tui/dashboard.ts';
 import { canSendTo } from './src/tui/send.ts';
-import { handleSendInput, handleKillConfirmInput, handlePassthroughInput, type ActionIO } from './src/tui/actions.ts';
+import {
+  handleSendInput,
+  handleKillConfirmInput,
+  handlePassthroughInput,
+  handleAnswerInput,
+  type ActionIO,
+} from './src/tui/actions.ts';
+import { answersQuestionInPlace, isClaudeQuestionForm } from './src/tui/answer.ts';
 import { parseKeyEvent, parseKeyEvents } from './src/terminal/input.ts';
 import { isMouseSequence, parseMouseEvent } from './src/terminal/mouse.ts';
 import {
@@ -26,7 +33,7 @@ import { readClientFocus } from './src/tmux/clients.ts';
 import { deliverDesktop } from './src/notify/deliver.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import type { AgentDir } from './src/agents/config.ts';
-import { switchClient, killPane } from './src/tmux/sessions.ts';
+import { switchClient, killPane, capturePane } from './src/tmux/sessions.ts';
 import { TmuxControlClient } from './src/tmux/control.ts';
 import { shouldAttemptControl, type ControlLatch } from './src/tmux/control-router.ts';
 import { sendKeys, sendKeyNames, sendRawKey } from './src/tmux/send.ts';
@@ -64,6 +71,8 @@ const PASSTHROUGH_REFRESH_MS = 90;
 // requiring a pixel-perfect press on it is hard to hit; ±3 gives a 7-column
 // target while staying clear of the row-click regions on either side.
 const DIVIDER_GRAB = 3;
+// Bottom rows read to recognize a native question form; the form is drawn last.
+const ANSWER_CAPTURE_LINES = 60;
 
 function handleFilterInput(
   app: TuiApp,
@@ -134,6 +143,15 @@ async function launchTui(): Promise<number> {
     send: sendKeys,
     kill: killPane,
     forward: sendRawKey,
+    capture: (pane) => capturePane(pane, ANSWER_CAPTURE_LINES),
+  };
+  // A pane that cannot be read has no answerable form; S falls back to sending.
+  const questionFormOpen = (pane: string): boolean => {
+    try {
+      return isClaudeQuestionForm(actionIO.capture(pane));
+    } catch {
+      return false;
+    }
   };
 
   const args = process.argv.slice(2);
@@ -305,10 +323,10 @@ async function launchTui(): Promise<number> {
     };
 
     const refreshPreview = async () => {
-      if (finished || previewInFlight || (app.mode !== TuiMode.PREVIEW && app.mode !== TuiMode.PASSTHROUGH)) return;
-      const selected = app.mode === TuiMode.PASSTHROUGH ? app.actionState() : app.selectedState();
+      if (finished || previewInFlight || (app.mode !== TuiMode.PREVIEW && !app.isLive())) return;
+      const selected = app.isLive() ? app.actionState() : app.selectedState();
       if (!selected) return;
-      const ttl = app.mode === TuiMode.PASSTHROUGH ? PASSTHROUGH_REFRESH_MS : 400;
+      const ttl = app.isLive() ? PASSTHROUGH_REFRESH_MS : 400;
       if (previewAttemptPane === selected.paneId && Date.now() - previewAttemptAt < ttl) return;
       previewAttemptPane = selected.paneId;
       previewAttemptAt = Date.now();
@@ -326,9 +344,12 @@ async function launchTui(): Promise<number> {
           snapshot = await readPreview(selected.paneId);
         }
         if (finished) return;
-        const current = app.mode === TuiMode.PASSTHROUGH ? app.actionState() : app.selectedState();
+        const current = app.isLive() ? app.actionState() : app.selectedState();
         if (current?.paneId !== selected.paneId || current.panePid !== selected.panePid) return;
         app.preview = snapshot;
+        // Submitting, declining or skipping closes the native form: return on
+        // the next frame so nothing typed afterwards reaches the agent.
+        if (app.mode === TuiMode.ANSWER && !isClaudeQuestionForm(snapshot.screen.split('\n'))) app.exitAnswer();
         needsRender = true;
         tick();
       } catch {
@@ -345,10 +366,10 @@ async function launchTui(): Promise<number> {
     // Refresh observation asynchronously; rendering and key handling only read
     // the last snapshot. No capture/cursor subprocess can block a typing frame. Torn down the moment passthrough exits.
     const syncPassthroughTimer = () => {
-      const active = app.mode === TuiMode.PASSTHROUGH;
+      const active = app.isLive();
       if (active && passthroughTimer === null && !finished) {
         passthroughTimer = setInterval(() => {
-          if (finished || app.mode !== TuiMode.PASSTHROUGH) {
+          if (finished || !app.isLive()) {
             if (passthroughTimer !== null) {
               clearInterval(passthroughTimer);
               passthroughTimer = null;
@@ -413,7 +434,7 @@ async function launchTui(): Promise<number> {
         // Divider drag (preview / passthrough). The grab zone is wider than the
         // 1-column divider so the press doesn't have to land exactly on the line
         // — anything within DIVIDER_GRAB columns either side starts the drag.
-        if (app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH) {
+        if (app.mode === TuiMode.PREVIEW || app.isLive()) {
           const dividerCol = app.listWidth(sz.cols) + 1;
           if (mouse.button === 'left' && mouse.type === 'press' && Math.abs(mouse.x - dividerCol) <= DIVIDER_GRAB) {
             app.startDrag();
@@ -439,7 +460,7 @@ async function launchTui(): Promise<number> {
         // actually changes; parking the cursor costs nothing.
         if (mouse.type === 'move' && !app.dragging) {
           const id = listHit(mouse.x, mouse.y)?.paneId ?? null;
-          const splitView = app.mode === TuiMode.PREVIEW || app.mode === TuiMode.PASSTHROUGH;
+          const splitView = app.mode === TuiMode.PREVIEW || app.isLive();
           const overDivider = splitView && Math.abs(mouse.x - (app.listWidth(sz.cols) + 1)) <= DIVIDER_GRAB;
           if (id !== app.hoverPaneId || overDivider !== app.hoverDivider) {
             app.hoverPaneId = id;
@@ -486,12 +507,24 @@ async function launchTui(): Promise<number> {
         return;
       }
 
+      // Answering forwards raw bytes to the question form only while it is open.
+      if (app.mode === TuiMode.ANSWER) {
+        handleAnswerInput(app, buf, actionIO);
+        needsRender = true;
+        return;
+      }
+
       // One read can coalesce several keystrokes (fast typing, SSH batching,
       // paste) — dispatch every parsed key, stopping if a key quit the app.
       for (const key of parseKeyEvents(buf)) {
         if (finished || app.shouldQuit) break;
+        const wasLive = app.isLive();
         handleKey(key);
         if (app.actionError && !app.actionTarget) break;
+        // Keys that follow `s` or `i` in one read were meant for the agent, but
+        // the answer form or live view has not been drawn yet. Drop them rather
+        // than run them as shortcuts: "sq" would quit, "ixy" would kill the pane.
+        if (!wasLive && app.isLive()) break;
       }
     };
 
@@ -604,6 +637,12 @@ async function launchTui(): Promise<number> {
             case 's': {
               const selected = app.selectedState();
               if (selected) {
+                // An asking Claude row cannot take a prompt, but its native
+                // question form can be answered in place.
+                if (answersQuestionInPlace(selected) && questionFormOpen(selected.paneId)) {
+                  app.enterAnswer();
+                  break;
+                }
                 const check = canSendTo(selected);
                 if (check.ok) app.enterSend();
                 else app.actionError = check.reason;

@@ -1,14 +1,16 @@
 import type { AgentState } from '../state/types.ts';
-import type { KeyEvent } from '../terminal/input.ts';
+import { parseKeyEvents, type KeyEvent } from '../terminal/input.ts';
 import { type TuiApp } from './app.ts';
 import { canSendTo } from './send.ts';
 import { canKillSession } from './kill.ts';
+import { isClaudeQuestionForm } from './answer.ts';
 
 export interface ActionIO {
   readState: (target: AgentState) => AgentState;
   send: (pane: string, text: string) => void;
   kill: (pane: string) => void;
   forward: (pane: string, data: Buffer, expectedPid?: number) => void;
+  capture: (pane: string) => string[];
 }
 
 export function handleSendInput(app: TuiApp, key: KeyEvent, io: Pick<ActionIO, 'readState' | 'send'>): void {
@@ -72,6 +74,35 @@ export function handlePassthroughInput(app: TuiApp, data: Buffer, io: Pick<Actio
     io.forward(target.paneId, data, target.panePid);
   } catch (error) {
     app.exitPassthrough();
+    app.actionError = error instanceof Error ? error.message : 'Forwarding failed';
+  }
+}
+
+export function handleAnswerInput(app: TuiApp, data: Buffer, io: Pick<ActionIO, 'forward' | 'capture'>): void {
+  // Fleet keeps Escape, so leaving never cancels the native question, even when
+  // one read coalesces it with other keys; arrow sequences are not Escape. (A
+  // leading Ctrl-C already quits Fleet; one inside a batch is never sent as an
+  // interrupt.)
+  if (data.includes(0x03) || parseKeyEvents(data).some((key) => key.type === 'escape')) {
+    app.exitAnswer();
+    return;
+  }
+  const target = app.actionState();
+  if (!target) {
+    app.exitAnswer();
+    app.actionError = 'Question target disappeared or changed';
+    return;
+  }
+  try {
+    // Re-read the pane before every batch: once the form has closed, further
+    // typing must not become a new prompt or reach a permission dialog.
+    if (!isClaudeQuestionForm(io.capture(target.paneId))) {
+      app.exitAnswer();
+      return;
+    }
+    io.forward(target.paneId, data, target.panePid);
+  } catch (error) {
+    app.exitAnswer();
     app.actionError = error instanceof Error ? error.message : 'Forwarding failed';
   }
 }

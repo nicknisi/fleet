@@ -5,6 +5,7 @@ import { processCaptureAligned, processCaptureOutput } from '../tmux/sessions.ts
 import { tmuxAsync } from '../tmux/ipc.ts';
 import type { TmuxControlClient } from '../tmux/control.ts';
 import { chip, stateIcon } from './layouts/shared.ts';
+import { answersQuestionInPlace } from './answer.ts';
 
 // Cursor cell inside a rendered preview, in coordinates relative to the returned
 // `lines` array: `row` indexes that array, `col` is the 0-based content column
@@ -73,7 +74,9 @@ export function previewActions(state: AgentState): string {
     case AgentStatus.PERMIT:
       return `${chip('y')} ${C.done}approve${C.reset}  ${chip('n')} ${C.red}deny${C.reset}  ${chip('i')} ${C.gray}passthrough${C.reset}`;
     case AgentStatus.QUESTION:
-      return `${chip('i')} ${C.gray}answer inline${C.reset}`;
+      return answersQuestionInPlace(state)
+        ? `${chip('s')} ${C.gray}answer${C.reset}  ${chip('i')} ${C.gray}passthrough${C.reset}`
+        : `${chip('i')} ${C.gray}answer inline${C.reset}`;
     case AgentStatus.DONE:
     case AgentStatus.IDLE:
       return `${chip('i')} ${C.gray}passthrough${C.reset}  ${chip('s')} ${C.gray}send prompt${C.reset}`;
@@ -102,11 +105,12 @@ export function renderPreviewWithCursor(
   passthrough: boolean = false,
   frame: number = 0,
   snapshot: PreviewSnapshot | null = null,
+  liveTag: 'LIVE' | 'ANSWER' = 'LIVE',
 ): PreviewRender {
   const lines: string[] = [];
   const display = STATUS_DISPLAY[state.status];
 
-  const modeTag = passthrough ? ` ${C.cyan}● LIVE${C.reset}` : '';
+  const modeTag = passthrough ? ` ${C.cyan}● ${liveTag}${C.reset}` : '';
   const agentName = agentSessionName(state);
   const nameInfo = agentName ? ` · ${agentName}` : '';
   const title = `${stateIcon(state.status, frame)} ${whereLabel(state)} · ${display.label.toUpperCase()}${nameInfo}${modeTag}`;
