@@ -149,6 +149,18 @@ describe('busy.spinner-elapsed: Claude Code 2.1.28x spinner lines', () => {
       status: AgentStatus.IDLE,
       ruleId: 'idle.prompt',
     },
+    {
+      name: 'a separator without spaces does not make a field',
+      lines: ['✻ Thinking… (3s·still thinking)', '', '❯'],
+      status: AgentStatus.IDLE,
+      ruleId: 'idle.prompt',
+    },
+    {
+      name: 'fields do not continue onto the next line',
+      lines: ['✻ Thinking… (running PreToolUse hook ·', '  3s)', '', '❯'],
+      status: AgentStatus.IDLE,
+      ruleId: 'idle.prompt',
+    },
   ];
   for (const c of cases) {
     test(c.name, () => {
