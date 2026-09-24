@@ -215,6 +215,46 @@ describe('discoverAgents — debounce anchoring + prune', () => {
   });
 });
 
+describe('Codex ambient composer particles', () => {
+  const ps = ['100 1 bash', '300 100 codex'];
+  const panes = new Map<number, string>([[100, '%1']]);
+  const decoration = '    ⠄       ⢀        ⠐\n›⠁Ask Codex to do anything    ⠈  ⠂\n  ⠠       ⢀';
+
+  test('idle particles do not become a working signal or retain a stale glyph anchor', () => {
+    const scan = discoverAgents(
+      ps,
+      panes,
+      new Map([['%1', decoration]]),
+      opts({
+        allowlist: new Set(['codex']),
+        lastWorking: new Map([['%1', 99]]),
+      }),
+    );
+    expect(scan.agents).toEqual([{ paneId: '%1', agentType: 'codex', working: false }]);
+    expect(scan.lastWorking.has('%1')).toBe(false);
+  });
+
+  test('native busy and permission evidence still wins with ambient particles present', () => {
+    const scan = discoverAgents(ps, panes, new Map([['%1', decoration]]), opts({ allowlist: new Set(['codex']) }));
+    for (const status of [AgentStatus.BUSY, AgentStatus.PERMIT]) {
+      const tracking: DoneTracking = { wasBusy: new Set(), done: new Set() };
+      expect(
+        resolveDiscoveredStatus(
+          '%1',
+          { glyphWorking: scan.agents[0]!.working, scrape: status, title: null, focused: false },
+          tracking,
+          100,
+        ),
+      ).toBe(status);
+    }
+  });
+
+  test('other agents still use the braille glyph', () => {
+    const scan = discoverAgents(['100 1 bash', '300 100 aider'], panes, new Map([['%1', decoration]]), opts());
+    expect(scan.agents).toEqual([{ paneId: '%1', agentType: 'aider', working: true }]);
+  });
+});
+
 describe('parseDiscoveryConfig', () => {
   test('all unset -> enabled, default allowlist, default idle secs', () => {
     const cfg = parseDiscoveryConfig({ discover: null, agents: null, idleSecs: null });
