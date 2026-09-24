@@ -121,12 +121,15 @@ function observableStates(dirs: AgentDir[]): ReturnType<typeof fullRefreshStates
   return withStaleFallback(fullRefreshStates(dirs));
 }
 
+// Flags that configure the dashboard rather than name a command.
+const DASHBOARD_FLAGS: ReadonlySet<string> = new Set(['--sidebar', '--preview', '--no-preview']);
+
 export async function handleCli(args: string[]): Promise<number | null> {
   if (args.includes('--version') || args.includes('-v')) return printVersion();
   if (args.includes('--help') || args.includes('-h')) return printHelp();
 
   const command = args[0];
-  if (!command || command === '--sidebar') return null;
+  if (!command || DASHBOARD_FLAGS.has(command)) return null;
 
   const registry = new AgentRegistry();
   const dirs = registry.all(); // AgentDir[] for the read path (name rides with the data)
