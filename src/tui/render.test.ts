@@ -43,6 +43,26 @@ describe('render grouped dashboard frame', () => {
   });
 });
 
+test('each frame is one synchronized update with the cursor hidden until the caret is placed', () => {
+  const app = new TuiApp();
+  app.updateStates([makeState()]);
+  const frame = render(app, { cols: 100, rows: 40 });
+  expect(frame.startsWith('\x1b[?2026h\x1b[?25l\x1b[H')).toBe(true);
+  expect(frame.endsWith('\x1b[?25l\x1b[?2026l')).toBe(true);
+  const tiny = render(app, { cols: 10, rows: 4 });
+  expect(tiny.startsWith('\x1b[?2026h\x1b[?25l')).toBe(true);
+  expect(tiny.endsWith('\x1b[?2026l')).toBe(true);
+
+  app.mode = TuiMode.PREVIEW;
+  app.enterPassthrough();
+  app.preview = { paneId: '%1', screen: 'prompt\n', cursor: { x: 3, y: 0 }, at: 0 };
+  const live = render(app, { cols: 100, rows: 40 });
+  // The only cursor show is the last thing drawn, after the caret is placed.
+  expect(live.split('\x1b[?25h')).toHaveLength(2);
+  // oxlint-disable-next-line no-control-regex
+  expect(live).toMatch(/\x1b\[\d+;\d+H\x1b\[\?25h\x1b\[\?2026l$/);
+});
+
 test('narrow action dialogs cannot wrap the frame or hide the pinned pane id', async () => {
   const { visibleLength } = await import('../terminal/ansi.ts');
   const app = new TuiApp();

@@ -1,7 +1,8 @@
-// CSI sequences, plus OSC strings (hyperlinks, titles) terminated by BEL/ST —
+// CSI sequences (parameter bytes include the `?` of private modes such as
+// `\x1b[?25l`), plus OSC strings (hyperlinks, titles) terminated by BEL/ST —
 // an unterminated OSC (truncated capture) strips to end of string.
 // oxlint-disable-next-line no-control-regex
-const ANSI_PATTERN = /\x1b(?:\[[0-9;:]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?)/g;
+const ANSI_PATTERN = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?)/g;
 
 export function stripAnsi(value: string): string {
   return value.replace(ANSI_PATTERN, '');

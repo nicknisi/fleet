@@ -10,15 +10,24 @@ import { C } from '../terminal/colors.ts';
 import { truncateAnsi, visibleLength } from '../terminal/ansi.ts';
 import type { TerminalSize } from '../terminal/terminal.ts';
 
+// DEC private mode 2026 (synchronized output): the terminal holds the screen
+// update until the frame is complete.
+const SYNC_BEGIN = '\x1b[?2026h';
+const SYNC_END = '\x1b[?2026l';
+
 export function render(app: TuiApp, size: TerminalSize): string {
   const out: string[] = [];
   const { cols, rows } = size;
 
-  // Home cursor (no screen clear — overwrite in place to avoid flicker)
-  out.push('\x1b[H');
+  // Draw each frame as one synchronized update with the cursor hidden. A slow
+  // or loaded terminal may otherwise show a part-drawn frame, with the
+  // passthrough caret's visible cursor wherever the write had reached.
+  // Terminals without mode 2026 ignore it. Then home the cursor and overwrite
+  // in place (no screen clear, to avoid flicker).
+  out.push(SYNC_BEGIN, '\x1b[?25l', '\x1b[H');
 
   if (cols < 20 || rows < 6) {
-    out.push(`${C.gray}Terminal too small${C.reset}\x1b[K`);
+    out.push(`${C.gray}Terminal too small${C.reset}\x1b[K`, SYNC_END);
     return out.join('');
   }
 
@@ -154,5 +163,6 @@ export function render(app: TuiApp, size: TerminalSize): string {
   if (cursorPos) out.push(`\x1b[${cursorPos.line};${cursorPos.col}H\x1b[?25h`);
   else out.push('\x1b[?25l');
 
+  out.push(SYNC_END);
   return out.join('');
 }
