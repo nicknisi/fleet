@@ -71,6 +71,11 @@ describe('pure preview rendering', () => {
     expect(result.cursor).toEqual({ row: 2, col: 0 });
     expect(result.lines.slice(2)).toEqual(['l2', 'l3', 'l4']);
   });
+  test('a preview with no content rows shows no pane text and no caret', () => {
+    const result = renderPreviewWithCursor(makeState(AgentStatus.BUSY), 80, 2, true, 0, snapshot({ x: 0, y: 3 }));
+    expect(result.cursor).toBeNull();
+    expect(result.lines.join('\n')).not.toContain('l3');
+  });
   test('non-passthrough renders and carets beyond the preview width have no caret', () => {
     expect(
       renderPreviewWithCursor(makeState(AgentStatus.BUSY), 80, 20, false, 0, snapshot({ x: 0, y: 2 })).cursor,

@@ -126,8 +126,11 @@ export function renderPreviewWithCursor(
   let cursor: PreviewCursor | null = null;
   if (!snapshot || snapshot.paneId !== state.paneId) {
     paneLines = [`${C.gray}Loading preview…${C.reset}`];
+  } else if (passthrough && maxContentLines <= 0) {
+    // No content rows: show nothing and draw no caret outside the preview.
+    paneLines = [];
   } else if (passthrough) {
-    const aligned = processCaptureAligned(snapshot.screen, Math.max(1, maxContentLines), snapshot.cursor?.y);
+    const aligned = processCaptureAligned(snapshot.screen, maxContentLines, snapshot.cursor?.y);
     paneLines = aligned.lines;
     const pc = snapshot.cursor;
     if (pc) {

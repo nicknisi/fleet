@@ -117,7 +117,8 @@ export interface AlignedCapture {
 // many top rows fell outside the window shown.
 export function processCaptureAligned(output: string, maxLines: number, caretRow?: number): AlignedCapture {
   const lines = output.split('\n').map((line) => line.replace(/[\s ]+$/, ''));
-  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  // Only a final newline ends the last row; a blank last row without one is a row.
+  if (output.endsWith('\n')) lines.pop();
   let end = lines.length;
   while (end > Math.max(0, (caretRow ?? -1) + 1) && lines[end - 1] === '') end--;
   let droppedTop = Math.max(0, end - maxLines);
