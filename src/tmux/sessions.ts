@@ -107,16 +107,25 @@ export interface AlignedCapture {
   droppedTop: number; // pane rows above the shown window; maps cursor_y → row
 }
 
-// Row-aligned capture for passthrough: unlike processCaptureOutput it does NOT
-// drop trailing blank rows (only the final newline artifact), so a line's index
-// still equals its pane row. That lets the caller map tmux's cursor_y onto a
-// preview row. `droppedTop` is how many top rows fell outside the bottom
-// `maxLines` window shown.
-export function processCaptureAligned(output: string, maxLines: number): AlignedCapture {
+// Row-aligned capture for passthrough: a line's index still equals its pane row,
+// so the caller can map tmux's cursor_y onto a preview row. Only blank rows
+// below both the content and `caretRow` are dropped. A pane taller than the
+// preview can be mostly empty, e.g. Claude Code after /clear or under its
+// slash-command menu, and those rows would push the prompt out of view. The
+// window is the bottom `maxLines` rows unless that hides the caret; then it
+// starts up to a quarter of the window above the caret. `droppedTop` is how
+// many top rows fell outside the window shown.
+export function processCaptureAligned(output: string, maxLines: number, caretRow?: number): AlignedCapture {
   const lines = output.split('\n').map((line) => line.replace(/[\s ]+$/, ''));
-  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  const droppedTop = Math.max(0, lines.length - maxLines);
-  return { lines: lines.slice(droppedTop), droppedTop };
+  // Only a final newline ends the last row; a blank last row without one is a row.
+  if (output.endsWith('\n')) lines.pop();
+  let end = lines.length;
+  while (end > Math.max(0, (caretRow ?? -1) + 1) && lines[end - 1] === '') end--;
+  let droppedTop = Math.max(0, end - maxLines);
+  if (caretRow !== undefined && caretRow < droppedTop) {
+    droppedTop = Math.max(0, caretRow - Math.floor(maxLines / 4));
+  }
+  return { lines: lines.slice(droppedTop, Math.min(end, droppedTop + maxLines)), droppedTop };
 }
 
 // Read-only plain capture for `fleet capture`: no `-e`, so escape sequences are

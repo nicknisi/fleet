@@ -38,6 +38,13 @@ describe('stripAnsi', () => {
     expect(result).toBe('red');
     expect(result.length).toBe(3);
   });
+
+  test('removes private-mode and intermediate-byte sequences like truncateAnsi skips them', () => {
+    const framed = '\x1b[?2026h\x1b[?25l\x1b[Hab\x1b[2 qc\x1b[?25h\x1b[?2026l';
+    expect(stripAnsi(framed)).toBe('abc');
+    expect(visibleLength(framed)).toBe(3);
+    expect(truncateAnsi(framed, 3)).toBe(framed);
+  });
 });
 
 describe('visibleLength', () => {
