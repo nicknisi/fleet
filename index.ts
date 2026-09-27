@@ -9,9 +9,11 @@ import {
   handleKillConfirmInput,
   handlePassthroughInput,
   handleAnswerInput,
+  tryEnterAnswer,
+  refreshAnswer,
   type ActionIO,
 } from './src/tui/actions.ts';
-import { answersQuestionInPlace, isClaudeQuestionForm } from './src/tui/answer.ts';
+import { questionKind } from './src/tui/answer.ts';
 import { parseKeyEvent, parseKeyEvents } from './src/terminal/input.ts';
 import { isMouseSequence, parseMouseEvent } from './src/terminal/mouse.ts';
 import {
@@ -144,14 +146,6 @@ async function launchTui(): Promise<number> {
     kill: killPane,
     forward: sendRawKey,
     capture: (pane) => capturePane(pane, ANSWER_CAPTURE_LINES),
-  };
-  // A pane that cannot be read has no answerable form; S falls back to sending.
-  const questionFormOpen = (pane: string): boolean => {
-    try {
-      return isClaudeQuestionForm(actionIO.capture(pane));
-    } catch {
-      return false;
-    }
   };
 
   const args = process.argv.slice(2);
@@ -322,9 +316,14 @@ async function launchTui(): Promise<number> {
       acknowledgePane(selected.paneId, statusDirs);
     };
 
+    // A question can appear after S, including while a turn is still starting.
+    // Watch only an empty Codex composer, pinned to its original pane/process.
+    const watchingQuestion = () =>
+      app.mode === TuiMode.SEND && app.sendBuffer.length === 0 && app.actionTarget?.agentType === 'codex';
+
     const refreshPreview = async () => {
-      if (finished || previewInFlight || (app.mode !== TuiMode.PREVIEW && !app.isLive())) return;
-      const selected = app.isLive() ? app.actionState() : app.selectedState();
+      if (finished || previewInFlight || (app.mode !== TuiMode.PREVIEW && !app.isLive() && !watchingQuestion())) return;
+      const selected = app.isLive() || watchingQuestion() ? app.actionState() : app.selectedState();
       if (!selected) return;
       const ttl = app.isLive() ? PASSTHROUGH_REFRESH_MS : 400;
       if (previewAttemptPane === selected.paneId && Date.now() - previewAttemptAt < ttl) return;
@@ -344,12 +343,14 @@ async function launchTui(): Promise<number> {
           snapshot = await readPreview(selected.paneId);
         }
         if (finished) return;
-        const current = app.isLive() ? app.actionState() : app.selectedState();
+        const current = app.isLive() || watchingQuestion() ? app.actionState() : app.selectedState();
         if (current?.paneId !== selected.paneId || current.panePid !== selected.panePid) return;
         app.preview = snapshot;
         // Submitting, declining or skipping closes the native form: return on
         // the next frame so nothing typed afterwards reaches the agent.
-        if (app.mode === TuiMode.ANSWER && !isClaudeQuestionForm(snapshot.screen.split('\n'))) app.exitAnswer();
+        const lines = snapshot.screen.split('\n');
+        if (app.mode === TuiMode.ANSWER) refreshAnswer(app, lines);
+        else if (watchingQuestion() && questionKind(selected.agentType, lines)) tryEnterAnswer(app, actionIO);
         needsRender = true;
         tick();
       } catch {
@@ -366,10 +367,10 @@ async function launchTui(): Promise<number> {
     // Refresh observation asynchronously; rendering and key handling only read
     // the last snapshot. No capture/cursor subprocess can block a typing frame. Torn down the moment passthrough exits.
     const syncPassthroughTimer = () => {
-      const active = app.isLive();
+      const active = app.isLive() || watchingQuestion();
       if (active && passthroughTimer === null && !finished) {
         passthroughTimer = setInterval(() => {
-          if (finished || !app.isLive()) {
+          if (finished || (!app.isLive() && !watchingQuestion())) {
             if (passthroughTimer !== null) {
               clearInterval(passthroughTimer);
               passthroughTimer = null;
@@ -637,14 +638,10 @@ async function launchTui(): Promise<number> {
             case 's': {
               const selected = app.selectedState();
               if (selected) {
-                // An asking Claude row cannot take a prompt, but its native
-                // question form can be answered in place.
-                if (answersQuestionInPlace(selected) && questionFormOpen(selected.paneId)) {
-                  app.enterAnswer();
-                  break;
-                }
+                if (tryEnterAnswer(app, actionIO)) break;
                 const check = canSendTo(selected);
-                if (check.ok) app.enterSend();
+                if (check.ok || (selected.agentType === 'codex' && selected.status !== AgentStatus.DOWN))
+                  app.enterSend();
                 else app.actionError = check.reason;
               }
               break;
@@ -740,8 +737,12 @@ async function launchTui(): Promise<number> {
         }
         maybeNotify(states);
         const typing = isTyping();
+        const previousTargetStatus = app.actionState()?.status;
         applyStates(states); // keep target validation current, even while typing
-        if (!typing || app.actionError) tick();
+        // Preserve typed drafts, but redraw their send eligibility when the
+        // original agent starts work or asks a question while SEND is open.
+        const sendStatusChanged = app.mode === TuiMode.SEND && app.actionState()?.status !== previousTargetStatus;
+        if (!typing || app.actionError || sendStatusChanged) tick();
       } catch {
         // Never let an unavailable observer crash the TUI.
       }

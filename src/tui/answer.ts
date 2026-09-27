@@ -1,5 +1,30 @@
 import { stripAnsi } from '../terminal/ansi.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
+import { CODEX_MANIFEST, getCompiledRegex } from '../state/detection.ts';
+
+export type QuestionKind = 'queued' | 'form' | null;
+
+// A form's controls must still be the last drawn content, not an example or
+// an answered form left above a new prompt. Use the same observed footers as
+// status detection, including compact 0.157 shortcuts and wrapped hints.
+export function questionKind(agent: string, lines: string[]): QuestionKind {
+  if (agent === 'claude') return isClaudeQuestionForm(lines) ? 'form' : null;
+  if (agent !== 'codex') return null;
+  const rows = lines.map((line) => stripAnsi(line).trimEnd());
+  while (rows.length && !rows.at(-1)!.trim()) rows.pop();
+  const text = rows.slice(-CODEX_MANIFEST.linesFromBottom).join('\n');
+  for (const rule of CODEX_MANIFEST.rules) {
+    if (rule.state !== 'QUESTION') continue;
+    const match = getCompiledRegex(rule)?.exec(text);
+    if (!match) continue;
+    const rest = text.slice(match.index + match[0].length);
+    if (rule.id === 'question.queued-follow-up') {
+      // The collapsed queue can sit directly above Codex's main composer.
+      if (rest.split('\n').every((line) => !line.trim() || /^\s*› /.test(line))) return 'queued';
+    } else if (!rest.trim()) return 'form';
+  }
+  return null;
+}
 
 // Claude Code's AskUserQuestion form, as drawn by Claude Code 2.1.280. Other
 // Claude selection dialogs share its navigation footer, so a question page also
@@ -27,5 +52,5 @@ export function isClaudeQuestionForm(lines: string[]): boolean {
 
 // Rows whose native question S answers in place instead of refusing to send.
 export function answersQuestionInPlace(state: AgentState): boolean {
-  return state.agentType === 'claude' && state.status === AgentStatus.QUESTION;
+  return ['claude', 'codex'].includes(state.agentType) && state.status === AgentStatus.QUESTION;
 }

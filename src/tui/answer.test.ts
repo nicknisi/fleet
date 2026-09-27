@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { answersQuestionInPlace, isClaudeQuestionForm } from './answer.ts';
+import { answersQuestionInPlace, isClaudeQuestionForm, questionKind } from './answer.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 
 // Bottom-of-pane text captured from real Claude Code 2.1.280 in tmux.
@@ -122,9 +122,45 @@ describe('rows answered in place', () => {
     agentType,
   });
 
-  test('only an asking Claude row answers in place', () => {
+  test('asking Claude and Codex rows advertise answering in place', () => {
     expect(answersQuestionInPlace(row('claude', AgentStatus.QUESTION))).toBe(true);
     expect(answersQuestionInPlace(row('claude', AgentStatus.PERMIT))).toBe(false);
-    expect(answersQuestionInPlace(row('codex', AgentStatus.QUESTION))).toBe(false);
+    expect(answersQuestionInPlace(row('codex', AgentStatus.QUESTION))).toBe(true);
+    expect(answersQuestionInPlace(row('opencode', AgentStatus.QUESTION))).toBe(false);
+  });
+});
+
+describe('Codex live question controls', () => {
+  const queued = ['• Working (3m • esc to interrupt)', '• Queued follow-up inputs', '  ? 2 questions · 1m 5s'];
+  test.each([' + ', '+'])('accepts queued and active shortcuts with separator %j', (plus) => {
+    const queue = [...queued, `    shift${plus}← to answer`];
+    expect(questionKind('codex', queue)).toBe('queued');
+    expect(questionKind('codex', [...queue, '', '› Ask Codex to do anything', ''])).toBe('queued');
+    const footer = `enter submit   ctrl${plus}] skip   alt${plus}↓ main prompt`;
+    for (const hint of ['', `   shift${plus}← next question`, `\n    shift${plus}← next question`]) {
+      const form = ['Which colour?', '› 1. Blue', ...`${footer}${hint}`.split('\n'), ''];
+      expect(questionKind('codex', form)).toBe('form');
+      expect(questionKind('codex', [...form, '› A new prompt'])).toBeNull();
+      expect(questionKind('codex', [...form, 'Press Enter to confirm or Esc to cancel'])).toBeNull();
+    }
+    expect(questionKind('codex', [...queue, 'Allow command?'])).toBeNull();
+  });
+  test('recognizes built-in question and notes footers, including a wrap', () => {
+    for (const footer of [
+      'tab to add notes | enter to submit answer | ←/→ to navigate questions | esc to interrupt',
+      'enter to submit all | tab to add notes |\n  esc to interrupt',
+      'tab or esc to clear notes | enter to submit all',
+    ])
+      expect(questionKind('codex', footer.split('\n'))).toBe('form');
+  });
+  test('permissions and quoted or incomplete controls are not answerable', () => {
+    for (const lines of [
+      ['Press Enter to confirm or Esc to cancel'],
+      ['> enter submit   ctrl+] skip   alt+↓ main prompt'],
+      ['enter submit   ctrl+] skip'],
+      ['  ? 1 question', 'shift+← to answer'],
+      [],
+    ])
+      expect(questionKind('codex', lines)).toBeNull();
   });
 });

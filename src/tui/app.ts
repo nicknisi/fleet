@@ -54,6 +54,7 @@ export class TuiApp {
   private modeBeforeRename: TuiMode = TuiMode.DASHBOARD;
   private modeBeforeKill: TuiMode = TuiMode.DASHBOARD;
   private modeBeforeAnswer: TuiMode = TuiMode.DASHBOARD;
+  answerOpeningAt: number | null = null;
   sendBuffer: string = '';
   renameBuffer: string = '';
   // An interaction owns a pane, independently of the browsing selection.
@@ -348,16 +349,23 @@ export class TuiApp {
 
   // A passthrough limited to one native question form: it owns the selected
   // pane like passthrough, and returns to the previous view once it closes.
-  enterAnswer(): void {
-    this.modeBeforeAnswer = this.mode === TuiMode.PREVIEW ? TuiMode.PREVIEW : TuiMode.DASHBOARD;
-    this.actionTarget = this.selectedState();
+  enterAnswer(target = this.selectedState(), queued = false): void {
+    this.modeBeforeAnswer =
+      this.mode === TuiMode.SEND
+        ? this.modeBeforeSend
+        : this.mode === TuiMode.PREVIEW
+          ? TuiMode.PREVIEW
+          : TuiMode.DASHBOARD;
+    this.actionTarget = target;
     this.actionError = null;
+    this.answerOpeningAt = queued ? Date.now() : null;
     this.mode = TuiMode.ANSWER;
   }
 
   exitAnswer(): void {
     this.mode = this.modeBeforeAnswer;
     this.actionTarget = null;
+    this.answerOpeningAt = null;
   }
 
   moveUp(): void {

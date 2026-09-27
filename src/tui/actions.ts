@@ -1,9 +1,9 @@
 import type { AgentState } from '../state/types.ts';
 import { parseKeyEvents, type KeyEvent } from '../terminal/input.ts';
-import { type TuiApp } from './app.ts';
+import { TuiMode, type TuiApp } from './app.ts';
 import { canSendTo } from './send.ts';
 import { canKillSession } from './kill.ts';
-import { isClaudeQuestionForm } from './answer.ts';
+import { questionKind } from './answer.ts';
 
 export interface ActionIO {
   readState: (target: AgentState) => AgentState;
@@ -78,6 +78,46 @@ export function handlePassthroughInput(app: TuiApp, data: Buffer, io: Pick<Actio
   }
 }
 
+// Check the selected pane now: its cached row/title can still be busy or
+// permission-blocked while Codex has already drawn an answerable question.
+export function tryEnterAnswer(app: TuiApp, io: Pick<ActionIO, 'capture' | 'forward'>): boolean {
+  if (app.mode === TuiMode.SEND && app.sendBuffer.length > 0) return false;
+  const target = app.mode === TuiMode.SEND ? app.actionState() : app.selectedState();
+  if (!target || !['claude', 'codex'].includes(target.agentType)) return false;
+  try {
+    const kind = questionKind(target.agentType, io.capture(target.paneId));
+    if (!kind) return false;
+    if (kind === 'queued' && (!Number.isSafeInteger(target.panePid) || target.panePid! <= 0)) {
+      throw new Error('Cannot verify the question process');
+    }
+    app.enterAnswer(target, kind === 'queued');
+    // Open the native queue exactly once, without answering or dismissing it.
+    // The forwarding transport checks this PID inside tmux's command queue.
+    if (kind === 'queued') io.forward(target.paneId, Buffer.from('\x1b[1;2D'), target.panePid);
+    return true;
+  } catch (error) {
+    if (app.mode === TuiMode.ANSWER) app.exitAnswer();
+    app.actionError = error instanceof Error ? error.message : 'Question unavailable';
+    return true;
+  }
+}
+
+export function refreshAnswer(app: TuiApp, lines: string[], now = Date.now()): void {
+  if (app.mode !== TuiMode.ANSWER) return;
+  const target = app.actionState();
+  const kind = target ? questionKind(target.agentType, lines) : null;
+  if (kind === 'form') {
+    app.answerOpeningAt = null;
+    return;
+  }
+  // Shift-Left's redraw can arrive after several snapshots. Until a form is
+  // visible no user input is forwarded. Stop waiting after a bounded interval.
+  if (target && app.answerOpeningAt !== null && now - app.answerOpeningAt < 3000) return;
+  const timedOut = app.answerOpeningAt !== null;
+  app.exitAnswer();
+  if (timedOut) app.actionError = 'Question did not open; try S again';
+}
+
 export function handleAnswerInput(app: TuiApp, data: Buffer, io: Pick<ActionIO, 'forward' | 'capture'>): void {
   // Fleet keeps Escape, so leaving never cancels the native question, even when
   // one read coalesces it with other keys; arrow sequences are not Escape. (A
@@ -96,10 +136,8 @@ export function handleAnswerInput(app: TuiApp, data: Buffer, io: Pick<ActionIO, 
   try {
     // Re-read the pane before every batch: once the form has closed, further
     // typing must not become a new prompt or reach a permission dialog.
-    if (!isClaudeQuestionForm(io.capture(target.paneId))) {
-      app.exitAnswer();
-      return;
-    }
+    refreshAnswer(app, io.capture(target.paneId));
+    if (app.mode !== TuiMode.ANSWER || app.answerOpeningAt !== null) return;
     io.forward(target.paneId, data, target.panePid);
   } catch (error) {
     app.exitAnswer();

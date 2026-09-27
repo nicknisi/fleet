@@ -374,6 +374,36 @@ export const CODEX_MANIFEST: DetectionManifest = {
   linesFromBottom: 15,
   promptMarker: '❯',
   rules: [
+    {
+      id: 'question.queued-follow-up',
+      pattern:
+        '^[ \\t]*• Queued follow-up inputs[ \\t]*\\n[ \\t]*\\? [1-9]\\d* questions?(?:[ \\t]+·[ \\t]+\\d+[dhms](?:[ \\t]+\\d+[dhms])*)?[ \\t]*\\n[ \\t]*shift[ \\t]*\\+[ \\t]*← to answer[ \\t]*$',
+      flags: 'm',
+      state: 'QUESTION',
+    },
+    {
+      id: 'question.submit-answer',
+      pattern:
+        '^[ \\t]*(?:tab to (?:add|edit) notes[ \\t]*\\|[ \\t]*)?enter to submit (?:answer|all)\\b[^\\n]*(?:\\n[ \\t]+[^\\n]*){0,2}\\besc to interrupt[ \\t]*$',
+      flags: 'm',
+      state: 'QUESTION',
+    },
+    {
+      id: 'question.edit-notes',
+      pattern: '^[ \\t]*tab or esc to [^|\\n]+\\|[ \\t]*(?:\\n[ \\t]+)?enter to submit (?:answer|all)[ \\t]*$',
+      flags: 'm',
+      state: 'QUESTION',
+    },
+    {
+      id: 'question.async-answer',
+      // Codex 0.157 renders compact shortcuts (ctrl+], alt+↓, shift+←).
+      // Keep the complete anchored footer so quoted shortcut prose cannot
+      // turn an ordinary message or permission dialog into an answer form.
+      pattern:
+        '^[ \\t]*enter submit\\s+ctrl[ \\t]*\\+[ \\t]*\\] skip\\s+alt[ \\t]*\\+[ \\t]*↓ main prompt(?:\\s+shift[ \\t]*\\+[ \\t]*← next question)?[ \\t]*$',
+      flags: 'm',
+      state: 'QUESTION',
+    },
     { id: 'permit.allow', pattern: 'allow command\\?', flags: 'i', state: 'PERMIT' },
     { id: 'permit.confirm', pattern: 'press enter to confirm or esc to cancel', flags: 'i', state: 'PERMIT' },
     { id: 'permit.yn', pattern: '\\[y/n\\]', flags: 'i', state: 'PERMIT', approveKeys: ['y'], denyKeys: ['n'] },
@@ -383,7 +413,7 @@ export const CODEX_MANIFEST: DetectionManifest = {
     // when no hook is wired — it never overrides a permit rule above it.
     { id: 'busy.esc-interrupt', pattern: 'esc to interrupt', flags: 'i', state: 'BUSY' },
   ],
-  // Codex retitles its pane "Action Required" while blocked on approval — the
+  // Codex retitles its pane "Action Required" for approvals AND questions — the
   // signal its missing Notification hook never provides — and prefixes a braille
   // frame while working. Blocked-title outranks working-title (herdr priorities:
   // 1100 > 1050).

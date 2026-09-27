@@ -3,6 +3,8 @@ import { AgentStatus, type AgentState } from '../state/types.ts';
 import { TuiApp, TuiMode } from './app.ts';
 import {
   handleAnswerInput,
+  tryEnterAnswer,
+  refreshAnswer,
   handleKillConfirmInput,
   handlePassthroughInput,
   handleSendInput,
@@ -205,5 +207,88 @@ describe('answering a native question in place', () => {
       expect(app.mode).toBe(TuiMode.DASHBOARD);
       expect(app.actionError).toBe(`${failing} failed`);
     }
+  });
+});
+
+describe('Codex question transitions', () => {
+  const queue = ['• Queued follow-up inputs', '  ? 1 question · 5s', '    shift+← to answer'];
+  const form = ['Which colour?', '› 1. Blue', 'enter submit   ctrl+] skip   alt+↓ main prompt'];
+  const fixture = (status: AgentState['status'] = AgentStatus.PERMIT) => {
+    const f = setup();
+    f.a = { ...f.a, agentType: 'codex', status };
+    f.app.updateStates([f.a, f.b]);
+    f.app.selectedIndex = f.app.visibleStates().findIndex((row) => row.paneId === f.a.paneId);
+    return f;
+  };
+  test('S opens a live form even while its cached row says permission or busy', () => {
+    for (const status of [AgentStatus.PERMIT, AgentStatus.BUSY]) {
+      const { app, io, calls } = fixture(status);
+      io.capture = () => form;
+      expect(tryEnterAnswer(app, io)).toBe(true);
+      expect(app.mode).toBe(TuiMode.ANSWER);
+      expect(calls).toEqual([]);
+      handleAnswerInput(app, Buffer.from('\x1b'), io);
+      expect(calls).toEqual([]);
+      expect(app.mode).toBe(TuiMode.DASHBOARD);
+    }
+  });
+  test('a queued form opens once, refuses early input, and stops forwarding after submit', () => {
+    const { app, io, calls } = fixture();
+    io.capture = () => queue;
+    expect(tryEnterAnswer(app, io)).toBe(true);
+    expect(calls).toEqual(['raw %1 \x1b[1;2D']);
+    const opening = app.answerOpeningAt!;
+    refreshAnswer(app, [], opening + 100);
+    handleAnswerInput(app, Buffer.from('1\r'), io);
+    expect(calls).toHaveLength(1);
+    io.capture = () => form;
+    // Native redraw may beat the async preview tick. The fresh form capture
+    // must accept this first deliberate keystroke instead of dropping it.
+    handleAnswerInput(app, Buffer.from('\x1b[B'), io);
+    expect(calls.at(-1)).toBe('raw %1 \x1b[B');
+    io.capture = () => [...form, '› New prompt'];
+    handleAnswerInput(app, Buffer.from('yes\r'), io);
+    expect(calls).toHaveLength(2);
+    expect(app.mode).toBe(TuiMode.DASHBOARD);
+  });
+  test('a delayed question keeps the empty SEND target and previous view; a typed draft wins', () => {
+    const { app, io, a, b, calls } = fixture(AgentStatus.IDLE);
+    app.mode = TuiMode.PREVIEW;
+    app.enterSend();
+    app.selectedIndex = app.visibleStates().findIndex((row) => row.paneId === b.paneId);
+    io.capture = (pane) => (pane === a.paneId ? form : []);
+    app.sendBuffer = 'my draft';
+    expect(tryEnterAnswer(app, io)).toBe(false);
+    expect(app.sendBuffer).toBe('my draft');
+    app.sendBuffer = '';
+    expect(tryEnterAnswer(app, io)).toBe(true);
+    expect(app.actionTarget?.paneId).toBe(a.paneId);
+    handleAnswerInput(app, Buffer.from('\x1b'), io);
+    expect(app.mode).toBe(TuiMode.PREVIEW);
+    expect(calls).toEqual([]);
+  });
+  test('missing forms, real permissions, replacement processes and failed opening never receive answer input', () => {
+    const { app, io, a, b, calls } = fixture();
+    io.capture = () => ['Press Enter to confirm or Esc to cancel'];
+    expect(tryEnterAnswer(app, io)).toBe(false);
+    expect(calls).toEqual([]);
+    io.capture = () => queue;
+    tryEnterAnswer(app, io);
+    refreshAnswer(app, queue, app.answerOpeningAt! + 3001);
+    expect(app.mode).toBe(TuiMode.DASHBOARD);
+    expect(app.actionError).toContain('try S again');
+    expect(calls).toHaveLength(1);
+    io.capture = () => form;
+    tryEnterAnswer(app, io);
+    app.updateStates([{ ...a, panePid: 200 }, b]);
+    handleAnswerInput(app, Buffer.from('yes\r'), io);
+    expect(calls).toHaveLength(1);
+    io.capture = () => queue;
+    io.forward = () => {
+      throw new Error('Target replaced');
+    };
+    tryEnterAnswer(app, io);
+    expect(app.mode).toBe(TuiMode.DASHBOARD);
+    expect(app.actionError).toBe('Target replaced');
   });
 });

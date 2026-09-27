@@ -68,6 +68,19 @@ export function detectFromTitle(title: string, manifest: DetectionManifest): Det
   return { status: null, ruleId: null };
 }
 
+// Codex shares its attention title between approvals and native questions.
+export function refineTitleWithScreen(agent: string, title: DetectResult, screen: DetectResult): DetectResult {
+  if (
+    agent === 'codex' &&
+    title.ruleId === 'permit.title-action-required' &&
+    screen.status === AgentStatus.QUESTION &&
+    screen.ruleId?.startsWith('question.')
+  ) {
+    return screen;
+  }
+  return title;
+}
+
 // Capture a pane's bottom window WITHOUT classifying — the slow tick captures
 // every pane once, resolves each pane's agent identity (hook or discovery),
 // then classifies each capture exactly once with the right manifest. Empty on
