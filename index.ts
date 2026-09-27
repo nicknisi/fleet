@@ -35,7 +35,7 @@ import { readClientFocus } from './src/tmux/clients.ts';
 import { deliverDesktop } from './src/notify/deliver.ts';
 import { AgentRegistry } from './src/agents/registry.ts';
 import type { AgentDir } from './src/agents/config.ts';
-import { switchClient, killPane, capturePane } from './src/tmux/sessions.ts';
+import { switchClient, killPane, capturePane, paneCursorVisible } from './src/tmux/sessions.ts';
 import { TmuxControlClient } from './src/tmux/control.ts';
 import { shouldAttemptControl, type ControlLatch } from './src/tmux/control-router.ts';
 import { sendKeys, sendKeyNames, sendRawKey } from './src/tmux/send.ts';
@@ -146,6 +146,7 @@ async function launchTui(): Promise<number> {
     kill: killPane,
     forward: sendRawKey,
     capture: (pane) => capturePane(pane, ANSWER_CAPTURE_LINES),
+    cursorVisible: paneCursorVisible,
   };
 
   const args = process.argv.slice(2);

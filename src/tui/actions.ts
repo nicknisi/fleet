@@ -3,7 +3,7 @@ import { parseKeyEvents, type KeyEvent } from '../terminal/input.ts';
 import { TuiMode, type TuiApp } from './app.ts';
 import { canSendTo } from './send.ts';
 import { canKillSession } from './kill.ts';
-import { questionKind } from './answer.ts';
+import { codexInputFocus, questionKind } from './answer.ts';
 
 export interface ActionIO {
   readState: (target: AgentState) => AgentState;
@@ -11,6 +11,7 @@ export interface ActionIO {
   kill: (pane: string) => void;
   forward: (pane: string, data: Buffer, expectedPid?: number) => void;
   capture: (pane: string) => string[];
+  cursorVisible: (pane: string) => boolean;
 }
 
 export function handleSendInput(app: TuiApp, key: KeyEvent, io: Pick<ActionIO, 'readState' | 'send'>): void {
@@ -118,7 +119,11 @@ export function refreshAnswer(app: TuiApp, lines: string[], now = Date.now()): v
   if (timedOut) app.actionError = 'Question did not open; try S again';
 }
 
-export function handleAnswerInput(app: TuiApp, data: Buffer, io: Pick<ActionIO, 'forward' | 'capture'>): void {
+export function handleAnswerInput(
+  app: TuiApp,
+  data: Buffer,
+  io: Pick<ActionIO, 'forward' | 'capture' | 'cursorVisible'>,
+): void {
   // Fleet keeps Escape, so leaving never cancels the native question, even when
   // one read coalesces it with other keys; arrow sequences are not Escape. (A
   // leading Ctrl-C already quits Fleet; one inside a batch is never sent as an
@@ -136,9 +141,11 @@ export function handleAnswerInput(app: TuiApp, data: Buffer, io: Pick<ActionIO, 
   try {
     // Re-read the pane before every batch: once the form has closed, further
     // typing must not become a new prompt or reach a permission dialog.
-    refreshAnswer(app, io.capture(target.paneId));
+    const lines = io.capture(target.paneId);
+    refreshAnswer(app, lines);
     if (app.mode !== TuiMode.ANSWER || app.answerOpeningAt !== null) return;
-    io.forward(target.paneId, app.answerInput.prefix(data), target.panePid);
+    const focus = target.agentType === 'codex' ? codexInputFocus(lines, io.cursorVisible(target.paneId)) : 'editing';
+    io.forward(target.paneId, app.answerInput.prefix(data, focus), target.panePid);
   } catch (error) {
     app.exitAnswer();
     app.actionError = error instanceof Error ? error.message : 'Forwarding failed';

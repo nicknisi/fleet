@@ -60,6 +60,7 @@ function setup() {
       calls.push(`raw ${pane} ${data}`);
     },
     capture: () => questionForm,
+    cursorVisible: () => false,
   };
   return { a, b, app, io, calls };
 }
@@ -165,6 +166,24 @@ describe('pinned action dispatch', () => {
 });
 
 describe('answering a native question in place', () => {
+  test('Codex reads focus before numeric choices and preserves digits in notes', () => {
+    const { a, app, io, calls } = setup();
+    app.updateStates([{ ...a, agentType: 'codex' }]);
+    io.capture = () => ['tab to add notes | enter to submit answer | esc to interrupt'];
+    app.enterAnswer();
+    handleAnswerInput(app, Buffer.from('1new prompt'), io);
+    expect(calls).toEqual(['raw %1 1']);
+    io.cursorVisible = () => true;
+    handleAnswerInput(app, Buffer.from('2026 notes'), io);
+    expect(calls.at(-1)).toBe('raw %1 2026 notes');
+    io.cursorVisible = () => {
+      throw new Error('focus unavailable');
+    };
+    handleAnswerInput(app, Buffer.from('1'), io);
+    expect(calls).toHaveLength(2);
+    expect(app.mode).not.toBe(TuiMode.ANSWER);
+  });
+
   test('submission discards the rest of the input read before transport', () => {
     const { app, io, calls } = setup();
     app.enterAnswer();

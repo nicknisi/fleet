@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--fleet-bin', type=Path, default=Path(__file__).resolve().parents[1] / 'dist/fleet')
 parser.add_argument('--output-dir', type=Path)
+parser.add_argument('--answer-mode', choices=['notes', 'digit'], default='notes')
 args = parser.parse_args()
 codex = shutil.which('codex')
 if codex is None:
@@ -164,13 +165,21 @@ try:
     wait_for(lambda: 'What note should Fleet attach?' in capture('monitor'), 'second question')
     assert '● ANSWER' in capture('monitor'), 'Fleet left before the remaining question was answered'
     save_screen('second')
-    tm('send-keys', '-t', 'monitor', 'Down', 'Tab')
-    tm('send-keys', '-t', 'monitor', '-l', 'café fixture note')
-    time.sleep(.3)
-    tm('send-keys', '-t', 'monitor', '-l', '\rFLEET_SUFFIX_PROBE')
+    if args.answer_mode == 'digit':
+        assert tm('display-message', '-p', '-t', 'codex', '#{cursor_flag}') == '0'
+        tm('send-keys', '-t', 'monitor', '-l', '1FLEET_SUFFIX_PROBE')
+        expected_note = ['No note']
+    else:
+        tm('send-keys', '-t', 'monitor', 'Down', 'Tab')
+        wait_for(lambda: 'clear notes' in capture('codex'), 'native notes focus')
+        assert tm('display-message', '-p', '-t', 'codex', '#{cursor_flag}') == '1'
+        tm('send-keys', '-t', 'monitor', '-l', 'café 2026 fixture note')
+        time.sleep(.3)
+        tm('send-keys', '-t', 'monitor', '-l', '\rFLEET_SUFFIX_PROBE')
+        expected_note = ['Add note', 'user_note: café 2026 fixture note']
     wait_for(lambda: received_answers() is not None, 'answers received by native Codex')
     assert received_answers() == {'colour': {'answers': ['Blue']},
-                                  'note': {'answers': ['Add note', 'user_note: café fixture note']}}, received_answers()
+                                  'note': {'answers': expected_note}}, received_answers()
     wait_for(lambda: '● ANSWER' not in capture('monitor') and '[↑↓] nav' in capture('monitor'),
              'automatic return to Fleet after the final answer')
     save_screen('answered')

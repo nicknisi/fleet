@@ -102,6 +102,16 @@ export function capturePane(paneId: string, maxLines: number): string[] {
   return processCaptureOutput(output, maxLines);
 }
 
+// Codex shows its cursor in notes/Other and hides it on option shortcuts.
+export function paneCursorVisible(paneId: string): boolean {
+  const flag = tmuxOrThrow(
+    ['display-message', '-p', '-t', paneId, '#{cursor_flag}'],
+    'Cannot read question focus',
+  ).trim();
+  if (flag !== '0' && flag !== '1') throw new Error('Question focus unavailable');
+  return flag === '1';
+}
+
 export interface AlignedCapture {
   lines: string[];
   droppedTop: number; // pane rows above the shown window; maps cursor_y → row

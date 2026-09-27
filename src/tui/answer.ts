@@ -32,6 +32,15 @@ export function questionKind(agent: string, lines: string[]): QuestionKind {
   return null;
 }
 
+export function codexInputFocus(
+  lines: string[],
+  cursorVisible: boolean,
+): 'editing' | 'options' | 'async-editing' | 'async-options' {
+  const rule = CODEX_MANIFEST.rules.find((rule) => rule.id === 'question.async-answer')!;
+  const asyncForm = getCompiledRegex(rule)!.test(lines.map(stripAnsi).join('\n'));
+  return asyncForm ? (cursorVisible ? 'async-editing' : 'async-options') : cursorVisible ? 'editing' : 'options';
+}
+
 // Claude Code's AskUserQuestion form, as drawn by Claude Code 2.1.280. Other
 // Claude selection dialogs share its navigation footer, so a question page also
 // needs the form's own "Chat about this" option just above it, and the final
