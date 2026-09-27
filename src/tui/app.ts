@@ -1,6 +1,7 @@
 import { AgentStatus, agentSessionName, compareStatus, windowLabel, type AgentState } from '../state/types.ts';
 import { repoLabelFromId } from '../state/repo-groups.ts';
 import type { PreviewSnapshot } from './preview.ts';
+import { AnswerInput } from './answer-input.ts';
 
 // A rendered dashboard line: sessions with 2+ agents get a header row followed
 // by grouped (indented, window-named) agent rows; singletons render inline. In
@@ -55,6 +56,7 @@ export class TuiApp {
   private modeBeforeKill: TuiMode = TuiMode.DASHBOARD;
   private modeBeforeAnswer: TuiMode = TuiMode.DASHBOARD;
   answerOpeningAt: number | null = null;
+  answerInput = new AnswerInput('');
   sendBuffer: string = '';
   renameBuffer: string = '';
   // An interaction owns a pane, independently of the browsing selection.
@@ -359,6 +361,7 @@ export class TuiApp {
     this.actionTarget = target;
     this.actionError = null;
     this.answerOpeningAt = queued ? Date.now() : null;
+    this.answerInput = new AnswerInput(target?.agentType ?? '');
     this.mode = TuiMode.ANSWER;
   }
 

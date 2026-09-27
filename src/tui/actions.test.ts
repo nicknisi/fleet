@@ -165,6 +165,13 @@ describe('pinned action dispatch', () => {
 });
 
 describe('answering a native question in place', () => {
+  test('submission discards the rest of the input read before transport', () => {
+    const { app, io, calls } = setup();
+    app.enterAnswer();
+    handleAnswerInput(app, Buffer.from('café\rnew prompt\r'), io);
+    expect(calls).toEqual(['raw %1 café\r']);
+  });
+
   test('forwards to the pinned target only while its form is open, then returns', () => {
     const { app, io, calls } = setup();
     app.mode = TuiMode.PREVIEW;

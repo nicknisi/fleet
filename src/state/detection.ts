@@ -362,11 +362,9 @@ export const CLAUDE_MANIFEST: DetectionManifest = {
 // Codex fires PreToolUse+Stop hooks, so BUSY/DONE come from the hook (which is
 // authoritative and faster than any spinner regex). A busy.esc-interrupt screen
 // rule is kept as a hook-less fallback (herdr WORKING_SCREEN) so a captured
-// working frame still reads BUSY when no hook is wired. Codex has no Notification
-// hook and its on-screen prompts don't cleanly
-// separate a permission request from a question, so every prompt rule is PERMIT
-// (QUESTION is not currently sourced for Codex — a documented limitation). Rules
-// are ORDERED, first match wins, exactly like CLAUDE_MANIFEST; ids follow the
+// working frame still reads BUSY when no hook is wired. Native question
+// controls distinguish QUESTION from the otherwise ambiguous attention title.
+// Rules are ORDERED, first match wins, exactly like CLAUDE_MANIFEST; ids follow the
 // same `<state>.<slug>` convention. A TS object literal (never a runtime file
 // read) so `bun build --compile` bundles it into the binary.
 export const CODEX_MANIFEST: DetectionManifest = {

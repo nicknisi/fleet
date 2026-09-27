@@ -19,8 +19,14 @@ export function questionKind(agent: string, lines: string[]): QuestionKind {
     if (!match) continue;
     const rest = text.slice(match.index + match[0].length);
     if (rule.id === 'question.queued-follow-up') {
-      // The collapsed queue can sit directly above Codex's main composer.
-      if (rest.split('\n').every((line) => !line.trim() || /^\s*› /.test(line))) return 'queued';
+      // A collapsed queue sits above the main composer, its animated gap and
+      // the configurable status line. Expanded forms replace that composer.
+      // A later approval footer must never be treated as an answerable queue.
+      const approval = CODEX_MANIFEST.rules.some(
+        (candidate) => candidate.state === 'PERMIT' && getCompiledRegex(candidate)?.test(rest),
+      );
+      const tail = rest.split('\n').filter((line) => !/^[\s\u2800-\u28ff]*$/.test(line));
+      if (!approval && (tail.length === 0 || /^\s*› /.test(tail[0]!))) return 'queued';
     } else if (!rest.trim()) return 'form';
   }
   return null;

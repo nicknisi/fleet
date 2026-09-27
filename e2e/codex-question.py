@@ -16,6 +16,9 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--fleet-bin', type=Path, default=Path(__file__).resolve().parents[1] / 'dist/fleet')
 parser.add_argument('--output-dir', type=Path)
 args = parser.parse_args()
+codex = shutil.which('codex')
+if codex is None:
+    parser.error('codex executable not found in PATH')
 root = Path(tempfile.mkdtemp(prefix='fq-', dir=args.output_dir))
 socket = root / 'tmux.sock'
 requests = []
@@ -137,7 +140,7 @@ try:
     # The first visible composer can precede input readiness under load. Start
     # this question fixture with an argv prompt, so the initial Enter/paste
     # timing is not an unrelated failure before Fleet has even launched.
-    command = ['env', 'CODEX_HOME=' + str(codex_home), 'TERM=xterm-256color', shutil.which('codex'),
+    command = ['env', 'CODEX_HOME=' + str(codex_home), 'TERM=xterm-256color', codex,
                '--no-alt-screen', '-C', str(workspace), 'Ask the fixture questions.']
     tm('new-session', '-d', '-s', 'codex', '-x', '120', '-y', '36', shlex.join(command))
     wait_for(lambda: 'enter to submit' in capture('codex'), 'native question', seconds=30)
@@ -164,13 +167,14 @@ try:
     tm('send-keys', '-t', 'monitor', 'Down', 'Tab')
     tm('send-keys', '-t', 'monitor', '-l', 'café fixture note')
     time.sleep(.3)
-    tm('send-keys', '-t', 'monitor', 'Enter')
+    tm('send-keys', '-t', 'monitor', '-l', '\rFLEET_SUFFIX_PROBE')
     wait_for(lambda: received_answers() is not None, 'answers received by native Codex')
     assert received_answers() == {'colour': {'answers': ['Blue']},
                                   'note': {'answers': ['Add note', 'user_note: café fixture note']}}, received_answers()
     wait_for(lambda: '● ANSWER' not in capture('monitor') and '[↑↓] nav' in capture('monitor'),
              'automatic return to Fleet after the final answer')
     save_screen('answered')
+    assert 'FLEET_SUFFIX_PROBE' not in capture('codex'), 'coalesced answer suffix reached the main composer'
     assert '● LIVE' not in capture('monitor'), 'Fleet entered the live conversation after answering'
     tm('send-keys', '-t', 'monitor', '-l', 'zzzzzz')
     time.sleep(.2)

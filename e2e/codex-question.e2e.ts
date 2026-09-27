@@ -79,11 +79,13 @@ tty.setraw(0)
 path=pathlib.Path(sys.argv[1])
 def screen(text):
  os.write(1, ('\\x1b[2J\\x1b[H'+text.replace('\\n','\\r\\n')).encode())
-screen('• Queued follow-up inputs\\n  ? 1 question\\n    shift + ← to answer')
+def queue(text):
+ screen(text+'\\n  ⠁  ⠐\\n› Ask Codex to do anything\\n  ⡀  ⠠\\n  model max · ~/fixture · main')
+queue('• Queued follow-up inputs\\n  ? 1 question\\n    shift + ← to answer')
 signal.signal(signal.SIGUSR1, lambda *_: screen('Working…'))
-signal.signal(signal.SIGUSR2, lambda *_: screen('• Queued follow-up inputs\\n  ? 1 question\\n    shift + ← to answer'))
+signal.signal(signal.SIGUSR2, lambda *_: queue('• Queued follow-up inputs\\n  ? 1 question\\n    shift + ← to answer'))
 signal.signal(signal.SIGHUP, lambda *_: screen('Allow command?\\npress enter to confirm or esc to cancel'))
-signal.signal(signal.SIGALRM, lambda *_: screen('• Working (2m 00s • esc to interrupt)\\n\\n• Queued follow-up inputs\\n  ? 1 question · 5s\\n    shift + ← to answer'))
+signal.signal(signal.SIGALRM, lambda *_: queue('• Working (2m 00s • esc to interrupt)\\n\\n• Queued follow-up inputs\\n  ? 1 question · 5s\\n    shift + ← to answer'))
 signal.signal(signal.SIGVTALRM, lambda *_: compact_queue())
 pending=b''
 selected=0
@@ -92,7 +94,7 @@ compact=False
 def compact_queue():
  global compact
  compact=True
- screen('• Working (7m 38s • esc to interrupt)\\n\\n• Queued follow-up inputs\\n  ? 2 questions · 5s\\n    shift+← to answer')
+ queue('• Working (7m 38s • esc to interrupt)\\n\\n• Queued follow-up inputs\\n  ? 2 questions · 5s\\n    shift+← to answer')
 def form():
  choices='\\n'.join(('› ' if i==selected else '  ')+f'{i+1}. {name}' for i,name in enumerate(['Red','Blue']))
  footer='enter submit   ctrl+] skip   alt+↓ main prompt   shift+← next question' if compact else 'enter submit   ctrl + ] skip   alt + ↓ main prompt'
@@ -188,6 +190,22 @@ test('Ctrl-] skips the last question and returns to Fleet without entering the c
   expect(tm('display-message', '-p', '-t', 'monitor', '#{pane_pid}')).toBe(pid);
   expect(tm('display-message', '-p', '-t', 'monitor', '#{pane_dead}')).toBe('0');
 }, 12000);
+
+test.each([
+  ['Enter', '\r', 'Red accepted'],
+  ['Ctrl-]', '\x1d', 'Question skipped'],
+])(
+  '%s cannot carry a coalesced suffix into the main composer',
+  async (_name, key, result) => {
+    tm('send-keys', '-t', 'monitor', 's');
+    await waitFor(() => capture().includes('● ANSWER') && capture().includes('Which fixture colour?'));
+    tm('send-keys', '-t', 'monitor', '-l', key! + 'unintended prompt\r');
+    await waitFor(() => !capture().includes('● ANSWER') && capture().includes('[↑↓] nav'));
+    expect(capture('agent')).toContain(result!);
+    expect(received()).toBe('1b5b313b3244' + Buffer.from(key!).toString('hex'));
+  },
+  12000,
+);
 
 test('compact Codex shortcuts open and reopen an async question without submitting on Escape', async () => {
   process.kill(Number(tm('display-message', '-p', '-t', pane, '#{pane_pid}')), 'SIGVTALRM');

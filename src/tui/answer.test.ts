@@ -145,6 +145,13 @@ describe('Codex live question controls', () => {
     }
     expect(questionKind('codex', [...queue, 'Allow command?'])).toBeNull();
   });
+  test('a collapsed queue permits the native composer, particles and configured status line', () => {
+    const queue = [...queued, '    shift + ← to answer'];
+    const screen = [...queue, '  ⠁  ⠐', '› Ask Codex to do anything', '  ⡀  ⠠', '  model max · ~/fixture · main'];
+    expect(questionKind('codex', screen)).toBe('queued');
+    expect(questionKind('codex', [...screen, 'Press Enter to confirm or Esc to cancel'])).toBeNull();
+    expect(questionKind('codex', [...queue, 'Allow command?'])).toBeNull();
+  });
   test('recognizes built-in question and notes footers, including a wrap', () => {
     for (const footer of [
       'tab to add notes | enter to submit answer | ←/→ to navigate questions | esc to interrupt',

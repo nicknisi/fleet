@@ -138,7 +138,7 @@ export function handleAnswerInput(app: TuiApp, data: Buffer, io: Pick<ActionIO, 
     // typing must not become a new prompt or reach a permission dialog.
     refreshAnswer(app, io.capture(target.paneId));
     if (app.mode !== TuiMode.ANSWER || app.answerOpeningAt !== null) return;
-    io.forward(target.paneId, data, target.panePid);
+    io.forward(target.paneId, app.answerInput.prefix(data), target.panePid);
   } catch (error) {
     app.exitAnswer();
     app.actionError = error instanceof Error ? error.message : 'Forwarding failed';
