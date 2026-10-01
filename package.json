@@ -25,7 +25,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test --max-concurrency=1",
     "test:smoke": "bun test ./e2e/binary.smoke.ts",
-    "test:e2e": "bun test ./e2e/harness.e2e.ts ./e2e/sidebar.e2e.ts",
+    "test:e2e": "bun test ./e2e/harness.e2e.ts ./e2e/sidebar.e2e.ts ./e2e/codex-idle.e2e.ts",
     "check:deps": "bun run scripts/check-no-runtime-deps.ts"
   },
   "devDependencies": {
