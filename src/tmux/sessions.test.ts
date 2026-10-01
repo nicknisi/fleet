@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { listPanes, listPanesArgs, listPanesCommand, parsePanesOutput, processCaptureOutput } from './sessions.ts';
+import {
+  listPanes,
+  listPanesArgs,
+  listPanesCommand,
+  parsePanesOutput,
+  processCaptureAligned,
+  processCaptureOutput,
+} from './sessions.ts';
 
 describe('listPanes', () => {
   test('returns array (may be empty if not in tmux)', () => {
@@ -119,5 +126,29 @@ describe('processCaptureOutput', () => {
 
   test('empty input -> empty array', () => {
     expect(processCaptureOutput('', 50)).toEqual([]);
+  });
+});
+
+describe('processCaptureAligned', () => {
+  test('drops blank rows below the content but keeps them through the caret', () => {
+    expect(processCaptureAligned('a\nb\n\n\n\n', 3)).toEqual({ lines: ['a', 'b'], droppedTop: 0 });
+    expect(processCaptureAligned('a\nb\n\n\n\n', 3, 3)).toEqual({ lines: ['b', '', ''], droppedTop: 1 });
+  });
+
+  test('keeps the bottom window when it already shows the caret', () => {
+    expect(processCaptureAligned('1\n2\n3\n4\n5\n', 2, 4)).toEqual({ lines: ['4', '5'], droppedTop: 3 });
+  });
+
+  test('a blank last row without a final newline is still a row', () => {
+    expect(processCaptureAligned('a\n\n   ', 3, 2)).toEqual({ lines: ['a', '', ''], droppedTop: 0 });
+    expect(processCaptureAligned('a\n\n   \n', 3, 2)).toEqual({ lines: ['a', '', ''], droppedTop: 0 });
+  });
+
+  test('moves the window up to a caret, keeping a quarter of it above the caret', () => {
+    const screen = Array.from({ length: 20 }, (_, i) => `r${i}`).join('\n') + '\n';
+    expect(processCaptureAligned(screen, 8, 5)).toEqual({
+      lines: ['r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10'],
+      droppedTop: 3,
+    });
   });
 });

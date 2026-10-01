@@ -324,6 +324,17 @@ export const CLAUDE_MANIFEST: DetectionManifest = {
   rules: [
     { id: 'busy.token-counter-min', pattern: '\\(\\d+m\\s+\\d+s\\s+·.*tokens?\\)', state: 'BUSY' },
     { id: 'busy.token-counter-sec', pattern: '\\(\\d+s\\s+·.*tokens?\\)', state: 'BUSY' },
+    // Claude Code 2.1.28x adds fields around the elapsed time: "(running
+    // PreToolUse hook · 1m 44s · …)", "(1m 11s · ↓ 3.7k tokens · still thinking
+    // with xhigh effort)", "(1h 2m 3s · …)". The elapsed time is its own
+    // " · "-separated field after "Verb…", all on one line; a finished turn
+    // ("✻ Baked for 39m 44s") has no parentheses.
+    {
+      id: 'busy.spinner-elapsed',
+      pattern:
+        '…[ \\t]+\\((?:[^()\\n]*[ \\t]·[ \\t]+)?(?:\\d+h[ \\t]+)?(?:\\d+m[ \\t]+)?\\d+s(?:[ \\t]+·[ \\t][^()\\n]*)?\\)',
+      state: 'BUSY',
+    },
     { id: 'busy.esc-interrupt', pattern: 'esc to interrupt', flags: 'i', state: 'BUSY' },
     {
       id: 'permit.yn',
