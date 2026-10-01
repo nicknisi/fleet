@@ -116,6 +116,12 @@ describe('sidebar status chrome', () => {
       expect(live).not.toContain('quit');
       expect(visibleLength(live)).toBeLessThanOrEqual(width);
       app.mode = TuiMode.DASHBOARD;
+      app.enterAnswer();
+      const answer = renderFooter(app, width).map(stripAnsi).join('\n');
+      expect(answer).toContain('ANSWER → %42');
+      expect(answer).toContain('Esc');
+      expect(visibleLength(answer)).toBeLessThanOrEqual(width);
+      app.exitAnswer();
     }
   });
 });

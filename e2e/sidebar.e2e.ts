@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { visibleLength } from '../src/terminal/ansi.ts';
 
 const available = ['tmux', 'python3'].every(
   (bin) => Bun.spawnSync(['which', bin], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0,
@@ -153,6 +154,13 @@ suite('persistent sidebar in real tmux', () => {
 
   test('native window navigation carries the existing sidebar and resized width', async () => {
     tm('resize-pane', '-t', sidebar, '-x', '39');
+    // Wait for the TUI to consume SIGWINCH before asking it to move. Its card
+    // age is right-aligned, so this observes a frame drawn at the new width.
+    await until(() =>
+      screen()
+        .split('\n')
+        .some((line) => line.includes('destination') && visibleLength(line.trimEnd()) === 39),
+    );
     tm('select-window', '-t', source);
     await until(() => location(sidebar) === location(source));
     expect(tm('display-message', '-p', '-t', sidebar, '#{pane_pid}')).toBe(sidebarPid);
@@ -266,7 +274,9 @@ suite('persistent sidebar in real tmux', () => {
       }),
     );
     tm('send-keys', '-t', sidebar, 'Enter');
-    await until(() => screen().includes('Draft kept'));
+    // The long action-error footer can clip "Draft kept" in a narrow pane.
+    // This body hint is visible independently of the sidebar width.
+    await until(() => screen().includes('Draft retained.'));
     expect(screen()).toContain('kept-draft');
     expect(tm('capture-pane', '-p', '-t', source)).not.toContain('kept-draft');
     expect(tm('capture-pane', '-p', '-t', target)).not.toContain('kept-draft');
@@ -281,7 +291,7 @@ suite('persistent sidebar in real tmux', () => {
         tool: '',
       }),
     );
-  });
+  }, 15_000);
 
   test('reopening focuses instead of restarting; q closes only the sidebar', async () => {
     openSidebar(source);

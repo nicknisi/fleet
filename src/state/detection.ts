@@ -373,11 +373,9 @@ export const CLAUDE_MANIFEST: DetectionManifest = {
 // Codex fires PreToolUse+Stop hooks, so BUSY/DONE come from the hook (which is
 // authoritative and faster than any spinner regex). A busy.esc-interrupt screen
 // rule is kept as a hook-less fallback (herdr WORKING_SCREEN) so a captured
-// working frame still reads BUSY when no hook is wired. Codex has no Notification
-// hook and its on-screen prompts don't cleanly
-// separate a permission request from a question, so every prompt rule is PERMIT
-// (QUESTION is not currently sourced for Codex — a documented limitation). Rules
-// are ORDERED, first match wins, exactly like CLAUDE_MANIFEST; ids follow the
+// working frame still reads BUSY when no hook is wired. Native question
+// controls distinguish QUESTION from the otherwise ambiguous attention title.
+// Rules are ORDERED, first match wins, exactly like CLAUDE_MANIFEST; ids follow the
 // same `<state>.<slug>` convention. A TS object literal (never a runtime file
 // read) so `bun build --compile` bundles it into the binary.
 export const CODEX_MANIFEST: DetectionManifest = {
@@ -385,6 +383,37 @@ export const CODEX_MANIFEST: DetectionManifest = {
   linesFromBottom: 15,
   promptMarker: '❯',
   rules: [
+    {
+      id: 'question.queued-follow-up',
+      pattern:
+        '^[ \\t]*• Queued follow-up inputs[ \\t]*\\n[ \\t]*\\? [1-9]\\d* questions?(?:[ \\t]+·[ \\t]+\\d+[dhms](?:[ \\t]+\\d+[dhms])*)?[ \\t]*\\n[ \\t]*shift[ \\t]*\\+[ \\t]*← to answer[ \\t]*$',
+      flags: 'm',
+      state: 'QUESTION',
+    },
+    {
+      id: 'question.submit-answer',
+      pattern:
+        '^[ \\t]*(?:tab to (?:add|edit) notes[ \\t]*\\|[ \\t]*)?enter to submit (?:answer|all)\\b[^\\n]*(?:\\n[ \\t]+[^\\n]*){0,2}\\besc to interrupt[ \\t]*$',
+      flags: 'm',
+      state: 'QUESTION',
+    },
+    {
+      id: 'question.edit-notes',
+      pattern: '^[ \\t]*tab or esc to [^|\\n]+\\|[ \\t]*(?:\\n[ \\t]+)?enter to submit (?:answer|all)[ \\t]*$',
+      flags: 'm',
+      state: 'QUESTION',
+    },
+    {
+      id: 'question.async-answer',
+      // Codex 0.157 renders compact shortcuts; 0.159 changes the main-prompt
+      // shortcut from alt+↓ to shift+→. Both belong to the same async form.
+      // Keep the complete anchored footer so quoted shortcut prose cannot
+      // turn an ordinary message or permission dialog into an answer form.
+      pattern:
+        '^[ \\t]*enter submit\\s+ctrl[ \\t]*\\+[ \\t]*\\] skip\\s+(?:alt[ \\t]*\\+[ \\t]*↓|shift[ \\t]*\\+[ \\t]*→) main prompt(?:\\s+shift[ \\t]*\\+[ \\t]*← next question)?[ \\t]*$',
+      flags: 'm',
+      state: 'QUESTION',
+    },
     { id: 'permit.allow', pattern: 'allow command\\?', flags: 'i', state: 'PERMIT' },
     { id: 'permit.confirm', pattern: 'press enter to confirm or esc to cancel', flags: 'i', state: 'PERMIT' },
     { id: 'permit.yn', pattern: '\\[y/n\\]', flags: 'i', state: 'PERMIT', approveKeys: ['y'], denyKeys: ['n'] },
@@ -394,7 +423,7 @@ export const CODEX_MANIFEST: DetectionManifest = {
     // when no hook is wired — it never overrides a permit rule above it.
     { id: 'busy.esc-interrupt', pattern: 'esc to interrupt', flags: 'i', state: 'BUSY' },
   ],
-  // Codex retitles its pane "Action Required" while blocked on approval — the
+  // Codex retitles its pane "Action Required" for approvals AND questions — the
   // signal its missing Notification hook never provides — and prefixes a braille
   // frame while working. Blocked-title outranks working-title (herdr priorities:
   // 1100 > 1050).

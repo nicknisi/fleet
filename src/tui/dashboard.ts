@@ -6,6 +6,7 @@ import { buildTableLines } from './layouts/table.ts';
 import { buildCardLines } from './layouts/cards.ts';
 import { pickLayout } from './layouts/index.ts';
 import { chip, stateIcon, windowLines, type LayoutLines } from './layouts/shared.ts';
+import { answersQuestionInPlace } from './answer.ts';
 
 const BOX_H = '─';
 
@@ -119,6 +120,15 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
   if (app.mode === TuiMode.PASSTHROUGH) {
     return [truncateAnsi(`${C.cyan}LIVE → ${app.actionTarget?.paneId ?? '?'}${C.reset}  ${chip('Esc')} exit`, cols)];
   }
+  if (app.mode === TuiMode.ANSWER) {
+    const target = app.actionTarget?.paneId ?? '?';
+    return [
+      truncateAnsi(
+        `${C.cyan}ANSWER → ${target}${C.reset}  ${chip('Esc')} back, question stays open  ${C.gray}returns when answered${C.reset}`,
+        cols,
+      ),
+    ];
+  }
   if (app.isFiltering() || app.getFilter().length > 0) {
     const hint = ` ${chip('Esc')} clear`;
     const query = `${C.cyan}/${app.getFilter()}${C.reset}${app.isFiltering() ? '█' : ''}`;
@@ -151,19 +161,20 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
       hints.push(`${chip('y')} ${C.gray}approve${C.reset}`);
       hints.push(`${chip('n')} ${C.gray}deny${C.reset}`);
     } else {
-      hints.push(`${chip('s')} ${C.gray}send${C.reset}`);
+      hints.push(`${chip('s')} ${C.gray}${selected && answersQuestionInPlace(selected) ? 'answer' : 'send'}${C.reset}`);
       hints.push(`${chip('n')} ${C.gray}next${C.reset}`);
     }
     hints.push(`${chip('p')} ${C.gray}close${C.reset}`);
     hints.push(`${chip('?')} ${C.gray}help${C.reset}`);
     lines.push(truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${hints.join('  ')}`, cols));
   } else {
+    const selected = app.selectedState();
     const hints = [
       `${chip('↑↓')} ${C.gray}nav${C.reset}`,
       `${chip('⏎')} ${C.gray}switch${C.reset}`,
       `${chip('/')} ${C.gray}filter${C.reset}`,
       `${chip('p')} ${C.gray}preview${C.reset}`,
-      `${chip('s')} ${C.gray}send${C.reset}`,
+      `${chip('s')} ${C.gray}${selected && answersQuestionInPlace(selected) ? 'answer' : 'send'}${C.reset}`,
       `${chip('n')} ${C.gray}next${C.reset}`,
       `${chip('x')} ${C.gray}kill${C.reset}`,
       `${chip('d')} ${C.gray}why${C.reset}`,

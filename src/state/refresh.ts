@@ -14,6 +14,7 @@ import { isJsonObject, type JsonObject, type JsonValue } from '../json.ts';
 import {
   detectFromPaneContent,
   detectFromTitle,
+  refineTitleWithScreen,
   scrapePane,
   capturePaneLines,
   capturePaneLinesAsync,
@@ -491,8 +492,6 @@ export function refreshStates(
       // in the fusion; the screen scrape covers the ticks where the title is
       // silent. The rule id rides along so the observability API can report why
       // the scrape slot read what it did.
-      const titleResult = detectFromTitle(pane.paneTitle, loadDetectionManifest(hook.agent));
-      const titleStatus = titleResult.status;
 
       // The cached scrape is a snapshot from the last slow tick. A hook/event
       // write since then means the screen has changed (a prompt was answered, a
@@ -500,6 +499,12 @@ export function refreshStates(
       // mask the fresher signal until the next slow tick.
       const scrapeFresh = Math.max(hook.ts, eventTs ?? 0) <= scrapeCacheTs;
       const cachedScrape = scrapeFresh ? (scrapeCache.get(pane.paneId) ?? null) : null;
+      const titleResult = refineTitleWithScreen(
+        hook.agent,
+        detectFromTitle(pane.paneTitle, loadDetectionManifest(hook.agent)),
+        { status: cachedScrape, ruleId: scrapeFresh ? (scrapeRuleCache.get(pane.paneId) ?? null) : null },
+      );
+      const titleStatus = titleResult.status;
 
       const fused = fuseState({
         hookState: hook.state,
@@ -526,8 +531,11 @@ export function refreshStates(
       const disc = discoveryCache.get(pane.paneId);
       if (disc) {
         const manifest = loadDetectionManifest(disc.agentType);
-        const titleResult = detectFromTitle(pane.paneTitle, manifest);
         const cachedScrape = scrapeCache.get(pane.paneId) ?? null;
+        const titleResult = refineTitleWithScreen(disc.agentType, detectFromTitle(pane.paneTitle, manifest), {
+          status: cachedScrape,
+          ruleId: scrapeRuleCache.get(pane.paneId) ?? null,
+        });
         const scrapeStatus = titleResult.status ?? cachedScrape;
         const scrapeRuleId =
           titleResult.status !== null ? titleResult.ruleId : (scrapeRuleCache.get(pane.paneId) ?? null);
