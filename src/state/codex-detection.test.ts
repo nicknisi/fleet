@@ -96,9 +96,9 @@ describe('Codex queued questions', () => {
     }
   });
 
-  test.each([' + ', '+'])(
-    'async shortcuts with separator %j distinguish questions from the Action Required title',
-    (plus) => {
+  test.each([' + ', '+'].flatMap((plus) => [`alt${plus}↓`, `shift${plus}→`].map((main) => ({ plus, main }))))(
+    'async shortcuts %j distinguish questions from the Action Required title',
+    ({ plus, main }) => {
       for (const next of ['', `   shift${plus}← next question`, `\n    shift${plus}← next question`]) {
         const lines = [
           '• Working (7m 38s • esc to interrupt)',
@@ -107,7 +107,7 @@ describe('Codex queued questions', () => {
           'When S gives the permission error, are you opening a question?',
           '› 1. Opening an existing question',
           '  2. Sending a new message',
-          ...`  enter submit   ctrl${plus}] skip   alt${plus}↓ main prompt${next}`.split('\n'),
+          ...`  enter submit   ctrl${plus}] skip   ${main} main prompt${next}`.split('\n'),
         ];
         const screen = detectFromPaneContent(lines, CODEX_MANIFEST);
         expect(screen).toEqual({ status: AgentStatus.QUESTION, ruleId: 'question.async-answer' });
@@ -138,6 +138,9 @@ describe('Codex queued questions', () => {
       ['> enter submit   ctrl+] skip   alt+↓ main prompt'],
       ['enter submit   ctrl+] skip'],
       ['enter submit   ctrl+] skip   alt+↓ main prompt is the footer I saw'],
+      ['> enter submit   ctrl+] skip   shift+→ main prompt'],
+      ['enter submit   ctrl+] skip   shift+→ main prompt is the footer I saw'],
+      ['enter submit   ctrl+] skip   shift+↓ main prompt'],
     ]) {
       expect(detectFromPaneContent(lines, CODEX_MANIFEST).status).not.toBe(AgentStatus.QUESTION);
     }

@@ -132,19 +132,22 @@ describe('rows answered in place', () => {
 
 describe('Codex live question controls', () => {
   const queued = ['• Working (3m • esc to interrupt)', '• Queued follow-up inputs', '  ? 2 questions · 1m 5s'];
-  test.each([' + ', '+'])('accepts queued and active shortcuts with separator %j', (plus) => {
-    const queue = [...queued, `    shift${plus}← to answer`];
-    expect(questionKind('codex', queue)).toBe('queued');
-    expect(questionKind('codex', [...queue, '', '› Ask Codex to do anything', ''])).toBe('queued');
-    const footer = `enter submit   ctrl${plus}] skip   alt${plus}↓ main prompt`;
-    for (const hint of ['', `   shift${plus}← next question`, `\n    shift${plus}← next question`]) {
-      const form = ['Which colour?', '› 1. Blue', ...`${footer}${hint}`.split('\n'), ''];
-      expect(questionKind('codex', form)).toBe('form');
-      expect(questionKind('codex', [...form, '› A new prompt'])).toBeNull();
-      expect(questionKind('codex', [...form, 'Press Enter to confirm or Esc to cancel'])).toBeNull();
-    }
-    expect(questionKind('codex', [...queue, 'Allow command?'])).toBeNull();
-  });
+  test.each([' + ', '+'].flatMap((plus) => [`alt${plus}↓`, `shift${plus}→`].map((main) => ({ plus, main }))))(
+    'accepts queued and active shortcuts %j',
+    ({ plus, main }) => {
+      const queue = [...queued, `    shift${plus}← to answer`];
+      expect(questionKind('codex', queue)).toBe('queued');
+      expect(questionKind('codex', [...queue, '', '› Ask Codex to do anything', ''])).toBe('queued');
+      const footer = `enter submit   ctrl${plus}] skip   ${main} main prompt`;
+      for (const hint of ['', `   shift${plus}← next question`, `\n    shift${plus}← next question`]) {
+        const form = ['Which colour?', '› 1. Blue', ...`${footer}${hint}`.split('\n'), ''];
+        expect(questionKind('codex', form)).toBe('form');
+        expect(questionKind('codex', [...form, '› A new prompt'])).toBeNull();
+        expect(questionKind('codex', [...form, 'Press Enter to confirm or Esc to cancel'])).toBeNull();
+      }
+      expect(questionKind('codex', [...queue, 'Allow command?'])).toBeNull();
+    },
+  );
   test('a collapsed queue permits the native composer, particles and configured status line', () => {
     const queue = [...queued, '    shift + ← to answer'];
     const screen = [...queue, '  ⠁  ⠐', '› Ask Codex to do anything', '  ⡀  ⠠', '  model max · ~/fixture · main'];

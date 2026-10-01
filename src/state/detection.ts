@@ -394,11 +394,12 @@ export const CODEX_MANIFEST: DetectionManifest = {
     },
     {
       id: 'question.async-answer',
-      // Codex 0.157 renders compact shortcuts (ctrl+], alt+↓, shift+←).
+      // Codex 0.157 renders compact shortcuts; 0.159 changes the main-prompt
+      // shortcut from alt+↓ to shift+→. Both belong to the same async form.
       // Keep the complete anchored footer so quoted shortcut prose cannot
       // turn an ordinary message or permission dialog into an answer form.
       pattern:
-        '^[ \\t]*enter submit\\s+ctrl[ \\t]*\\+[ \\t]*\\] skip\\s+alt[ \\t]*\\+[ \\t]*↓ main prompt(?:\\s+shift[ \\t]*\\+[ \\t]*← next question)?[ \\t]*$',
+        '^[ \\t]*enter submit\\s+ctrl[ \\t]*\\+[ \\t]*\\] skip\\s+(?:alt[ \\t]*\\+[ \\t]*↓|shift[ \\t]*\\+[ \\t]*→) main prompt(?:\\s+shift[ \\t]*\\+[ \\t]*← next question)?[ \\t]*$',
       flags: 'm',
       state: 'QUESTION',
     },

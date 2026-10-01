@@ -10,6 +10,14 @@ test.each(['\x1d', '\x1b[1;3B'])('Codex ends the input batch after %j', (key) =>
   expect(new AnswerInput('codex').prefix(Buffer.from(key + 'new prompt\r')).toString()).toBe(key);
 });
 
+test.each(['async-options', 'async-editing'] as const)(
+  'Codex %s ends the batch at the current Shift-Right main-prompt shortcut',
+  (focus) => {
+    const key = '\x1b[1;2C';
+    expect(new AnswerInput('codex').prefix(Buffer.from(key + 'new prompt\r'), focus).toString()).toBe(key);
+  },
+);
+
 test('raw navigation, notes and UTF-8 fragments are preserved', () => {
   const input = new AnswerInput('codex');
   for (const bytes of [Buffer.from('\x1b[B\x1b[Aline\nnotes'), Buffer.from([0xc3]), Buffer.from([0xa9])])
@@ -53,7 +61,7 @@ test('numbers inside a framed paste stay text even from options focus', () => {
 });
 
 test('ordinary text-editing controls keep following numbers in notes', () => {
-  for (const key of ['\x01', '\x05', '\x1b[A', '\x1b[B', '\x1b[C', '\x1b[D'])
+  for (const key of ['\x01', '\x05', '\x1b[A', '\x1b[B', '\x1b[C', '\x1b[D', '\x1b[1;2C'])
     expect(new AnswerInput('codex').prefix(Buffer.from(key + '2026'), 'editing').toString()).toBe(key + '2026');
   for (const key of ['\x01', '\x05', '\x1b[C', '\x1b[D'])
     expect(new AnswerInput('codex').prefix(Buffer.from(key + '2026'), 'async-editing').toString()).toBe(key + '2026');

@@ -29,8 +29,12 @@ export class AnswerInput {
         } else if (sequence === '\x1b[201~') {
           this.inPaste = false;
           if (this.pasteHasText) options = false;
-        } else if (!this.inPaste && this.agentType === 'codex' && sequence === '\x1b[1;3B')
-          return data.subarray(0, end + 1); // Alt-Down returns to the main prompt.
+        } else if (
+          !this.inPaste &&
+          this.agentType === 'codex' &&
+          (sequence === '\x1b[1;3B' || (asyncForm && sequence === '\x1b[1;2C'))
+        )
+          return data.subarray(0, end + 1); // Alt-Down / async Shift-Right returns to the main prompt.
         else if (
           !this.inPaste &&
           this.agentType === 'codex' &&
