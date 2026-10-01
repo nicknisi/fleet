@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.0](https://github.com/nicknisi/fleet/compare/v0.27.0...v0.28.0) (2026-10-01)
+
+
+### Features
+
+* answer Claude and Codex questions in place from S ([#93](https://github.com/nicknisi/fleet/issues/93)) ([9d09681](https://github.com/nicknisi/fleet/commit/9d096814dbe4adb50911ddaef837298827760890))
+
+
+### Bug Fixes
+
+* detect current Claude Code and Codex states, and honour --preview flags ([#95](https://github.com/nicknisi/fleet/issues/95)) ([90c5de6](https://github.com/nicknisi/fleet/commit/90c5de64b9b71c6958371ec2fd2023d2d7b77bd0))
+* keep the passthrough caret in view and steady ([#94](https://github.com/nicknisi/fleet/issues/94)) ([107a5dd](https://github.com/nicknisi/fleet/commit/107a5dd4f2de8b201a16774002d93eaa93a1f536))
+
 ## [0.27.0](https://github.com/nicknisi/fleet/compare/v0.26.0...v0.27.0) (2026-09-20)
 
 
