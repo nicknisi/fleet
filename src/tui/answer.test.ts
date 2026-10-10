@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { answersQuestionInPlace, isClaudeQuestionForm, questionKind } from './answer.ts';
+import { answersQuestionInPlace, codexInputFocus, isClaudeQuestionForm, questionKind } from './answer.ts';
+import { AnswerInput } from './answer-input.ts';
 import { AgentStatus, type AgentState } from '../state/types.ts';
 
 // Bottom-of-pane text captured from real Claude Code 2.1.280 in tmux.
@@ -138,12 +139,14 @@ describe('Codex live question controls', () => {
       const queue = [...queued, `    shift${plus}← to answer`];
       expect(questionKind('codex', queue)).toBe('queued');
       expect(questionKind('codex', [...queue, '', '› Ask Codex to do anything', ''])).toBe('queued');
-      const footer = `enter submit   ctrl${plus}] skip   ${main} main prompt`;
-      for (const hint of ['', `   shift${plus}← next question`, `\n    shift${plus}← next question`]) {
-        const form = ['Which colour?', '› 1. Blue', ...`${footer}${hint}`.split('\n'), ''];
-        expect(questionKind('codex', form)).toBe('form');
-        expect(questionKind('codex', [...form, '› A new prompt'])).toBeNull();
-        expect(questionKind('codex', [...form, 'Press Enter to confirm or Esc to cancel'])).toBeNull();
+      for (const skip of [`ctrl${plus}]`, '^]']) {
+        const footer = `enter submit   ${skip} skip   ${main} main prompt`;
+        for (const hint of ['', `   shift${plus}← next question`, `\n    shift${plus}← next question`]) {
+          const form = ['Which colour?', '› 1. Blue', ...`${footer}${hint}`.split('\n'), ''];
+          expect(questionKind('codex', form)).toBe('form');
+          expect(questionKind('codex', [...form, '› A new prompt'])).toBeNull();
+          expect(questionKind('codex', [...form, 'Press Enter to confirm or Esc to cancel'])).toBeNull();
+        }
       }
       expect(questionKind('codex', [...queue, 'Allow command?'])).toBeNull();
     },
@@ -154,6 +157,14 @@ describe('Codex live question controls', () => {
     expect(questionKind('codex', screen)).toBe('queued');
     expect(questionKind('codex', [...screen, 'Press Enter to confirm or Esc to cancel'])).toBeNull();
     expect(questionKind('codex', [...queue, 'Allow command?'])).toBeNull();
+  });
+  test('Codex 0.162 caret skip controls preserve async text focus and digits in Other', () => {
+    const form = ['Which colour?', '› 1. Red', '  2. Other', 'enter submit   ^] skip   shift+→ main prompt'];
+    expect(codexInputFocus(form, false)).toBe('async-options');
+    expect(codexInputFocus(form, true)).toBe('async-editing');
+    expect(
+      new AnswerInput('codex').prefix(Buffer.from('café 2026 notes'), codexInputFocus(form, false)).toString(),
+    ).toBe('café 2026 notes');
   });
   test('recognizes built-in question and notes footers, including a wrap', () => {
     for (const footer of [
@@ -168,6 +179,8 @@ describe('Codex live question controls', () => {
       ['Press Enter to confirm or Esc to cancel'],
       ['> enter submit   ctrl+] skip   alt+↓ main prompt'],
       ['enter submit   ctrl+] skip'],
+      ['> enter submit   ^] skip   shift+→ main prompt'],
+      ['enter submit   ^] skip'],
       ['  ? 1 question', 'shift+← to answer'],
       [],
     ])
