@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/nicknisi/fleet/compare/v0.28.0...v0.28.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* recognize Codex 0.162 async question footer ([#97](https://github.com/nicknisi/fleet/issues/97)) ([419c6f3](https://github.com/nicknisi/fleet/commit/419c6f36d725dc18520e022a3eece5b527df2153))
+
 ## [0.28.0](https://github.com/nicknisi/fleet/compare/v0.27.0...v0.28.0) (2026-10-01)
 
 
