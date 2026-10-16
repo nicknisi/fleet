@@ -16,6 +16,8 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--fleet-bin', type=Path, default=Path(__file__).resolve().parents[1] / 'dist/fleet')
 parser.add_argument('--output-dir', type=Path)
 parser.add_argument('--answer-mode', choices=['notes', 'digit'], default='notes')
+parser.add_argument('--question-mode', choices=['builtin', 'async'], default='builtin')
+parser.add_argument('--async-answer-kind', choices=['choice', 'other', 'freeform'], default='other')
 args = parser.parse_args()
 codex = shutil.which('codex')
 if codex is None:
@@ -23,6 +25,7 @@ if codex is None:
 root = Path(tempfile.mkdtemp(prefix='fq-', dir=args.output_dir))
 socket = root / 'tmux.sock'
 requests = []
+async_submitted = threading.Event()
 print('Artifacts:', root, flush=True)
 questions = [
     {'id': 'colour', 'header': 'Colour', 'question': 'Which fixture colour should Fleet select?',
@@ -49,9 +52,25 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
         requests.append({'path': self.path, 'body': body})
         number = len(requests)
+        if args.question_mode == 'async' and any(
+                item.get('type') == 'function_call_output' and item.get('call_id') == 'call_question'
+                for item in body.get('input', [])):
+            # Async questions are shown while the turn continues. Keep that
+            # native turn running until the fixture submits the last question.
+            async_submitted.wait(40)
         if number == 1:
+            name = 'request_user_input'
+            arguments = {'questions': questions}
+            if args.question_mode == 'async':
+                name = 'request_user_input_async'
+                question = questions[0 if args.async_answer_kind == 'choice' else 1]
+                native_question = {'title': question['question'],
+                                   'options': [o['label'] for o in question['options']]}
+                if args.async_answer_kind == 'freeform':
+                    native_question = {'title': 'What freeform fixture note should Fleet attach?'}
+                arguments = {'questions': [native_question]}
             item = {'type': 'function_call', 'id': 'fc_question', 'call_id': 'call_question',
-                    'name': 'request_user_input', 'arguments': json.dumps({'questions': questions}), 'status': 'completed'}
+                    'name': name, 'arguments': json.dumps(arguments), 'status': 'completed'}
         else:
             item = {'type': 'message', 'id': f'msg_{number}', 'role': 'assistant', 'status': 'completed',
                     'content': [{'type': 'output_text', 'text': 'Local question check complete.', 'annotations': []}]}
@@ -87,6 +106,8 @@ model_provider = "fleet_question_test"
 approval_policy = "never"
 sandbox_mode = "read-only"
 check_for_update_on_startup = false
+[desktop]
+followUpQueueMode = "queue"
 [features]
 default_mode_request_user_input = true
 [model_providers.fleet_question_test]
@@ -137,7 +158,7 @@ def received_answers():
     return None
 
 
-try:
+def run_builtin():
     # The first visible composer can precede input readiness under load. Start
     # this question fixture with an argv prompt, so the initial Enter/paste
     # timing is not an unrelated failure before Fleet has even launched.
@@ -192,7 +213,86 @@ try:
     print(json.dumps({'pass': True, 'native_form_in_s_window': True, 'escape_preserved_question': True,
                       'choice_and_text_answers': True, 'no_new_prompt_after_answer': True,
                       'automatic_return_to_monitor': True, 'same_monitor_process': True}), flush=True)
+
+
+def async_answers():
+    answers = {}
+    for request in requests:
+        for item in request['body'].get('input', []):
+            if item.get('role') != 'user':
+                continue
+            for content in item.get('content', []):
+                text = content.get('text', '')
+                start = '<send_user_message_question_reply>'
+                if start in text:
+                    replies = json.loads(text.split(start, 1)[1].split('</send_user_message_question_reply>', 1)[0])
+                    for reply in replies:
+                        answers[reply['questionItemId']] = reply
+    return list(answers.values())
+
+
+def run_async():
+    command = ['env', 'CODEX_HOME=' + str(codex_home), 'TERM=xterm-256color', codex,
+               '--no-alt-screen', '-C', str(workspace), 'Ask the fixture questions.']
+    tm('new-session', '-d', '-s', 'codex', '-x', '120', '-y', '36', shlex.join(command))
+    wait_for(lambda: 'Queued follow-up inputs' in capture('codex'), 'native async queue', seconds=30)
+    tmux_env = f'{socket},{tm("display-message", "-p", "#{pid}")},0'
+    command = ['env', 'TMUX=' + tmux_env, 'TMPDIR=' + str(root), 'XDG_CONFIG_HOME=' + str(config),
+               'FLEET_THEME=dark', str(args.fleet_bin.resolve())]
+    tm('new-session', '-d', '-s', 'monitor', '-x', '140', '-y', '40', shlex.join(command))
+    monitor_pid = tm('display-message', '-p', '-t', 'monitor', '#{pane_pid}')
+    wait_for(lambda: 'asking' in capture('monitor'), 'Fleet async question discovery')
+    tm('send-keys', '-t', 'monitor', 's')
+    wait_for(lambda: '● ANSWER' in capture('monitor') and 'enter submit' in capture('monitor'),
+             'Fleet recognizes the native async form')
+    save_screen('async-open')
+    time.sleep(6)
+    assert '● ANSWER' in capture('monitor'), 'Fleet left before an async answer was submitted'
+    tm('send-keys', '-t', 'monitor', 'Escape')
+    wait_for(lambda: '● ANSWER' not in capture('monitor'), 'Escape back to Fleet')
+    assert 'enter submit' in capture('codex'), 'Fleet Escape dismissed the native async form'
+    tm('send-keys', '-t', 'monitor', 's')
+    wait_for(lambda: '● ANSWER' in capture('monitor') and 'enter submit' in capture('monitor'), 'reopen native async form')
+    # Exercise each input path with one question per native run.
+    expected = 'Blue'
+    if args.async_answer_kind == 'choice':
+        tm('send-keys', '-t', 'monitor', 'Down')
+        wait_for(lambda: '› 2. Blue' in capture('codex'), 'native choice selection')
+    elif args.async_answer_kind == 'other':
+        # Ordinary text selects Other; its digits must stay in the text field.
+        expected = 'café 2026 fixture note'
+        tm('send-keys', '-t', 'monitor', '-l', expected)
+        wait_for(lambda: expected in capture('codex'), 'native Other typing')
+    else:
+        expected = 'freeform fixture note'
+        for character in expected:
+            tm('send-keys', '-t', 'monitor', '-l', character)
+            time.sleep(.02)
+        wait_for(lambda: expected in capture('codex'), 'native freeform typing')
+    assert '● ANSWER' in capture('monitor'), 'Fleet left while answering the native async form'
+    save_screen('async-' + args.async_answer_kind)
+    tm('send-keys', '-t', 'monitor', '-l', '\rFLEET_SUFFIX_PROBE')
+    wait_for(lambda: '● ANSWER' not in capture('monitor') and '[↑↓] nav' in capture('monitor'),
+             'automatic return after the last async answer')
+    async_submitted.set()
+    wait_for(lambda: len(async_answers()) == 1, 'native async answer received')
+    assert async_answers()[0]['answer'] == expected, async_answers()
+    save_screen('async-answered')
+    assert 'FLEET_SUFFIX_PROBE' not in capture('codex'), 'answer suffix reached the main composer'
+    tm('send-keys', '-t', 'monitor', '-l', 'zzzzzz')
+    time.sleep(.2)
+    assert 'zzzzzz' not in capture('codex')
+    assert tm('display-message', '-p', '-t', 'monitor', '#{pane_pid}') == monitor_pid
+    print(json.dumps({'pass': True, 'native_async_form_in_s_window': True, 'escape_preserved_question': True,
+                      'answer_kind': args.async_answer_kind, 'native_answer_delivered': True,
+                      'no_new_prompt_after_answer': True,
+                      'automatic_return_to_monitor': True, 'same_monitor_process': True}), flush=True)
+
+
+try:
+    (run_async if args.question_mode == 'async' else run_builtin)()
 finally:
+    async_submitted.set()
     save_screen('last')
     (root / 'requests.json').write_text(json.dumps(requests, indent=2, ensure_ascii=False))
     subprocess.run(['tmux', '-S', str(socket), 'kill-server'], capture_output=True)

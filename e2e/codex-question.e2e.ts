@@ -93,10 +93,16 @@ selected=0
 opened=False
 compact=False
 modern=False
+caret=False
 def modern_queue():
  global modern
  modern=True
  compact_queue()
+def caret_queue():
+ global caret
+ caret=True
+ modern_queue()
+signal.signal(signal.SIGURG, lambda *_: caret_queue())
 def compact_queue():
  global compact
  compact=True
@@ -105,6 +111,7 @@ def form():
  choices='\\n'.join(('› ' if i==selected else '  ')+f'{i+1}. {name}' for i,name in enumerate(['Red','Blue']))
  footer='enter submit   ctrl+] skip   alt+↓ main prompt   shift+← next question' if compact else 'enter submit   ctrl + ] skip   alt + ↓ main prompt'
  if modern:footer=footer.replace('alt+↓','shift+→')
+ if caret:footer=footer.replace('ctrl+]', '^]')
  screen('• Queued follow-up inputs\\n\\nWhich fixture colour?\\n'+choices+'\\n  '+footer)
 keys=[b'\\x1b[1;2D',b'\\x1b[B',b'\\x1b[A',b'\\r',b'\\x1d']
 while True:
@@ -236,25 +243,33 @@ test('compact Codex shortcuts open and reopen an async question without submitti
   expect(received()).toBe('1b5b313b32441b5b420d');
 }, 15000);
 
-test('Codex 0.159 async form stays open past the queue timeout and reopens from S', async () => {
-  process.kill(Number(tm('display-message', '-p', '-t', pane, '#{pane_pid}')), 'SIGPROF');
-  tm('select-pane', '-t', pane, '-T', 'Action Required | Codex');
-  await waitFor(() => capture('agent').includes('shift+← to answer'));
-  tm('send-keys', '-t', 'monitor', 's');
-  await waitFor(() => capture().includes('● ANSWER') && capture().includes('Which fixture colour?'));
-  expect(capture('agent')).toContain('shift+→ main prompt');
-  await Bun.sleep(6000);
-  expect(capture()).toContain('● ANSWER');
-  expect(received()).toBe('1b5b313b3244');
-  tm('send-keys', '-t', 'monitor', 'Escape');
-  await waitFor(() => !capture().includes('● ANSWER'));
-  tm('send-keys', '-t', 'monitor', 's');
-  await waitFor(() => capture().includes('● ANSWER') && capture().includes('Which fixture colour?'));
-  expect(received()).toBe('1b5b313b3244');
-  tm('send-keys', '-t', 'monitor', 'Down', 'Enter');
-  await waitFor(() => !capture().includes('● ANSWER') && capture('agent').includes('Blue accepted'));
-  expect(capture()).not.toContain('Cannot send:');
-}, 20000);
+test.each([
+  ['0.159', 'SIGPROF', 'ctrl+]'],
+  ['0.162', 'SIGURG', '^]'],
+] as const)(
+  'Codex %s async form stays open past the queue timeout and reopens from S',
+  async (_version, signal, skip) => {
+    process.kill(Number(tm('display-message', '-p', '-t', pane, '#{pane_pid}')), signal);
+    tm('select-pane', '-t', pane, '-T', 'Action Required | Codex');
+    await waitFor(() => capture('agent').includes('shift+← to answer'));
+    tm('send-keys', '-t', 'monitor', 's');
+    await waitFor(() => capture().includes('● ANSWER') && capture().includes('Which fixture colour?'));
+    expect(capture('agent')).toContain('shift+→ main prompt');
+    expect(capture('agent')).toContain(skip + ' skip');
+    await Bun.sleep(6000);
+    expect(capture()).toContain('● ANSWER');
+    expect(received()).toBe('1b5b313b3244');
+    tm('send-keys', '-t', 'monitor', 'Escape');
+    await waitFor(() => !capture().includes('● ANSWER'));
+    tm('send-keys', '-t', 'monitor', 's');
+    await waitFor(() => capture().includes('● ANSWER') && capture().includes('Which fixture colour?'));
+    expect(received()).toBe('1b5b313b3244');
+    tm('send-keys', '-t', 'monitor', 'Down', 'Enter');
+    await waitFor(() => !capture().includes('● ANSWER') && capture('agent').includes('Blue accepted'));
+    expect(capture()).not.toContain('Cannot send:');
+  },
+  20000,
+);
 
 test('S checks the live question when its cached row still says permission', async () => {
   const agentPid = Number(tm('display-message', '-p', '-t', pane, '#{pane_pid}'));
