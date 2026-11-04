@@ -93,10 +93,7 @@ describe('sidebar status chrome', () => {
     ]);
     for (const width of [30, 34, 47]) {
       const lines = renderHeader(app, width).map(stripAnsi);
-      expect(lines.join('\n')).toContain('2 need you');
-      expect(lines.join('\n')).toContain('1 ready');
-      expect(lines.join('\n')).toContain('1 working');
-      expect(lines.join('\n')).toContain('1 idle');
+      expect(lines.join('\n')).toContain('⚠ 2  ● 1  ⠋ 1  ○ 1');
       for (const line of lines) expect(visibleLength(line)).toBeLessThanOrEqual(width);
     }
   });

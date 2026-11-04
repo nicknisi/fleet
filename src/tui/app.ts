@@ -101,7 +101,7 @@ export class TuiApp {
 
   // Display label + whether this is a repo group, derived from a group's first
   // (most-urgent) member.
-  private groupLabel(member: AgentState): GroupLabel {
+  groupLabel(member: AgentState): GroupLabel {
     if (this.repoGroupMode && member.git) {
       return { label: repoLabelFromId(member.git.repoId), isRepo: true };
     }
