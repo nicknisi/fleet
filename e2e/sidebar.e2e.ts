@@ -127,7 +127,7 @@ suite('persistent sidebar in real tmux', () => {
     openSidebar(source);
     await until(() => {
       sidebar = tm('list-panes', '-a', '-f', '#{@fleet_sidebar}', '-F', '#{pane_id}');
-      return sidebar.length > 0 && screen().includes('need you');
+      return sidebar.length > 0 && screen().includes('destination');
     });
     sidebarPid = tm('display-message', '-p', '-t', sidebar, '#{pane_pid}');
     tm('set', '-g', 'remain-on-exit', 'off');
@@ -154,8 +154,8 @@ suite('persistent sidebar in real tmux', () => {
 
   test('native window navigation carries the existing sidebar and resized width', async () => {
     tm('resize-pane', '-t', sidebar, '-x', '39');
-    // Wait for the TUI to consume SIGWINCH before asking it to move. Its card
-    // age is right-aligned, so this observes a frame drawn at the new width.
+    // Wait for the TUI to consume SIGWINCH before asking it to move. Its row
+    // marker (state + age) is right-aligned, so this observes a frame drawn at the new width.
     await until(() =>
       screen()
         .split('\n')
@@ -308,7 +308,7 @@ suite('persistent sidebar in real tmux', () => {
   test('Ctrl-C exits immediately even while an action error is awaiting dismissal', async () => {
     openSidebar(source);
     sidebar = tm('list-panes', '-a', '-f', '#{@fleet_sidebar}', '-F', '#{pane_id}');
-    await until(() => screen().includes('need you'));
+    await until(() => screen().includes('destination'));
     tm('send-keys', '-t', sidebar, '-l', '/destination');
     tm('send-keys', '-t', sidebar, 'Enter');
     await until(() => screen().includes('/destination') && !screen().includes('/destination█'));

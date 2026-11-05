@@ -16,8 +16,8 @@ const AGENT_GLYPHS = new Map([
 // detail line. Groups are separated by a blank line.
 //
 //   riker
-//    ✳ Fix screenshot text rea… ⚠ 2m
-//    π Riker WIF integration t… ⠋
+//    ✳ Fix screenshot text real… ⚠ 2m
+//    π Riker WIF integration te… ⠋
 //
 //   authkit
 //    ✳ AuthKit session issue    ● 4s   ← selected (background)
@@ -53,7 +53,8 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
 
     const right = rightMarker(st, app.spinnerFrame);
     const rightW = visibleLength(right);
-    const titleW = Math.max(1, cols - 3 - (rightW > 0 ? rightW + 2 : 1));
+    // The marker sits flush right (like the old age column); markerless rows keep a 1-cell margin.
+    const titleW = Math.max(1, cols - 3 - (rightW > 0 ? rightW + 1 : 1));
     const title = padAnsi(truncateWidth(agentSessionName(st) ?? windowLabel(st), titleW), titleW);
     const titleStyle =
       st.status === AgentStatus.PERMIT || st.status === AgentStatus.QUESTION
@@ -61,7 +62,7 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
         : st.status === AgentStatus.IDLE
           ? C.idle
           : '';
-    const tail = rightW > 0 ? ` ${color}${right}${C.reset} ` : ' ';
+    const tail = rightW > 0 ? ` ${color}${right}${C.reset}` : ' ';
     const mark = selected && !C.selBg ? '›' : ' ';
     lines.push(
       highlight(
