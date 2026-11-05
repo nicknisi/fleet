@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/nicknisi/fleet/compare/v0.29.0...v0.30.0) (2026-11-05)
+
+
+### Features
+
+* show split-pane glyph for agents sharing a tmux window ([#101](https://github.com/nicknisi/fleet/issues/101)) ([27a5008](https://github.com/nicknisi/fleet/commit/27a5008027d8b6fb099b0907a4291325c7207ec1))
+
 ## [0.29.0](https://github.com/nicknisi/fleet/compare/v0.28.1...v0.29.0) (2026-11-05)
 
 
