@@ -16,6 +16,8 @@ function result(ok: boolean, paneIds: string[]): ListPanesResult {
       currentPath: '/',
       panePid: 1,
       focused: false,
+      paneLeft: 0,
+      paneTop: 0,
       paneTitle: '',
     })),
   };

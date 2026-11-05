@@ -567,6 +567,8 @@ export function refreshStates(
       session: pane.sessionName,
       window: pane.windowName,
       windowId: pane.windowId,
+      paneLeft: pane.paneLeft,
+      paneTop: pane.paneTop,
       claudeName: extractClaudeName(pane.paneTitle),
       // Hook name first (codex's only channel; pi's extension writes the same
       // value), then pi's terminal title — which needs nothing loaded into pi

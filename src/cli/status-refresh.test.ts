@@ -69,7 +69,7 @@ function run(...args: string[]): string {
       PATH: `${join(work, 'bin')}:${process.env.PATH}`,
       FLEET_TEST_LOG: log,
       FLEET_TEST_REPO: repo,
-      FLEET_TEST_PANES: `%1\ttest\trepo\t@1\t0\t${repo}\t123\t1\t1\t1\ttest title`,
+      FLEET_TEST_PANES: `%1\ttest\trepo\t@1\t0\t${repo}\t123\t1\t1\t1\t0\t0\ttest title`,
     },
     stdout: 'pipe',
     stderr: 'pipe',

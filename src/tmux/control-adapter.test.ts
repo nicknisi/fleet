@@ -27,7 +27,7 @@ function fakeClient(opts: {
 
 describe('listPanesResultVia', () => {
   test('runs listPanesCommand (single-quoted format) and parses the body identically to the fork path', async () => {
-    const line = ['%3', 's', 'w', '@5', '2', '/p', '123', '1', '1', '1', 't'].join('\t');
+    const line = ['%3', 's', 'w', '@5', '2', '/p', '123', '1', '1', '1', '0', '0', 't'].join('\t');
     const client = fakeClient({ run: async () => line });
     const res = await listPanesResultVia(client);
     expect(res.ok).toBe(true);
