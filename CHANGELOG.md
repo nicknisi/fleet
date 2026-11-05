@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/nicknisi/fleet/compare/v0.28.1...v0.29.0) (2026-11-05)
+
+
+### Features
+
+* Rex-style compact sidebar list ([#99](https://github.com/nicknisi/fleet/issues/99)) ([d86bb2f](https://github.com/nicknisi/fleet/commit/d86bb2f7d6a72073d42e8a9c62548683193a22c2))
+
 ## [0.28.1](https://github.com/nicknisi/fleet/compare/v0.28.0...v0.28.1) (2026-10-16)
 
 
