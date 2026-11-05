@@ -131,6 +131,11 @@ export const C = {
   get underline() {
     return code('\x1b[4m');
   },
+  // Selected-row background (Catppuccin surface0). Empty without color, so
+  // callers can test it to pick a glyph fallback.
+  get selBg() {
+    return code(activeMode === 'light' ? '\x1b[48;2;204;208;218m' : '\x1b[48;2;49;50;68m');
+  },
   // State colors route through the active built-in or custom palette.
   get permit() {
     return stateColor(activePalette.permit);

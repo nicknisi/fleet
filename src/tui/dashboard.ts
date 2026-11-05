@@ -40,11 +40,13 @@ export function renderHeader(app: TuiApp, cols: number): string[] {
   if (idle > 0) badges.push(`${C.gray}${idle} idle${C.reset}`);
 
   if (pickLayout(cols) === 'cards') {
-    const attention = [`${C.permit}${needsYou} need you${C.reset}`, `${C.done}${s.done} ready${C.reset}`].join(
-      ` ${C.gray}·${C.reset} `,
-    );
-    const activity = `${stateIcon(AgentStatus.BUSY, app.spinnerFrame)} ${s.busy} working  ${C.idle}○ ${idle} idle${C.reset}`;
-    return [truncateAnsi(`${C.bold}fleet${C.reset}  ${attention}`, cols), truncateAnsi(activity, cols)];
+    const counts = [
+      `${C.permit}⚠ ${needsYou}${C.reset}`,
+      `${C.done}● ${s.done}${C.reset}`,
+      `${stateIcon(AgentStatus.BUSY, app.spinnerFrame)} ${s.busy}`,
+      `${C.idle}○ ${idle}${C.reset}`,
+    ].join('  ');
+    return [truncateAnsi(` ${C.bold}fleet${C.reset}   ${counts}`, cols)];
   }
 
   const title = ` ${C.bold}${logo()}${C.reset} ${C.gray}${BOX_H} ${agentCount} agents${C.reset}`;
@@ -135,12 +137,7 @@ export function renderFooter(app: TuiApp, cols: number): string[] {
     return [truncateAnsi(truncateAnsi(query, Math.max(1, cols - 13)) + hint, cols)];
   }
   if (pickLayout(cols) === 'cards') {
-    const hints = [
-      `${chip('⏎')} ${C.gray}switch${C.reset}`,
-      `${chip('?')} ${C.gray}help${C.reset}`,
-      `${chip('q')} ${C.gray}quit${C.reset}`,
-    ];
-    return [truncateAnsi(`${C.gray}${BOX_H}${C.reset} ${hints.join('  ')}`, cols)];
+    return [` ${C.gray}? help${C.reset}`];
   }
 
   const lines: string[] = [];
