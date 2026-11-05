@@ -20,11 +20,16 @@ const AGENT_GLYPHS = new Map([
 //    π Riker WIF integration te… ⠋
 //
 //   authkit
-//    ✳ AuthKit session issue    ● 4s   ← selected (background)
-//      main · claude · Read
+//    ◧ ✳ AuthKit session issue  ● 4s   ← selected (background)
+//        main · claude · Read
+//
+// The column before the agent glyph shows where the pane sits when another
+// agent shares its tmux window (◧ ◨ ⬒ ⬓, ⊞ for 3+); blank when it has the window
+// to itself (non-agent panes like editors and shells don't count).
 export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
   const rows = app.dashboardRows();
   const selectedPane = app.selectedState()?.paneId ?? null;
+  const windowAgents = agentsByWindow(app.sortedStates());
   const lines: string[] = [];
   const states: (AgentState | null)[] = [];
 
@@ -54,7 +59,7 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
     const right = rightMarker(st, app.spinnerFrame);
     const rightW = visibleLength(right);
     // The marker sits flush right (like the old age column); markerless rows keep a 1-cell margin.
-    const titleW = Math.max(1, cols - 3 - (rightW > 0 ? rightW + 1 : 1));
+    const titleW = Math.max(1, cols - 5 - (rightW > 0 ? rightW + 1 : 1));
     const title = padAnsi(truncateWidth(agentSessionName(st) ?? windowLabel(st), titleW), titleW);
     const titleStyle =
       st.status === AgentStatus.PERMIT || st.status === AgentStatus.QUESTION
@@ -64,9 +69,10 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
           : '';
     const tail = rightW > 0 ? ` ${color}${right}${C.reset}` : ' ';
     const mark = selected && !C.selBg ? '›' : ' ';
+    const split = splitGlyph(st, windowAgents.get(st.windowId) ?? []);
     lines.push(
       highlight(
-        `${mark}${color}${glyph}${C.reset} ${titleStyle}${hovered ? C.underline : ''}${title}${C.reset}${tail}`,
+        `${mark}${C.gray}${split}${C.reset} ${color}${glyph}${C.reset} ${titleStyle}${hovered ? C.underline : ''}${title}${C.reset}${tail}`,
         cols,
         selected,
       ),
@@ -75,11 +81,31 @@ export function buildCardLines(app: TuiApp, cols: number): LayoutLines {
 
     if (selected) {
       const detail = [st.branch, st.agentType, st.tool ?? STATUS_DISPLAY[st.status].label].filter(Boolean).join(' · ');
-      lines.push(highlight(`   ${C.gray}${truncateWidth(detail, Math.max(1, cols - 4))}${C.reset}`, cols, true));
+      lines.push(highlight(`     ${C.gray}${truncateWidth(detail, Math.max(1, cols - 6))}${C.reset}`, cols, true));
       states.push(st);
     }
   }
   return { lines, states };
+}
+
+// Live agents (not shells or dead panes) keyed by tmux window.
+function agentsByWindow(states: readonly AgentState[]): Map<string, AgentState[]> {
+  const byWindow = new Map<string, AgentState[]>();
+  for (const s of states) {
+    if (s.status === AgentStatus.SHELL || s.status === AgentStatus.DOWN) continue;
+    byWindow.set(s.windowId, [...(byWindow.get(s.windowId) ?? []), s]);
+  }
+  return byWindow;
+}
+
+// Which side of the split this agent is on, relative to its one window-mate.
+export function splitGlyph(st: AgentState, windowAgents: readonly AgentState[]): string {
+  if (windowAgents.length < 2) return ' ';
+  const mate = windowAgents.length === 2 ? windowAgents.find((s) => s.paneId !== st.paneId) : undefined;
+  const [l, t, ml, mt] = [st.paneLeft, st.paneTop, mate?.paneLeft, mate?.paneTop];
+  if (l === undefined || t === undefined || ml === undefined || mt === undefined) return '⊞';
+  if (l !== ml) return l < ml ? '◧' : '◨';
+  return t < mt ? '⬒' : '⬓';
 }
 
 // State + age for rows that want attention, a spinner while working, nothing

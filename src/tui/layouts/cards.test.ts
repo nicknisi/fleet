@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { TuiApp } from '../app.ts';
 import { AgentStatus, type AgentState } from '../../state/types.ts';
 import { visibleLength } from '../../terminal/ansi.ts';
-import { buildCardLines } from './cards.ts';
+import { buildCardLines, splitGlyph } from './cards.ts';
 
 const state = (over: Partial<AgentState>): AgentState => ({
   paneId: '%1',
@@ -65,6 +65,19 @@ describe('buildCardLines', () => {
     expect(buildCardLines(app, 34).lines[1]!.startsWith('›')).toBe(true);
   });
 
+  test('agents sharing a window get a split glyph; a solo agent gets none', () => {
+    const app = new TuiApp();
+    app.updateStates([
+      state({ paneId: '%1', window: 'left', paneLeft: 0, paneTop: 0 }),
+      state({ paneId: '%2', window: 'right', paneLeft: 80, paneTop: 0, agentType: 'pi' }),
+      state({ paneId: '%3', window: 'solo', windowId: '@2', agentType: 'codex' }),
+    ]);
+    const lines = buildCardLines(app, 34).lines;
+    expect(lines.find((l) => l.includes('left'))).toContain('◧ ✳ left');
+    expect(lines.find((l) => l.includes('right'))).toContain('◨ π right');
+    expect(lines.find((l) => l.includes('solo'))).toMatch(/^ {3}◆ solo/);
+  });
+
   test('no line exceeds the requested width', () => {
     const app = new TuiApp();
     app.updateStates([
@@ -74,5 +87,23 @@ describe('buildCardLines', () => {
     for (const line of buildCardLines(app, 30).lines) {
       expect(visibleLength(line)).toBeLessThanOrEqual(30);
     }
+  });
+});
+
+describe('splitGlyph', () => {
+  const a = state({ paneId: '%1', paneLeft: 0, paneTop: 0 });
+  test('stacked panes', () => {
+    const b = state({ paneId: '%2', paneLeft: 0, paneTop: 20 });
+    expect(splitGlyph(a, [a, b])).toBe('⬒');
+    expect(splitGlyph(b, [a, b])).toBe('⬓');
+  });
+  test('3+ agents, or unknown position, fall back to ⊞', () => {
+    const b = state({ paneId: '%2', paneLeft: 40, paneTop: 0 });
+    const c = state({ paneId: '%3', paneLeft: 80, paneTop: 0 });
+    expect(splitGlyph(a, [a, b, c])).toBe('⊞');
+    expect(splitGlyph(a, [a, state({ paneId: '%2' })])).toBe('⊞');
+  });
+  test('alone in the window', () => {
+    expect(splitGlyph(a, [a])).toBe(' ');
   });
 });

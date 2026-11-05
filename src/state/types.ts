@@ -94,6 +94,10 @@ export interface AgentState {
   session: string;
   window: string;
   windowId: string;
+  // Pane position within its window (tmux pane_left/pane_top). Optional for
+  // source compatibility with fixtures; live refreshes always set it.
+  paneLeft?: number;
+  paneTop?: number;
   claudeName: string | null;
   // The agent's own session name: the hook's status file (pi extension, codex
   // thread_name) or, for pi, the built-in `π - name - dir` pane title when the

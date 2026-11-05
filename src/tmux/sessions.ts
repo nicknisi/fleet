@@ -14,13 +14,16 @@ export interface PaneInfo {
   // "finished while you were elsewhere" logic — a DONE synthesized for a
   // discovered agent is suppressed/cleared when its pane is focused.
   focused: boolean;
+  // Pane's top-left cell within its window; tells which side of a split it is on.
+  paneLeft: number;
+  paneTop: number;
   paneTitle: string;
 }
 
 // Fields are inserted BEFORE pane_title so it stays LAST: a stray tab in a pane
 // title then lands in trailing (ignored) parts instead of shifting a field.
 export const PANE_FORMAT =
-  '#{pane_id}\t#{session_name}\t#{window_name}\t#{window_id}\t#{window_index}\t#{pane_current_path}\t#{pane_pid}\t#{pane_active}\t#{window_active}\t#{session_attached}\t#{pane_title}';
+  '#{pane_id}\t#{session_name}\t#{window_name}\t#{window_id}\t#{window_index}\t#{pane_current_path}\t#{pane_pid}\t#{pane_active}\t#{window_active}\t#{session_attached}\t#{pane_left}\t#{pane_top}\t#{pane_title}';
 
 export interface ListPanesResult {
   ok: boolean;
@@ -33,7 +36,7 @@ export function parsePanesOutput(stdout: string): PaneInfo[] {
   for (const line of stdout.split('\n')) {
     if (line.length === 0) continue;
     const parts = line.split('\t');
-    if (parts.length < 11) continue;
+    if (parts.length < 13) continue;
     const paneId = parts[0]!;
     panes.push({
       paneId,
@@ -46,9 +49,11 @@ export function parsePanesOutput(stdout: string): PaneInfo[] {
       panePid: parseInt(parts[6]!, 10),
       // pane_active/window_active are 1/0; session_attached counts clients.
       focused: parts[7] === '1' && parts[8] === '1' && parseInt(parts[9]!, 10) > 0,
+      paneLeft: parseInt(parts[10]!, 10),
+      paneTop: parseInt(parts[11]!, 10),
       // Title is the last field, so a tab inside it split into extra parts —
       // rejoin them instead of silently truncating at the first tab.
-      paneTitle: parts.slice(10).join('\t'),
+      paneTitle: parts.slice(12).join('\t'),
     });
   }
   return panes;
