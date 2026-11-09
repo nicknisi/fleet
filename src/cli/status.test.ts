@@ -4,6 +4,7 @@ import {
   formatPlainStatus,
   formatStatusLine,
   formatAge,
+  windowBusyArgs,
   windowColorArgs,
   resolveStatusLineSegment,
 } from './status.ts';
@@ -432,5 +433,20 @@ describe('resolveStatusLineSegment', () => {
     });
     expect(result).toEqual({ segment: '', hit: true });
     expect(liveCalls).toBe(0);
+  });
+});
+
+describe('windowBusyArgs', () => {
+  test('sets @fleet_busy on windows with a working agent, unsets the rest', () => {
+    const args = windowBusyArgs([
+      makeState({ windowId: '@1', status: AgentStatus.BUSY, paneId: '%1' }),
+      makeState({ windowId: '@1', status: AgentStatus.PERMIT, paneId: '%2' }),
+      makeState({ windowId: '@2', status: AgentStatus.IDLE, paneId: '%3' }),
+      makeState({ windowId: '', status: AgentStatus.BUSY, paneId: '%4' }),
+    ]);
+    expect(args).toEqual([
+      ['set', '-w', '-t', '@1', '@fleet_busy', '1'],
+      ['set', '-w', '-u', '-t', '@2', '@fleet_busy'],
+    ]);
   });
 });

@@ -141,6 +141,20 @@ export function windowColorArgs(states: AgentState[]): string[][] {
   return args;
 }
 
+// Per-window @fleet_busy: 1 while any agent in the window is working, unset
+// otherwise (same set-or-unset data shadow as windowColorArgs). Independent of
+// the tint so a theme can show "working" alongside "needs you".
+export function windowBusyArgs(states: AgentState[]): string[][] {
+  const busy = new Map<string, boolean>();
+  for (const s of states) {
+    if (s.windowId.length === 0) continue;
+    busy.set(s.windowId, (busy.get(s.windowId) ?? false) || s.status === AgentStatus.BUSY);
+  }
+  return [...busy].map(([windowId, on]) =>
+    on ? ['set', '-w', '-t', windowId, '@fleet_busy', '1'] : ['set', '-w', '-u', '-t', windowId, '@fleet_busy'],
+  );
+}
+
 // Decide the `--statusline` segment, preferring a fresh cache so a live TUI's
 // already-computed segment is reused without cold-booting Bun or re-reading
 // agent state. Pure: the caller hands in whatever it read from the cache (null

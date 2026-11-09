@@ -14,7 +14,7 @@
  *   set -g @fleet_chip_separator none   # no │ between chips (or any string)
  */
 
-import { DEFAULT_CHIP_SEPARATOR, windowColorArgs } from './status.ts';
+import { DEFAULT_CHIP_SEPARATOR, windowBusyArgs, windowColorArgs } from './status.ts';
 import { getTmuxOption, tmux } from '../tmux/ipc.ts';
 import type { AgentState } from '../state/types.ts';
 
@@ -203,7 +203,7 @@ let lastWindowColors: { server: string | undefined; signature: string; at: numbe
 // One batched tmux call for all windows. Failed batches are never remembered,
 // so the next refresh retries even if its desired colors have not changed.
 export function emitWindowColors(states: AgentState[], now = Date.now()): void {
-  const groups = windowColorArgs(states);
+  const groups = [...windowColorArgs(states), ...windowBusyArgs(states)];
   if (groups.length === 0) {
     lastWindowColors = undefined;
     return;
@@ -227,7 +227,7 @@ export function emitWindowColors(states: AgentState[], now = Date.now()): void {
   lastWindowColors = tmux(flat).exitCode === 0 ? { server, signature, at: now } : undefined;
 }
 
-// Sweep every window's @fleet_state so no stale tint lingers after uninstall —
+// Sweep every window's @fleet_state/@fleet_busy so no stale tint lingers after uninstall —
 // including windows that have no fleet pane. Dynamic (lists live windows), so it
 // lives outside the static buildRemoveCommands array.
 export function clearAllWindowStates(): void {
@@ -237,7 +237,7 @@ export function clearAllWindowStates(): void {
   for (const id of p.stdout.split('\n')) {
     if (id.length === 0) continue;
     if (flat.length > 0) flat.push(';');
-    flat.push('set', '-w', '-u', '-t', id, '@fleet_state');
+    flat.push('set', '-w', '-u', '-t', id, '@fleet_state', ';', 'set', '-w', '-u', '-t', id, '@fleet_busy');
   }
   if (flat.length > 0) tmux(flat);
 }
