@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/nicknisi/fleet/compare/v0.30.0...v0.31.0) (2026-11-09)
+
+
+### Features
+
+* set [@fleet](https://github.com/fleet)_busy on windows with a working agent ([#103](https://github.com/nicknisi/fleet/issues/103)) ([ab10221](https://github.com/nicknisi/fleet/commit/ab102212ed4da54c3c1addffc7fe81561a00b978))
+
 ## [0.30.0](https://github.com/nicknisi/fleet/compare/v0.29.0...v0.30.0) (2026-11-05)
 
 
