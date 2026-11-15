@@ -15,7 +15,8 @@ import {
 } from './src/tui/actions.ts';
 import { questionKind } from './src/tui/answer.ts';
 import { parseKeyEvent, parseKeyEvents } from './src/terminal/input.ts';
-import { isMouseSequence, parseMouseEvent, splitMouseEvents } from './src/terminal/mouse.ts';
+import { isMouseSequence, parseMouseEvent } from './src/terminal/mouse.ts';
+import { dispatchInputBatch } from './src/tui/input-batch.ts';
 import {
   enterAlternateScreen,
   hideCursor,
@@ -397,29 +398,9 @@ async function launchTui(): Promise<number> {
     };
 
     const handleInput = (buf: Buffer) => {
-      const reports = splitMouseEvents(buf);
-      if (reports.length > 1) {
-        for (const report of reports) {
-          if (finished || app.shouldQuit) break;
-          handleInput(report);
-        }
-        return;
-      }
-      // Emergency exit must bypass the error-dismissal guard, including when
-      // repeated preview failures would otherwise swallow every Ctrl-C.
-      if (buf[0] === 0x03) {
-        app.shouldQuit = true;
-        needsRender = true;
-        return;
-      }
-      if (app.actionError && !app.actionTarget) {
-        // Dismiss the error with a fresh input chunk. Never reinterpret bytes
-        // intended for a vanished passthrough/confirmation target as shortcuts
-        // against whichever row selection fell back to.
-        app.actionError = null;
-        needsRender = true;
-        return;
-      }
+      if (dispatchInputBatch(app, buf, dispatchInput, () => finished)) needsRender = true;
+    };
+    const dispatchInput = (buf: Buffer) => {
       if (isMouseSequence(buf)) {
         const mouse = parseMouseEvent(buf);
         if (!mouse) return;
