@@ -5,6 +5,22 @@ import { isJsonObject, isString, type JsonValue } from '../json.ts';
 import type { AgentDir } from '../agents/config.ts';
 import type { PaneInfo } from '../tmux/sessions.ts';
 
+export function hookBelongsToPane(
+  hook: Pick<HookStatus, 'session' | 'tmux_pid'>,
+  pane: Pick<PaneInfo, 'sessionName' | 'tmuxPid'>,
+): boolean {
+  if (
+    Number.isSafeInteger(hook.tmux_pid) &&
+    hook.tmux_pid > 0 &&
+    Number.isSafeInteger(pane.tmuxPid) &&
+    pane.tmuxPid! > 0
+  ) {
+    return hook.tmux_pid === pane.tmuxPid;
+  }
+  // A session can be renamed without changing its server or pane identity.
+  return hook.session === pane.sessionName;
+}
+
 // A pane number is only meaningful inside its owning server and session.
 // Filter ownership before comparing freshness across agent status directories.
 export function resolvePaneHooks(panes: PaneInfo[], statuses: ResolvedHookStatus[]): Map<string, ResolvedHookStatus> {
@@ -12,9 +28,7 @@ export function resolvePaneHooks(panes: PaneInfo[], statuses: ResolvedHookStatus
   const hooks = new Map<string, ResolvedHookStatus>();
   for (const hook of statuses) {
     const pane = live.get(hook.pane);
-    if (!pane || hook.session !== pane.sessionName) continue;
-    // Older writers may omit the server PID. Their session must still match.
-    if (hook.tmux_pid > 0 && pane.tmuxPid !== undefined && hook.tmux_pid !== pane.tmuxPid) continue;
+    if (!pane || !hookBelongsToPane(hook, pane)) continue;
     const previous = hooks.get(hook.pane);
     if (!previous || hook.ts > previous.ts) hooks.set(hook.pane, hook);
   }

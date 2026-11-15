@@ -38,7 +38,7 @@ describe('hook ownership after pane reuse', () => {
     })[0]!;
 
   test.each([
-    { session: 'old-session', tmux_pid: 1000 },
+    { session: 'old-session', tmux_pid: 0 },
     { session: 'current-session', tmux_pid: 999 },
   ])('newer metadata from another owner cannot beat the live hook (%j)', (owner) => {
     const state = read([hook({ ...owner, agent: 'claude', name: 'Old agent', ts: 9999999999 }), hook()]);
@@ -48,7 +48,7 @@ describe('hook ownership after pane reuse', () => {
   });
 
   test('a stale hook alone cannot claim an unrelated pane', () => {
-    const state = read([hook({ session: 'old-session', agent: 'claude', name: 'Old agent' })]);
+    const state = read([hook({ session: 'old-session', tmux_pid: 999, agent: 'claude', name: 'Old agent' })]);
     expect(state.agentType).toBe('');
     expect(state.agentName).toBeNull();
   });
@@ -68,5 +68,22 @@ describe('hook ownership after pane reuse', () => {
   test('freshness still selects between hooks belonging to the same live owner', () => {
     const state = read([hook({ ts: 1, name: 'Older name' }), hook({ name: 'Newer name' })]);
     expect(state.agentName).toBe('Newer name');
+  });
+
+  test('renaming a session retains hooks from the same live server and pane', () => {
+    const state = refreshStates([], {
+      panesResult: { ok: true, panes: [{ ...pane, sessionName: 'renamed-session' }] },
+      hookStatuses: [hook()],
+    })[0]!;
+    expect(state.agentType).toBe('codex');
+    expect(state.agentName).toBe('Current agent');
+  });
+
+  test.each([NaN, Infinity, 0, undefined])('unknown live server PID falls back to the session (%j)', (tmuxPid) => {
+    const state = refreshStates([], {
+      panesResult: { ok: true, panes: [{ ...pane, tmuxPid }] },
+      hookStatuses: [hook()],
+    })[0]!;
+    expect(state.agentType).toBe('codex');
   });
 });

@@ -16,7 +16,7 @@ export function privateTmux(prefix: string) {
     TMUX: '',
   };
   const tm = (...args: string[]) => {
-    const result = Bun.spawnSync(['tmux', '-f', '/dev/null', '-S', socket, ...args], { env });
+    const result = Bun.spawnSync(['tmux', '-u', '-f', '/dev/null', '-S', socket, ...args], { env });
     if (result.exitCode) throw new Error(result.stderr.toString());
     return result.stdout.toString().trimEnd();
   };

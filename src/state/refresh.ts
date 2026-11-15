@@ -7,7 +7,15 @@
 
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { fuseState, hookStateForStatus } from './engine.ts';
-import { readAllStatusDirs, resolvePaneHooks, statusFilePath, eventsFilePath, writeFileAtomic } from './hooks.ts';
+import {
+  readAllStatusDirs,
+  resolvePaneHooks,
+  hookBelongsToPane,
+  parseStatusFile,
+  statusFilePath,
+  eventsFilePath,
+  writeFileAtomic,
+} from './hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './events.ts';
 import { acknowledgePlan } from './acknowledge.ts';
 import { isJsonObject, type JsonObject, type JsonValue } from '../json.ts';
@@ -52,7 +60,7 @@ import { readGitMetadata, readGitMetadataAsync, branchLabel, type GitMetadata } 
 import type { TmuxControlClient } from '../tmux/control.ts';
 import { listPanesResultVia } from '../tmux/control-adapter.ts';
 import { flipControlDead, type ControlLatch } from '../tmux/control-router.ts';
-import { tmuxOrNull, tmuxOrThrow } from '../tmux/ipc.ts';
+import { tmuxOrThrow } from '../tmux/ipc.ts';
 import { detectPorts, detectPortsAsync, type PanePort } from '../tmux/ports.ts';
 
 export function shortenPath(path: string): string {
@@ -144,25 +152,45 @@ export function reloadRenameCache(): void {
 // A scraped correction persisted back to the winning hook's status file: when a
 // pane's live screen disagrees with its stored hook state (a prompt was
 // answered, a turn finished), write the scraped truth so the next read agrees.
-export function verifyPaneState(state: AgentState, statusDirs: string[]): void {
+function winningPaneHook(paneId: string, dirs: AgentDir[]) {
+  const live = listPanesResult();
+  const pane = live.ok ? live.panes.find((candidate) => candidate.paneId === paneId) : undefined;
+  if (!pane) return null;
+  const hooks = dirs.flatMap((dir) => {
+    try {
+      const hook = parseStatusFile(readFileSync(statusFilePath(dir.statusDir, paneId), 'utf8'));
+      return hook ? [{ ...hook, agent: dir.name, statusDir: dir.statusDir }] : [];
+    } catch {
+      return [];
+    }
+  });
+  const hook = resolvePaneHooks([pane], hooks).get(paneId);
+  return hook ? { hook, pane } : null;
+}
+
+export function verifyPaneState(state: AgentState, dirs: AgentDir[]): void {
+  const selected = winningPaneHook(state.paneId, dirs);
+  if (
+    !selected ||
+    selected.hook.agent !== state.agentType ||
+    (state.panePid !== undefined && selected.pane.panePid !== state.panePid)
+  )
+    return;
   const scraped = scrapePane(state.paneId, state.agentType || 'claude');
   if (scraped === null) return;
   if (scraped === state.status) return;
 
   const now = Math.floor(Date.now() / 1000);
-  const tmuxPid = parseInt(tmuxOrNull(['display-message', '-p', '#{pid}']) ?? '', 10) || 0;
+  const tmuxPid = Number.isSafeInteger(selected.pane.tmuxPid) ? selected.pane.tmuxPid! : 0;
   const newHookState = hookStateForStatus(scraped);
 
-  for (const dir of statusDirs) {
+  for (const dir of [selected.hook.statusDir]) {
     const file = statusFilePath(dir, state.paneId);
     try {
       const content = readFileSync(file, 'utf-8');
       const existing = JSON.parse(content);
-      if (
-        existing.pane === state.paneId &&
-        existing.session === state.session &&
-        (!existing.tmux_pid || existing.tmux_pid === tmuxPid)
-      ) {
+      const parsed = parseStatusFile(content);
+      if (parsed?.pane === state.paneId && hookBelongsToPane(parsed, selected.pane)) {
         // A scraped idle screen (bare prompt, no dialog/spinner) can't be told
         // apart from a just-finished turn — both show a prompt. So never let it
         // overwrite a done/working hook state; only use it to clear a stale
@@ -197,14 +225,26 @@ export function verifyPaneState(state: AgentState, statusDirs: string[]): void {
 // idle). Either signal alone is enough to clear the agent. Self-gating: a
 // working/waiting/asking agent derives neither, so it's left untouched.
 export function acknowledgePane(paneId: string, statusDirs: string[]): void {
+  const selected = winningPaneHook(
+    paneId,
+    statusDirs.map((statusDir) => ({ name: '', statusDir })),
+  );
+  if (selected) acknowledgeHook(selected.hook, selected.pane);
+}
+
+function acknowledgeHook(hook: { pane: string; statusDir: string }, pane: PaneInfo): void {
+  const paneId = hook.pane;
   const now = Math.floor(Date.now() / 1000);
-  for (const dir of statusDirs) {
+  for (const dir of [hook.statusDir]) {
     const statusFile = statusFilePath(dir, paneId);
     let current: JsonObject;
     try {
+      const content = readFileSync(statusFile, 'utf-8');
       // SAFETY: JSON.parse returns any; JsonValue is the sound type of any JSON document.
-      const parsed = JSON.parse(readFileSync(statusFile, 'utf-8')) as JsonValue;
+      const parsed = JSON.parse(content) as JsonValue;
       if (!isJsonObject(parsed)) continue;
+      const owner = parseStatusFile(content);
+      if (!owner || !hookBelongsToPane(owner, pane)) continue;
       current = parsed;
     } catch {
       continue;
@@ -237,9 +277,11 @@ export function acknowledgePane(paneId: string, statusDirs: string[]): void {
 // the status-line "clear all" chip. Reuses acknowledgePane's ready-only gating,
 // so working/waiting/asking agents are left untouched.
 export function acknowledgeAllReady(dirs: AgentDir[]): void {
-  const statusDirs = dirs.map((d) => d.statusDir);
-  for (const hook of readAllStatusDirs(dirs)) {
-    acknowledgePane(hook.pane, statusDirs);
+  const live = listPanesResult();
+  if (!live.ok) return;
+  const panes = new Map(live.panes.map((pane) => [pane.paneId, pane]));
+  for (const hook of resolvePaneHooks(live.panes, readAllStatusDirs(dirs)).values()) {
+    acknowledgeHook(hook, panes.get(hook.pane)!);
   }
 }
 
