@@ -449,8 +449,8 @@ export function refreshStates(
   const { ok: tmuxOk, panes } = pre?.panesResult ?? listPanesResult();
   lastTmuxOk = tmuxOk;
 
-  // Pane ids can be reused after a server restart. An old room or agent must
-  // not claim a new occupant, even when its status timestamp is newer.
+  // Pane ids can be reused after a server restart. An old hook must not claim
+  // a new occupant, even when its status timestamp is newer.
   const hookByPane = resolvePaneHooks(panes, hookStatuses);
 
   const states: AgentState[] = [];
