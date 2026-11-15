@@ -67,12 +67,13 @@ export function runDoctor(): number {
   });
 
   const home = homedir();
-  const pluginDir = join(home, '.claude', 'plugins');
+  const pluginDir = join(process.env.CLAUDE_CONFIG_DIR || join(home, '.claude'), 'plugins');
   const pluginInstalled = existsSync(pluginDir);
   checks.push({
     name: 'plugin directory',
     ok: pluginInstalled,
-    detail: pluginInstalled ? pluginDir : 'not found',
+    advisory: true,
+    detail: pluginInstalled ? pluginDir : `${pluginDir} (optional; native panes use discovery)`,
   });
 
   const dirs = loadAgentDirs();
@@ -86,28 +87,39 @@ export function runDoctor(): number {
   }
 
   let fleetInstalled = false;
-  const proc = Bun.spawnSync({
-    cmd: ['claude', 'plugin', 'list'],
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  if (proc.exitCode === 0 && proc.stdout.toString().includes('fleet@')) {
-    fleetInstalled = true;
+  let pluginQueryOk = false;
+  try {
+    const proc = Bun.spawnSync({
+      cmd: ['claude', 'plugin', 'list'],
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    pluginQueryOk = proc.exitCode === 0;
+    fleetInstalled = pluginQueryOk && proc.stdout.toString().includes('fleet@');
+  } catch {
+    // Native discovery also works on machines without the Claude CLI.
   }
   checks.push({
     name: 'fleet plugin',
     ok: fleetInstalled,
-    detail: fleetInstalled ? 'installed' : 'not installed (run: fleet install)',
+    advisory: true,
+    detail: fleetInstalled
+      ? 'installed'
+      : pluginQueryOk
+        ? 'not installed; native panes use discovery (optional hooks: fleet install)'
+        : 'could not query Claude plugins; native panes use discovery',
   });
 
-  const hasHooks = installedPluginHasHooks(pluginDir);
-  checks.push({
-    name: 'fleet hooks',
-    ok: hasHooks,
-    detail: hasHooks
-      ? 'registered'
-      : 'installed plugin has no hooks/hooks.json — dashboard will stay empty (reinstall: fleet install)',
-  });
+  if (fleetInstalled) {
+    const hasHooks = installedPluginHasHooks(pluginDir);
+    checks.push({
+      name: 'fleet hooks',
+      ok: hasHooks,
+      detail: hasHooks
+        ? 'registered'
+        : 'installed plugin has no hooks/hooks.json; hook updates unavailable, native discovery still works (reinstall: fleet install)',
+    });
+  }
 
   const mpRoot = marketplaceDir();
   if (existsSync(mpRoot)) {
@@ -115,6 +127,7 @@ export function runDoctor(): number {
     checks.push({
       name: 'marketplace source',
       ok: sourceOk,
+      advisory: !fleetInstalled,
       detail: sourceOk
         ? join(mpRoot, 'fleet')
         : `${join(mpRoot, 'fleet')} does not resolve — likely a symlink into a Homebrew keg removed by brew upgrade; hooks silently stop loading (re-run: fleet install)`,
