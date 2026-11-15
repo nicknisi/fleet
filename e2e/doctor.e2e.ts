@@ -91,6 +91,13 @@ test('doctor accepts native discovery and checks hooks in the selected Claude pr
     symlinkSync(Bun.which('tmux')!, join(bin, 'tmux'));
     env.PATH = bin;
     expect(run(['doctor']).exitCode).toBe(1);
+    writeFileSync(
+      join(profile, 'plugins/installed_plugins.json'),
+      JSON.stringify({ plugins: { 'fleet@local': [{}] } }),
+    );
+    const missingInstallPath = run(['doctor']);
+    expect(missingInstallPath.exitCode).toBe(1);
+    expect(missingInstallPath.stdout.toString()).toContain('hook updates unavailable');
     writeFileSync(join(profile, 'plugins/installed_plugins.json'), '{"plugins":{}}');
     const noClaude = run(['doctor']);
     expect(noClaude.exitCode).toBe(0);
@@ -112,6 +119,15 @@ test('doctor accepts native discovery and checks hooks in the selected Claude pr
       }),
     );
     expect(run(['doctor']).exitCode).toBe(1);
+    // Confirmed CLI absence takes precedence over stale recorded metadata,
+    // including broken hooks and the optional marketplace source.
+    unlinkSync(join(selectedPlugin, 'hooks/hooks.json'));
+    writeFileSync(join(bin, 'claude'), '#!/bin/sh\nprintf "No plugins installed\\n"\n', { mode: 0o755 });
+    const confirmedAbsent = run(['doctor']);
+    expect(confirmedAbsent.exitCode).toBe(0);
+    expect(confirmedAbsent.stdout.toString()).toContain('not installed; native panes use discovery');
+    expect(confirmedAbsent.stdout.toString()).not.toContain('fleet hooks:');
+    expect(confirmedAbsent.stdout.toString()).toContain('marketplace source');
   } finally {
     close();
   }
