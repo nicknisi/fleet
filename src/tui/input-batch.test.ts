@@ -44,6 +44,21 @@ test('Ctrl-C bypasses error dismissal and dispatch', () => {
   expect(app.actionError).toBe('target disappeared');
 });
 
+test.each([false, true])('a target-bearing error continues dispatch (initial error: %j)', (initial) => {
+  const app = state();
+  const target = {};
+  app.actionTarget = target;
+  if (initial) app.actionError = 'retry this action';
+  const calls: Buffer[] = [];
+  dispatchInputBatch(app, batch, (report) => {
+    calls.push(report);
+    app.actionError = 'retry this action';
+  });
+  expect(calls).toHaveLength(3);
+  expect(app.actionError).toBe('retry this action');
+  expect(app.actionTarget).toBe(target);
+});
+
 test.each(['finished', 'quit', 'error'])('a %s transition stops the remaining reports', (reason) => {
   const app = state();
   let calls = 0;
