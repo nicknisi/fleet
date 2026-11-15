@@ -24,7 +24,9 @@ test('doctor accepts native discovery and checks hooks in the selected Claude pr
   try {
     // Give the real Python executable an agent basename, without relying on
     // Linux-only process-title APIs or installing a native model client.
-    symlinkSync(Bun.which('python3')!, join(bin, 'codex'));
+    const python = Bun.spawnSync(['python3', '-c', 'import sys; print(sys.executable)']);
+    expect(python.exitCode).toBe(0);
+    symlinkSync(python.stdout.toString().trim(), join(bin, 'codex'));
     const agent = join(root, 'agent.py');
     writeFileSync(agent, "import time\nprint('› Draft',flush=True)\ntime.sleep(90)\n");
     tm('new-session', '-d', '-s', 'agent', '-x', '100', '-y', '35', join(bin, 'codex'), '-u', agent);
@@ -77,14 +79,39 @@ test('doctor accepts native discovery and checks hooks in the selected Claude pr
     writeFileSync(join(root, 'config/fleet/agents.json'), '{"agents":[]}');
 
     writeFileSync(join(bin, 'claude'), '#!/bin/sh\nexit 2\n', { mode: 0o755 });
-    expect(run(['doctor']).exitCode).toBe(0);
+    const failedQuery = run(['doctor']);
+    expect(failedQuery.exitCode).toBe(0);
+    expect(failedQuery.stdout.toString()).toContain('could not query Claude plugins');
+    unlinkSync(join(selectedPlugin, 'hooks/hooks.json'));
+    const recordedBroken = run(['doctor']);
+    expect(recordedBroken.exitCode).toBe(1);
+    expect(recordedBroken.stdout.toString()).toContain('hook updates unavailable');
     // A Codex-only machine may have no Claude executable at all.
     unlinkSync(join(bin, 'claude'));
     symlinkSync(Bun.which('tmux')!, join(bin, 'tmux'));
     env.PATH = bin;
+    expect(run(['doctor']).exitCode).toBe(1);
+    writeFileSync(join(profile, 'plugins/installed_plugins.json'), '{"plugins":{}}');
     const noClaude = run(['doctor']);
     expect(noClaude.exitCode).toBe(0);
     expect(noClaude.stdout.toString()).toContain('could not query Claude plugins');
+    writeFileSync(join(profile, 'plugins/installed_plugins.json'), 'corrupt metadata');
+    expect(run(['doctor']).exitCode).toBe(0);
+    // The maintained marketplace source is shared across profiles, not their
+    // per-profile plugin cache. Its failure is advisory without a Fleet install.
+    mkdirSync(join(home, '.local/share/fleet-marketplace'), { recursive: true });
+    const missingOptionalSource = run(['doctor']);
+    expect(missingOptionalSource.exitCode).toBe(0);
+    expect(missingOptionalSource.stdout.toString()).toContain('marketplace source');
+    mkdirSync(join(selectedPlugin, 'hooks'), { recursive: true });
+    writeFileSync(join(selectedPlugin, 'hooks/hooks.json'), '{}');
+    writeFileSync(
+      join(profile, 'plugins/installed_plugins.json'),
+      JSON.stringify({
+        plugins: { 'fleet@local': [{ installPath: selectedPlugin }] },
+      }),
+    );
+    expect(run(['doctor']).exitCode).toBe(1);
   } finally {
     close();
   }

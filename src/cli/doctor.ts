@@ -18,6 +18,15 @@ interface InstalledPluginEntry {
   installPath?: string;
 }
 
+function installedPluginRecorded(pluginsRoot: string, prefix = 'fleet@'): boolean {
+  try {
+    const plugins = JSON.parse(readFileSync(join(pluginsRoot, 'installed_plugins.json'), 'utf8')).plugins ?? {};
+    return Object.keys(plugins).some((name) => name.startsWith(prefix));
+  } catch {
+    return false;
+  }
+}
+
 export function installedPluginHasHooks(pluginsRoot: string, prefix = 'fleet@'): boolean {
   const manifest = join(pluginsRoot, 'installed_plugins.json');
   if (!existsSync(manifest)) return false;
@@ -110,7 +119,9 @@ export function runDoctor(): number {
         : 'could not query Claude plugins; native panes use discovery',
   });
 
-  if (fleetInstalled) {
+  // Failed/missing CLI queries do not prove that a recorded install is absent.
+  const expectHooks = fleetInstalled || (!pluginQueryOk && installedPluginRecorded(pluginDir));
+  if (expectHooks) {
     const hasHooks = installedPluginHasHooks(pluginDir);
     checks.push({
       name: 'fleet hooks',
@@ -127,7 +138,7 @@ export function runDoctor(): number {
     checks.push({
       name: 'marketplace source',
       ok: sourceOk,
-      advisory: !fleetInstalled,
+      advisory: !expectHooks,
       detail: sourceOk
         ? join(mpRoot, 'fleet')
         : `${join(mpRoot, 'fleet')} does not resolve — likely a symlink into a Homebrew keg removed by brew upgrade; hooks silently stop loading (re-run: fleet install)`,
