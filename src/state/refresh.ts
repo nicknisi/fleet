@@ -178,7 +178,15 @@ export function verifyPaneState(state: AgentState, dirs: AgentDir[]): void {
     return;
   const scraped = scrapePane(state.paneId, state.agentType || 'claude');
   if (scraped === null) return;
-  if (scraped === state.status) return;
+  // A newer hook may have won since this row was drawn. Reconcile that
+  // record, rather than comparing the screen with the old displayed status.
+  const currentStatus = fuseState({
+    hookState: selected.hook.state,
+    hookTs: selected.hook.ts,
+    eventStatus: null,
+    scrapeStatus: null,
+  }).status;
+  if (scraped === currentStatus) return;
 
   const now = Math.floor(Date.now() / 1000);
   const tmuxPid = Number.isSafeInteger(selected.pane.tmuxPid) ? selected.pane.tmuxPid! : 0;
