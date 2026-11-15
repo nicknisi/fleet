@@ -16,7 +16,7 @@ describe('listPanes', () => {
 });
 
 describe('parsePanesOutput', () => {
-  test('parses a synthetic 13-field line, capturing window id, index, and focus', () => {
+  test('parses a synthetic 14-field line, capturing window id, index, and focus', () => {
     const line = [
       '%3',
       'mysession',
@@ -30,6 +30,7 @@ describe('parsePanesOutput', () => {
       '1',
       '0',
       '0',
+      '1000',
       '✳ Fix bug',
     ].join('\t');
     const panes = parsePanesOutput(line);
@@ -43,11 +44,12 @@ describe('parsePanesOutput', () => {
     expect(p.windowIndex).toBe(2);
     expect(p.currentPath).toBe('/home/me/proj');
     expect(p.panePid).toBe(12345);
+    expect(p.tmuxPid).toBe(1000);
     expect(p.focused).toBe(true);
     expect(p.paneTitle).toBe('✳ Fix bug');
   });
 
-  test('skips a line with fewer than 13 tab fields', () => {
+  test('skips a line with fewer than 14 tab fields', () => {
     // An 8-field line (the pre-focus format) is too short and must be dropped,
     // not parsed with a title landing in a focus field.
     const line = ['%1', 'sess', 'win', '@5', '2', '/path', '999', 'title'].join('\t');
@@ -64,7 +66,7 @@ describe('parsePanesOutput', () => {
   // user is actually looking at. Any leg missing -> not focused.
   test('focused is false unless pane is active AND window is active AND session is attached', () => {
     const mk = (paneActive: string, windowActive: string, attached: string) =>
-      ['%1', 's', 'w', '@1', '0', '/p', '10', paneActive, windowActive, attached, '0', '0', 't'].join('\t');
+      ['%1', 's', 'w', '@1', '0', '/p', '10', paneActive, windowActive, attached, '0', '0', '1000', 't'].join('\t');
     expect(parsePanesOutput(mk('1', '1', '1'))[0]!.focused).toBe(true);
     expect(parsePanesOutput(mk('1', '1', '2'))[0]!.focused).toBe(true); // two clients attached still counts
     expect(parsePanesOutput(mk('0', '1', '1'))[0]!.focused).toBe(false); // inactive pane
@@ -75,9 +77,22 @@ describe('parsePanesOutput', () => {
   test('a stray tab in the pane title does not corrupt the window or focus fields', () => {
     // pane_title is LAST in the format, so an embedded tab spills into trailing
     // (ignored) parts instead of shifting window_id/window_index/focus.
-    const line = ['%7', 'sess', 'win', '@9', '4', '/path', '321', '0', '1', '1', '40', '12', '✳ Fix\ttab bug'].join(
-      '\t',
-    );
+    const line = [
+      '%7',
+      'sess',
+      'win',
+      '@9',
+      '4',
+      '/path',
+      '321',
+      '0',
+      '1',
+      '1',
+      '40',
+      '12',
+      '1000',
+      '✳ Fix\ttab bug',
+    ].join('\t');
     const panes = parsePanesOutput(line);
     expect(panes).toHaveLength(1);
     const p = panes[0]!;
@@ -92,8 +107,8 @@ describe('parsePanesOutput', () => {
 
   test('parses multiple lines', () => {
     const stdout = [
-      ['%1', 's', 'w1', '@1', '0', '/a', '10', '1', '1', '1', '0', '0', 't1'].join('\t'),
-      ['%2', 's', 'w2', '@2', '1', '/b', '20', '0', '0', '1', '0', '0', 't2'].join('\t'),
+      ['%1', 's', 'w1', '@1', '0', '/a', '10', '1', '1', '1', '0', '0', '1000', 't1'].join('\t'),
+      ['%2', 's', 'w2', '@2', '1', '/b', '20', '0', '0', '1', '0', '0', '1000', 't2'].join('\t'),
     ].join('\n');
     const panes = parsePanesOutput(stdout);
     expect(panes).toHaveLength(2);

@@ -7,7 +7,7 @@
 
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { fuseState, hookStateForStatus } from './engine.ts';
-import { readAllStatusDirs, statusFilePath, eventsFilePath, writeFileAtomic } from './hooks.ts';
+import { readAllStatusDirs, resolvePaneHooks, statusFilePath, eventsFilePath, writeFileAtomic } from './hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './events.ts';
 import { acknowledgePlan } from './acknowledge.ts';
 import { isJsonObject, type JsonObject, type JsonValue } from '../json.ts';
@@ -158,7 +158,11 @@ export function verifyPaneState(state: AgentState, statusDirs: string[]): void {
     try {
       const content = readFileSync(file, 'utf-8');
       const existing = JSON.parse(content);
-      if (existing.pane === state.paneId) {
+      if (
+        existing.pane === state.paneId &&
+        existing.session === state.session &&
+        (!existing.tmux_pid || existing.tmux_pid === tmuxPid)
+      ) {
         // A scraped idle screen (bare prompt, no dialog/spinner) can't be told
         // apart from a just-finished turn — both show a prompt. So never let it
         // overwrite a done/working hook state; only use it to clear a stale
@@ -304,14 +308,8 @@ function applySlowCaches(
   }
   portCache = newPorts;
 
-  // Which agent owns each pane, so the scraper picks that agent's detection
-  // manifest. Freshness-wins on a pane-id collision across dirs — same rule as
-  // refreshStates' hookByPane.
-  const paneAgent = new Map<string, { agent: string; ts: number }>();
-  for (const h of hookStatuses) {
-    const prev = paneAgent.get(h.pane);
-    if (!prev || h.ts > prev.ts) paneAgent.set(h.pane, { agent: h.agent, ts: h.ts });
-  }
+  // Scraping and display use the same ownership check before freshness wins.
+  const paneAgent = resolvePaneHooks(panes, hookStatuses);
 
   // Hook-less agent discovery: map allowlisted processes with no .status file to
   // their host pane and classify working from the spinner glyph, reusing the
@@ -451,15 +449,9 @@ export function refreshStates(
   const { ok: tmuxOk, panes } = pre?.panesResult ?? listPanesResult();
   lastTmuxOk = tmuxOk;
 
-  // tmux pane ids (%N) are server-global, so the same pane number can have a
-  // .status in two agents' dirs while only one agent truly occupies it. Keep the
-  // freshest record per pane; its `agent`/`statusDir` then drive agentType and
-  // the events read below.
-  const hookByPane = new Map<string, (typeof hookStatuses)[number]>();
-  for (const h of hookStatuses) {
-    const prev = hookByPane.get(h.pane);
-    if (!prev || h.ts > prev.ts) hookByPane.set(h.pane, h);
-  }
+  // Pane ids can be reused after a server restart. An old room or agent must
+  // not claim a new occupant, even when its status timestamp is newer.
+  const hookByPane = resolvePaneHooks(panes, hookStatuses);
 
   const states: AgentState[] = [];
 

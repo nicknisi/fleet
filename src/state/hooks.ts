@@ -3,6 +3,23 @@ import { join } from 'node:path';
 import type { HookStatus, ResolvedHookStatus } from './types.ts';
 import { isJsonObject, isString, type JsonValue } from '../json.ts';
 import type { AgentDir } from '../agents/config.ts';
+import type { PaneInfo } from '../tmux/sessions.ts';
+
+// A pane number is only meaningful inside its owning server and session.
+// Filter ownership before comparing freshness across agent status directories.
+export function resolvePaneHooks(panes: PaneInfo[], statuses: ResolvedHookStatus[]): Map<string, ResolvedHookStatus> {
+  const live = new Map(panes.map((pane) => [pane.paneId, pane]));
+  const hooks = new Map<string, ResolvedHookStatus>();
+  for (const hook of statuses) {
+    const pane = live.get(hook.pane);
+    if (!pane || hook.session !== pane.sessionName) continue;
+    // Older writers may omit the server PID. Their session must still match.
+    if (hook.tmux_pid > 0 && pane.tmuxPid !== undefined && hook.tmux_pid !== pane.tmuxPid) continue;
+    const previous = hooks.get(hook.pane);
+    if (!previous || hook.ts > previous.ts) hooks.set(hook.pane, hook);
+  }
+  return hooks;
+}
 
 // The `.status` / `.events.jsonl` filename convention, named once. Keyed by the
 // pane number (`%12` -> `12`), matching what hooks/lib.sh writes.
