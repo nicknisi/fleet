@@ -32,10 +32,11 @@ function run(args: string[]): ProcResult {
     // Point tmux at a socket that cannot exist so any tmux call fails cleanly.
     env: {
       ...process.env,
-      TMUX: '',
+      TMUX: `${join(smokeHome, 'unreachable.sock')},0,0`,
       TMUX_TMPDIR: join(smokeHome, 'tmux'),
       HOME: smokeHome,
       XDG_CONFIG_HOME: join(smokeHome, 'config'),
+      XDG_CACHE_HOME: join(smokeHome, 'cache'),
     },
   });
   return {
