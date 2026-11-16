@@ -56,9 +56,9 @@ test('doctor accepts native discovery and checks hooks in the selected Claude pr
     const selectedPlugin = join(profile, 'plugins/cache/fleet');
     writeFileSync(
       join(profile, 'plugins/installed_plugins.json'),
-      JSON.stringify({ plugins: { 'fleet@local': [{ installPath: selectedPlugin }] } }),
+      JSON.stringify({ plugins: { 'fleet@fleet-local': [{ installPath: selectedPlugin }] } }),
     );
-    writeFileSync(listed, 'fleet@local\n');
+    writeFileSync(listed, 'fleet@fleet-local\n');
     const broken = run(['doctor']);
     expect(broken.exitCode).toBe(1);
     expect(broken.stdout.toString()).toContain('hook updates unavailable, native discovery still works');
@@ -66,6 +66,9 @@ test('doctor accepts native discovery and checks hooks in the selected Claude pr
 
     mkdirSync(join(selectedPlugin, 'hooks'), { recursive: true });
     writeFileSync(join(selectedPlugin, 'hooks/hooks.json'), '{}');
+    const marketplace = join(home, '.local/share/fleet-marketplace');
+    mkdirSync(marketplace, { recursive: true });
+    symlinkSync(selectedPlugin, join(marketplace, 'fleet'));
     const repaired = run(['doctor']);
     expect(repaired.exitCode).toBe(0);
     expect(repaired.stdout.toString()).toContain('fleet hooks: registered');
@@ -93,7 +96,7 @@ test('doctor accepts native discovery and checks hooks in the selected Claude pr
     expect(run(['doctor']).exitCode).toBe(1);
     writeFileSync(
       join(profile, 'plugins/installed_plugins.json'),
-      JSON.stringify({ plugins: { 'fleet@local': [{}] } }),
+      JSON.stringify({ plugins: { 'fleet@fleet-local': [{}] } }),
     );
     const missingInstallPath = run(['doctor']);
     expect(missingInstallPath.exitCode).toBe(1);
@@ -106,7 +109,7 @@ test('doctor accepts native discovery and checks hooks in the selected Claude pr
     expect(run(['doctor']).exitCode).toBe(0);
     // The maintained marketplace source is shared across profiles, not their
     // per-profile plugin cache. Its failure is advisory without a Fleet install.
-    mkdirSync(join(home, '.local/share/fleet-marketplace'), { recursive: true });
+    unlinkSync(join(marketplace, 'fleet'));
     const missingOptionalSource = run(['doctor']);
     expect(missingOptionalSource.exitCode).toBe(0);
     expect(missingOptionalSource.stdout.toString()).toContain('marketplace source');
@@ -115,7 +118,7 @@ test('doctor accepts native discovery and checks hooks in the selected Claude pr
     writeFileSync(
       join(profile, 'plugins/installed_plugins.json'),
       JSON.stringify({
-        plugins: { 'fleet@local': [{ installPath: selectedPlugin }] },
+        plugins: { 'fleet@fleet-local': [{ installPath: selectedPlugin }] },
       }),
     );
     expect(run(['doctor']).exitCode).toBe(1);
@@ -132,3 +135,59 @@ test('doctor accepts native discovery and checks hooks in the selected Claude pr
     close();
   }
 }, 15000);
+
+for (const scenario of ['missing marketplace', 'malformed metadata', 'external marketplace']) {
+  test(`doctor reports ${scenario} for a recorded install without crashing`, () => {
+    const { root, tm, close } = privateTmux('fleet-doctor-recorded-');
+    try {
+      tm('new-session', '-d', '-s', 'fixture');
+      const home = join(root, 'home');
+      const profile = join(root, 'profile');
+      const bin = join(root, 'bin');
+      const plugin = join(profile, 'plugins/cache/fleet');
+      mkdirSync(join(plugin, 'hooks'), { recursive: true });
+      mkdirSync(bin);
+      writeFileSync(join(plugin, 'hooks/hooks.json'), '{}');
+      writeFileSync(join(bin, 'claude'), '#!/bin/sh\nexit 2\n', { mode: 0o755 });
+      const manifest = join(profile, 'plugins/installed_plugins.json');
+      const env = {
+        ...process.env,
+        HOME: home,
+        CLAUDE_CONFIG_DIR: profile,
+        XDG_CONFIG_HOME: join(root, 'config'),
+        TMUX: `${join(root, 'tmux.sock')},${tm('display-message', '-p', '#{pid}')},0`,
+        PATH: `${bin}:${process.env.PATH}`,
+      };
+      const entries =
+        scenario === 'malformed metadata' ? [null, {}, [null], [{ installPath: 42 }]] : [[{ installPath: plugin }]];
+      const key = scenario === 'external marketplace' ? 'fleet@external' : 'fleet@fleet-local';
+      for (const { entry, listed } of entries.flatMap((entry) => [
+        { entry, listed: false },
+        { entry, listed: true },
+      ])) {
+        writeFileSync(manifest, JSON.stringify({ plugins: { [key]: entry } }));
+        writeFileSync(join(bin, 'claude'), listed ? `#!/bin/sh\nprintf '${key}\\n'\n` : '#!/bin/sh\nexit 2\n', {
+          mode: 0o755,
+        });
+        const result = Bun.spawnSync([process.env.FLEET_TEST_BIN ?? join(import.meta.dir, '../dist/fleet'), 'doctor'], {
+          env,
+        });
+        const output = result.stdout.toString();
+        expect(result.exitCode).toBe(scenario === 'external marketplace' ? 0 : 1);
+        expect(output).toContain('focus-events:');
+        if (scenario === 'missing marketplace') {
+          expect(output).toContain('marketplace source:');
+          expect(output).toContain(`${join(home, '.local/share/fleet-marketplace')} (missing)`);
+        } else if (scenario === 'malformed metadata') {
+          expect(output).toContain('malformed Fleet metadata');
+        } else {
+          expect(output).toContain('fleet hooks: registered');
+          expect(output).not.toContain('marketplace source:');
+        }
+        expect(result.stderr.toString()).not.toContain('TypeError');
+      }
+    } finally {
+      close();
+    }
+  }, 15000);
+}
