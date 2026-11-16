@@ -2,7 +2,7 @@
 // produced by `bun run build` — not the TS source — to catch anything that only
 // breaks once bundled + minified into `dist/fleet` (embedded package.json,
 // embedded detection manifests, missing runtime files). No tmux required: every
-// case here is a cold one-shot CLI invocation with tmux deliberately unset, so
+// case here is a cold one-shot CLI invocation with a private unreachable tmux socket, so
 // it runs on any CI runner and in the compile job right after the build step.
 //
 // Run: `bun run build && bun test ./e2e/binary.smoke.ts`
@@ -32,10 +32,11 @@ function run(args: string[]): ProcResult {
     // Point tmux at a socket that cannot exist so any tmux call fails cleanly.
     env: {
       ...process.env,
-      TMUX: '',
+      TMUX: `${join(smokeHome, 'unreachable.sock')},0,0`,
       TMUX_TMPDIR: join(smokeHome, 'tmux'),
       HOME: smokeHome,
       XDG_CONFIG_HOME: join(smokeHome, 'config'),
+      TMPDIR: smokeHome,
     },
   });
   return {

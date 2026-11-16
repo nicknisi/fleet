@@ -16,7 +16,16 @@
 // Run: `bun run build && bun test ./e2e/harness.e2e.ts`
 
 import { test, expect, describe, beforeAll, afterAll, afterEach } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+  rmSync,
+  realpathSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -95,11 +104,24 @@ function newSession(): SessionInfo {
 
 // Same, but with the pane's start directory set to `dir` so pane_current_path
 // (and thus git metadata) resolves against a known worktree.
-function newSessionIn(dir: string): SessionInfo {
+async function newSessionIn(dir: string): Promise<SessionInfo> {
   const name = `e2e${++sessionSeq}`;
   tm(['new-session', '-d', '-s', name, '-x', '120', '-y', '40', '-c', dir]);
   const pane = tmOut(['list-panes', '-t', name, '-F', '#{pane_id}']).split('\n')[0]!;
-  return { name, pane };
+  // A newly forked pane can briefly report its parent's cwd before chdir.
+  // Wait for the state the metadata assertions actually intend to inspect.
+  const expected = realpathSync(dir);
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const actual = tmOut(['display-message', '-p', '-t', pane, '#{pane_current_path}']);
+    try {
+      if (realpathSync(actual) === expected) return { name, pane };
+    } catch {
+      /* the pane may still be starting */
+    }
+    await sleep(15);
+  }
+  throw new Error(`Pane ${pane} did not enter fixture directory ${expected}`);
 }
 
 function runGit(cwd: string, args: string[]): string {
@@ -882,14 +904,14 @@ gitSuite('git metadata (compiled binary)', () => {
     return repo;
   }
 
-  test('list --json reports repository identity, worktree root, branch and diffstat', () => {
+  test('list --json reports repository identity, worktree root, branch and diffstat', async () => {
     const repo = makeRepo();
     // Dirty the tree: one staged change and one untracked file.
     writeFileSync(join(repo, 'a.txt'), 'hello world\n');
     runGit(repo, ['add', 'a.txt']);
     writeFileSync(join(repo, 'b.txt'), 'new\n');
 
-    const { name, pane } = newSessionIn(repo);
+    const { name, pane } = await newSessionIn(repo);
     writeStatus(pane, name, { state: 'idle' });
 
     const res = fleet(['list', '--json']);
@@ -912,13 +934,13 @@ gitSuite('git metadata (compiled binary)', () => {
     tm(['kill-session', '-t', name]);
   });
 
-  test('linked worktrees share a repository id (sibling grouping)', () => {
+  test('linked worktrees share a repository id (sibling grouping)', async () => {
     const repo = makeRepo();
     const wt = join(root, `wt-${Date.now()}`);
     runGit(repo, ['worktree', 'add', '-q', '-b', 'feature', wt]);
 
-    const a = newSessionIn(repo);
-    const b = newSessionIn(wt);
+    const a = await newSessionIn(repo);
+    const b = await newSessionIn(wt);
     writeStatus(a.pane, a.name, { state: 'idle' });
     writeStatus(b.pane, b.name, { state: 'idle' });
 
@@ -934,9 +956,9 @@ gitSuite('git metadata (compiled binary)', () => {
     tm(['kill-session', '-t', b.name]);
   });
 
-  test('a non-git pane reports null git metadata', () => {
+  test('a non-git pane reports null git metadata', async () => {
     const plain = mkdtempSync(join(root, 'plain-'));
-    const { name, pane } = newSessionIn(plain);
+    const { name, pane } = await newSessionIn(plain);
     writeStatus(pane, name, { state: 'idle' });
     const env = JSON.parse(fleet(['list', '--json']).stdout);
     const agent = env.agents.find((a: { pane: string }) => a.pane === pane);
