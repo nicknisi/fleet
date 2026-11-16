@@ -7,6 +7,18 @@ export interface MouseEvent {
   type: 'press' | 'release' | 'move';
 }
 
+// Terminal transports may put several mouse reports in one read. Split only
+// complete mouse-only batches; preserve mixed keyboard input byte-for-byte.
+export function splitMouseEvents(data: Buffer): Buffer[] {
+  if (!isMouseSequence(data)) return [data];
+  const text = data.toString('latin1');
+  // oxlint-disable-next-line no-control-regex
+  const reports = text.match(/\x1b\[<\d+;\d+;\d+[Mm]/g);
+  return reports && reports.length > 1 && reports.join('') === text
+    ? reports.map((report) => Buffer.from(report, 'ascii'))
+    : [data];
+}
+
 /**
  * Parse a single SGR mouse event from the given buffer.
  *

@@ -1,5 +1,19 @@
 import { describe, expect, test } from 'bun:test';
-import { isMouseSequence, parseMouseEvent } from './mouse.ts';
+import { isMouseSequence, parseMouseEvent, splitMouseEvents } from './mouse.ts';
+
+describe('mouse report batches', () => {
+  test('preserves every wheel report and mixed mouse ordering from one terminal read', () => {
+    const reports = ['\x1b[<64;10;5M', '\x1b[<64;10;5M', '\x1b[<65;10;5M', '\x1b[<0;10;5m'];
+    expect(splitMouseEvents(Buffer.from(reports.join(''))).map((chunk) => chunk.toString())).toEqual(reports);
+  });
+  test.each(['\x1b[<64;10;5Mtext', '\x1b[<64;10;5M\x1b[<65;', 'plain keyboard input'])(
+    'keeps incomplete or mixed input intact: %j',
+    (text) => {
+      const input = Buffer.from(text);
+      expect(splitMouseEvents(input)).toEqual([input]);
+    },
+  );
+});
 
 describe('parseMouseEvent', () => {
   test('parses left-click press', () => {
