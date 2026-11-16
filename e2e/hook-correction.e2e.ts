@@ -59,6 +59,56 @@ test('scraped correction updates the selected hook instead of promoting a losing
   }
 }, 15000);
 
+test('correction leaves a replacement hook untouched when it wins during capture', async () => {
+  const { root, tm, startAgent, waitFor, close } = privateTmux('fleet-correct-capture-');
+  const keys = ['TMUX', 'PATH', 'FLEET_TEST_REAL_TMUX', 'FLEET_TEST_HOOK_NEXT', 'FLEET_TEST_HOOK_FILE'];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  try {
+    startAgent(100, 35, "import time\nprint('Do you want to proceed? [y/n]',flush=True)\ntime.sleep(90)");
+    await waitFor(() => tm('capture-pane', '-p', '-t', 'agent').includes('[y/n]'));
+    const server = Number(tm('display-message', '-p', '#{pid}'));
+    const pane = tm('display-message', '-p', '-t', 'agent', '#{pane_id}');
+    process.env.TMUX = `${join(root, 'tmux.sock')},${server},0`;
+    const dirs = ['codex', 'claude'].map((name) => ({ name, statusDir: join(root, name) }));
+    for (const dir of dirs) mkdirSync(dir.statusDir);
+    const files = dirs.map((dir) => join(dir.statusDir, `${pane.slice(1)}.status`));
+    const now = Math.floor(Date.now() / 1000);
+    const hook = { pane, session: 'agent', state: 'working', tool: '', ts: now - 10, tmux_pid: server };
+    writeFileSync(files[0]!, JSON.stringify(hook));
+    const state = refreshStates(dirs, { panesResult: listPanesResult(), hookStatuses: readAllStatusDirs(dirs) }).find(
+      (row) => row.paneId === pane,
+    )!;
+    const before = readFileSync(files[0]!, 'utf8');
+    const next = join(root, 'next-hook');
+    const replacement = JSON.stringify({ ...hook, state: 'question', ts: now });
+    writeFileSync(next, replacement);
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, 'tmux'),
+      '#!/bin/sh\nif [ "$1" = capture-pane ]; then cp "$FLEET_TEST_HOOK_NEXT" "$FLEET_TEST_HOOK_FILE"; fi\nexec "$FLEET_TEST_REAL_TMUX" "$@"\n',
+      { mode: 0o755 },
+    );
+    process.env.FLEET_TEST_REAL_TMUX = Bun.which('tmux')!;
+    process.env.FLEET_TEST_HOOK_NEXT = next;
+    process.env.FLEET_TEST_HOOK_FILE = files[1]!;
+    process.env.PATH = `${bin}:${process.env.PATH}`;
+    verifyPaneState(state, dirs);
+    expect(readFileSync(files[0]!, 'utf8')).toBe(before);
+    expect(readFileSync(files[1]!, 'utf8')).toBe(replacement);
+    const after = refreshStates(dirs, { panesResult: listPanesResult(), hookStatuses: readAllStatusDirs(dirs) }).find(
+      (row) => row.paneId === pane,
+    )!;
+    expect(after.agentType).toBe('claude');
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    close();
+  }
+}, 15000);
+
 test('correction compares the scrape with a winner published after the displayed row', async () => {
   const { root, tm, startAgent, waitFor, close } = privateTmux('fleet-correct-drift-');
   const previous = process.env.TMUX;

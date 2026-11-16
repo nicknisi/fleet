@@ -178,6 +178,18 @@ export function verifyPaneState(state: AgentState, dirs: AgentDir[]): void {
     return;
   const scraped = scrapePane(state.paneId, state.agentType || 'claude');
   if (scraped === null) return;
+  // Capturing the pane yields time for another hook or pane owner to replace
+  // the selected record. Do not promote the old hook with a fresh timestamp.
+  const latest = winningPaneHook(state.paneId, dirs);
+  if (
+    !latest ||
+    latest.hook.statusDir !== selected.hook.statusDir ||
+    latest.hook.ts !== selected.hook.ts ||
+    latest.hook.state !== selected.hook.state ||
+    latest.pane.panePid !== selected.pane.panePid ||
+    latest.pane.tmuxPid !== selected.pane.tmuxPid
+  )
+    return;
   // A newer hook may have won since this row was drawn. Reconcile that
   // record, rather than comparing the screen with the old displayed status.
   const currentStatus = fuseState({
