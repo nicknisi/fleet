@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.31.1](https://github.com/nicknisi/fleet/compare/v0.31.0...v0.31.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* diagnose native discovery without requiring Claude hooks ([#108](https://github.com/nicknisi/fleet/issues/108)) ([40b3704](https://github.com/nicknisi/fleet/commit/40b3704979cac5361f163e36a027f7c723ae2823))
+* dispatch complete mouse report batches ([#107](https://github.com/nicknisi/fleet/issues/107)) ([262de8b](https://github.com/nicknisi/fleet/commit/262de8b45c609c294d64d1c3bf45f1264a15650c))
+* reject hooks from previous tmux pane owners ([#106](https://github.com/nicknisi/fleet/issues/106)) ([8b35dc5](https://github.com/nicknisi/fleet/commit/8b35dc5e7ba03139f7ad968c66ab9962ab21c9d7))
+
 ## [0.31.0](https://github.com/nicknisi/fleet/compare/v0.30.0...v0.31.0) (2026-11-09)
 
 
