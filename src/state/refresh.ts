@@ -381,7 +381,8 @@ function applySlowCaches(
   // the pane falls back to SHELL exactly as before Phase 3.
   try {
     const now = Math.floor(Date.now() / 1000);
-    const discovered = scanDiscovered(captureCache, panePids, psTable, discoveryLastWorking, now);
+    const tags = new Map(panes.flatMap((p) => (p.agentTag ? [[p.paneId, p.agentTag] as const] : [])));
+    const discovered = scanDiscovered(captureCache, panePids, psTable, discoveryLastWorking, now, tags);
     discoveryCache = new Map(discovered.agents.map((a) => [a.paneId, a]));
     discoveryLastWorking = discovered.lastWorking;
   } catch {

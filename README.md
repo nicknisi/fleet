@@ -233,6 +233,15 @@ A hooked agent still always wins its pane: when a `.status` file exists, the hoo
 
 Tune it with tmux options (see [Configuration](#configuration)): `@fleet_discover off` turns it off, `@fleet_discover_agents` overrides the allowlist, `@fleet_discover_idle_secs` sets the debounce.
 
+**Remote agents.** When an agent runs on another machine and you reach it over `ssh` (or `mosh`, `et`, …) from a local pane, the process scan only sees `ssh`. Tag the pane with the agent it shows and Fleet treats it as that agent — preview, passthrough, answering and status detection all work on the local pane:
+
+```sh
+tmux set-option -p -t "$TMUX_PANE" @fleet_agent codex   # before connecting
+tmux set-option -p -u -t "$TMUX_PANE" @fleet_agent      # after disconnecting
+```
+
+The tag must name an agent in the discovery allowlist, beats the process scan, and still loses to a real local hook. Fleet can't tell when the remote session ends, so whatever sets the tag should clear it (a `trap … EXIT` in a wrapper script works). Git and port details come from the local pane, so they describe the local side. Pane options need tmux 3.0+.
+
 ### Desktop notifications
 
 When an agent finishes a turn — or stops to ask you something — while you're **not** looking, Fleet fires a **silent** OS-native desktop notification (`osascript` on macOS, `notify-send` on Linux). It's deliberately soundless: at fifteen agents, a chime per finish is noise, not a signal. Delivery is best-effort and no-ops cleanly when there's no desktop session (headless, SSH).
