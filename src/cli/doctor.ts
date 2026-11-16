@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { tmux, getTmuxOption } from '../tmux/ipc.ts';
 import { loadAgentDirs } from '../agents/config.ts';
 import { marketplaceDir } from './install.ts';
+import { isJsonObject, isString, type JsonValue } from '../json.ts';
 
 interface Check {
   name: string;
@@ -14,30 +15,39 @@ interface Check {
   advisory?: boolean;
 }
 
-interface InstalledPluginEntry {
-  installPath?: string;
+function recordedPluginState(pluginsRoot: string, prefix = 'fleet@') {
+  const result = { recorded: false, localMarketplace: false, malformed: false, hasHooks: false };
+  try {
+    // SAFETY: JSON.parse output is narrowed at this file boundary below.
+    const manifest = JSON.parse(readFileSync(join(pluginsRoot, 'installed_plugins.json'), 'utf8')) as JsonValue;
+    if (!isJsonObject(manifest) || !isJsonObject(manifest.plugins)) return result;
+    for (const [key, entries] of Object.entries(manifest.plugins)) {
+      if (!key.startsWith(prefix)) continue;
+      result.recorded = true;
+      if (key === 'fleet@fleet-local') result.localMarketplace = true;
+      if (!Array.isArray(entries)) {
+        result.malformed = true;
+        continue;
+      }
+      for (const entry of entries) {
+        if (!isJsonObject(entry) || (entry.installPath !== undefined && !isString(entry.installPath))) {
+          result.malformed = true;
+          continue;
+        }
+        if (entry.installPath && existsSync(join(entry.installPath, 'hooks', 'hooks.json'))) {
+          result.hasHooks = true;
+        }
+      }
+    }
+  } catch {
+    // Unreadable metadata cannot establish that a plugin is installed.
+  }
+  return result;
 }
 
 export function installedPluginHasHooks(pluginsRoot: string, prefix = 'fleet@'): boolean {
-  const manifest = join(pluginsRoot, 'installed_plugins.json');
-  if (!existsSync(manifest)) return false;
-
-  let plugins: Record<string, InstalledPluginEntry[]>;
-  try {
-    plugins = JSON.parse(readFileSync(manifest, 'utf8')).plugins ?? {};
-  } catch {
-    return false;
-  }
-
-  for (const [key, entries] of Object.entries(plugins)) {
-    if (!key.startsWith(prefix)) continue;
-    for (const entry of entries) {
-      if (entry.installPath && existsSync(join(entry.installPath, 'hooks', 'hooks.json'))) {
-        return true;
-      }
-    }
-  }
-  return false;
+  const recorded = recordedPluginState(pluginsRoot, prefix);
+  return recorded.hasHooks && !recorded.malformed;
 }
 
 // The global focus-events option gates per-client focus detection. With it
@@ -50,8 +60,8 @@ export function focusEventsOn(option: string | null): boolean {
 // e.g. a symlink into a Homebrew keg that `brew upgrade` deleted. Claude Code
 // then drops the plugin at session start and hooks silently stop firing, while
 // the cache-based check above still passes. existsSync follows symlinks, so a
-// dangling link reads as missing. Only meaningful when the marketplace root
-// exists at all (a source-less setup is reported by the plugin check instead).
+// dangling link reads as missing. A recorded install also needs this source
+// when the marketplace root itself is missing.
 export function marketplaceSourceOk(mpDir: string): boolean {
   return existsSync(join(mpDir, 'fleet', 'hooks', 'hooks.json'));
 }
@@ -67,12 +77,13 @@ export function runDoctor(): number {
   });
 
   const home = homedir();
-  const pluginDir = join(home, '.claude', 'plugins');
+  const pluginDir = join(process.env.CLAUDE_CONFIG_DIR || join(home, '.claude'), 'plugins');
   const pluginInstalled = existsSync(pluginDir);
   checks.push({
     name: 'plugin directory',
     ok: pluginInstalled,
-    detail: pluginInstalled ? pluginDir : 'not found',
+    advisory: true,
+    detail: pluginInstalled ? pluginDir : `${pluginDir} (optional; native panes use discovery)`,
   });
 
   const dirs = loadAgentDirs();
@@ -86,38 +97,62 @@ export function runDoctor(): number {
   }
 
   let fleetInstalled = false;
-  const proc = Bun.spawnSync({
-    cmd: ['claude', 'plugin', 'list'],
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  if (proc.exitCode === 0 && proc.stdout.toString().includes('fleet@')) {
-    fleetInstalled = true;
+  let localMarketplaceInstalled = false;
+  let pluginQueryOk = false;
+  try {
+    const proc = Bun.spawnSync({
+      cmd: ['claude', 'plugin', 'list'],
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    pluginQueryOk = proc.exitCode === 0;
+    fleetInstalled = pluginQueryOk && proc.stdout.toString().includes('fleet@');
+    localMarketplaceInstalled = pluginQueryOk && proc.stdout.toString().split(/\s+/).includes('fleet@fleet-local');
+  } catch {
+    // Native discovery also works on machines without the Claude CLI.
   }
   checks.push({
     name: 'fleet plugin',
     ok: fleetInstalled,
-    detail: fleetInstalled ? 'installed' : 'not installed (run: fleet install)',
+    advisory: true,
+    detail: fleetInstalled
+      ? 'installed'
+      : pluginQueryOk
+        ? 'not installed; native panes use discovery (optional hooks: fleet install)'
+        : 'could not query Claude plugins; native panes use discovery',
   });
 
-  const hasHooks = installedPluginHasHooks(pluginDir);
-  checks.push({
-    name: 'fleet hooks',
-    ok: hasHooks,
-    detail: hasHooks
-      ? 'registered'
-      : 'installed plugin has no hooks/hooks.json — dashboard will stay empty (reinstall: fleet install)',
-  });
+  // Failed/missing CLI queries do not prove that a recorded install is absent.
+  const recorded = recordedPluginState(pluginDir);
+  const expectHooks = fleetInstalled || (!pluginQueryOk && recorded.recorded);
+  if (expectHooks) {
+    const hasHooks = recorded.hasHooks && !recorded.malformed;
+    checks.push({
+      name: 'fleet hooks',
+      ok: hasHooks,
+      detail: recorded.malformed
+        ? `malformed Fleet metadata in ${join(pluginDir, 'installed_plugins.json')}; hook updates unavailable, native discovery still works (reinstall: fleet install)`
+        : hasHooks
+          ? 'registered'
+          : 'installed plugin has no hooks/hooks.json; hook updates unavailable, native discovery still works (reinstall: fleet install)',
+    });
+  }
 
   const mpRoot = marketplaceDir();
-  if (existsSync(mpRoot)) {
+  const rootExists = existsSync(mpRoot);
+  // Only fleet install's own marketplace depends on this local source.
+  const requireMarketplace = expectHooks && (pluginQueryOk ? localMarketplaceInstalled : recorded.localMarketplace);
+  if (requireMarketplace || rootExists) {
     const sourceOk = marketplaceSourceOk(mpRoot);
     checks.push({
       name: 'marketplace source',
       ok: sourceOk,
+      advisory: !requireMarketplace,
       detail: sourceOk
         ? join(mpRoot, 'fleet')
-        : `${join(mpRoot, 'fleet')} does not resolve — likely a symlink into a Homebrew keg removed by brew upgrade; hooks silently stop loading (re-run: fleet install)`,
+        : !rootExists
+          ? `${mpRoot} (missing); installed plugin source unavailable (re-run: fleet install)`
+          : `${join(mpRoot, 'fleet')} does not resolve — likely a symlink into a Homebrew keg removed by brew upgrade; hooks silently stop loading (re-run: fleet install)`,
     });
   }
 
