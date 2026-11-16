@@ -7,7 +7,15 @@
 
 import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { fuseState, hookStateForStatus } from './engine.ts';
-import { readAllStatusDirs, statusFilePath, eventsFilePath, writeFileAtomic } from './hooks.ts';
+import {
+  readAllStatusDirs,
+  resolvePaneHooks,
+  hookBelongsToPane,
+  parseStatusFile,
+  statusFilePath,
+  eventsFilePath,
+  writeFileAtomic,
+} from './hooks.ts';
 import { readLastEvents, deriveStatusFromEvents } from './events.ts';
 import { acknowledgePlan } from './acknowledge.ts';
 import { isJsonObject, type JsonObject, type JsonValue } from '../json.ts';
@@ -52,7 +60,7 @@ import { readGitMetadata, readGitMetadataAsync, branchLabel, type GitMetadata } 
 import type { TmuxControlClient } from '../tmux/control.ts';
 import { listPanesResultVia } from '../tmux/control-adapter.ts';
 import { flipControlDead, type ControlLatch } from '../tmux/control-router.ts';
-import { tmuxOrNull, tmuxOrThrow } from '../tmux/ipc.ts';
+import { tmuxOrThrow } from '../tmux/ipc.ts';
 import { detectPorts, detectPortsAsync, type PanePort } from '../tmux/ports.ts';
 
 export function shortenPath(path: string): string {
@@ -144,21 +152,65 @@ export function reloadRenameCache(): void {
 // A scraped correction persisted back to the winning hook's status file: when a
 // pane's live screen disagrees with its stored hook state (a prompt was
 // answered, a turn finished), write the scraped truth so the next read agrees.
-export function verifyPaneState(state: AgentState, statusDirs: string[]): void {
+function winningPaneHook(paneId: string, dirs: AgentDir[]) {
+  const live = listPanesResult();
+  const pane = live.ok ? live.panes.find((candidate) => candidate.paneId === paneId) : undefined;
+  if (!pane) return null;
+  const hooks = dirs.flatMap((dir) => {
+    try {
+      const hook = parseStatusFile(readFileSync(statusFilePath(dir.statusDir, paneId), 'utf8'));
+      return hook ? [{ ...hook, agent: dir.name, statusDir: dir.statusDir }] : [];
+    } catch {
+      return [];
+    }
+  });
+  const hook = resolvePaneHooks([pane], hooks).get(paneId);
+  return hook ? { hook, pane } : null;
+}
+
+export function verifyPaneState(state: AgentState, dirs: AgentDir[]): void {
+  const selected = winningPaneHook(state.paneId, dirs);
+  if (
+    !selected ||
+    selected.hook.agent !== state.agentType ||
+    (state.panePid !== undefined && selected.pane.panePid !== state.panePid)
+  )
+    return;
   const scraped = scrapePane(state.paneId, state.agentType || 'claude');
   if (scraped === null) return;
-  if (scraped === state.status) return;
+  // Capturing the pane yields time for another hook or pane owner to replace
+  // the selected record. Do not promote the old hook with a fresh timestamp.
+  const latest = winningPaneHook(state.paneId, dirs);
+  if (
+    !latest ||
+    latest.hook.statusDir !== selected.hook.statusDir ||
+    latest.hook.ts !== selected.hook.ts ||
+    latest.hook.state !== selected.hook.state ||
+    latest.pane.panePid !== selected.pane.panePid ||
+    latest.pane.tmuxPid !== selected.pane.tmuxPid
+  )
+    return;
+  // A newer hook may have won since this row was drawn. Reconcile that
+  // record, rather than comparing the screen with the old displayed status.
+  const currentStatus = fuseState({
+    hookState: selected.hook.state,
+    hookTs: selected.hook.ts,
+    eventStatus: null,
+    scrapeStatus: null,
+  }).status;
+  if (scraped === currentStatus) return;
 
   const now = Math.floor(Date.now() / 1000);
-  const tmuxPid = parseInt(tmuxOrNull(['display-message', '-p', '#{pid}']) ?? '', 10) || 0;
+  const tmuxPid = Number.isSafeInteger(selected.pane.tmuxPid) ? selected.pane.tmuxPid! : 0;
   const newHookState = hookStateForStatus(scraped);
 
-  for (const dir of statusDirs) {
+  for (const dir of [selected.hook.statusDir]) {
     const file = statusFilePath(dir, state.paneId);
     try {
       const content = readFileSync(file, 'utf-8');
       const existing = JSON.parse(content);
-      if (existing.pane === state.paneId) {
+      const parsed = parseStatusFile(content);
+      if (parsed?.pane === state.paneId && hookBelongsToPane(parsed, selected.pane)) {
         // A scraped idle screen (bare prompt, no dialog/spinner) can't be told
         // apart from a just-finished turn — both show a prompt. So never let it
         // overwrite a done/working hook state; only use it to clear a stale
@@ -193,14 +245,26 @@ export function verifyPaneState(state: AgentState, statusDirs: string[]): void {
 // idle). Either signal alone is enough to clear the agent. Self-gating: a
 // working/waiting/asking agent derives neither, so it's left untouched.
 export function acknowledgePane(paneId: string, statusDirs: string[]): void {
+  const selected = winningPaneHook(
+    paneId,
+    statusDirs.map((statusDir) => ({ name: '', statusDir })),
+  );
+  if (selected) acknowledgeHook(selected.hook, selected.pane);
+}
+
+function acknowledgeHook(hook: { pane: string; statusDir: string }, pane: PaneInfo): void {
+  const paneId = hook.pane;
   const now = Math.floor(Date.now() / 1000);
-  for (const dir of statusDirs) {
+  for (const dir of [hook.statusDir]) {
     const statusFile = statusFilePath(dir, paneId);
     let current: JsonObject;
     try {
+      const content = readFileSync(statusFile, 'utf-8');
       // SAFETY: JSON.parse returns any; JsonValue is the sound type of any JSON document.
-      const parsed = JSON.parse(readFileSync(statusFile, 'utf-8')) as JsonValue;
+      const parsed = JSON.parse(content) as JsonValue;
       if (!isJsonObject(parsed)) continue;
+      const owner = parseStatusFile(content);
+      if (!owner || !hookBelongsToPane(owner, pane)) continue;
       current = parsed;
     } catch {
       continue;
@@ -233,9 +297,11 @@ export function acknowledgePane(paneId: string, statusDirs: string[]): void {
 // the status-line "clear all" chip. Reuses acknowledgePane's ready-only gating,
 // so working/waiting/asking agents are left untouched.
 export function acknowledgeAllReady(dirs: AgentDir[]): void {
-  const statusDirs = dirs.map((d) => d.statusDir);
-  for (const hook of readAllStatusDirs(dirs)) {
-    acknowledgePane(hook.pane, statusDirs);
+  const live = listPanesResult();
+  if (!live.ok) return;
+  const panes = new Map(live.panes.map((pane) => [pane.paneId, pane]));
+  for (const hook of resolvePaneHooks(live.panes, readAllStatusDirs(dirs)).values()) {
+    acknowledgeHook(hook, panes.get(hook.pane)!);
   }
 }
 
@@ -304,14 +370,8 @@ function applySlowCaches(
   }
   portCache = newPorts;
 
-  // Which agent owns each pane, so the scraper picks that agent's detection
-  // manifest. Freshness-wins on a pane-id collision across dirs — same rule as
-  // refreshStates' hookByPane.
-  const paneAgent = new Map<string, { agent: string; ts: number }>();
-  for (const h of hookStatuses) {
-    const prev = paneAgent.get(h.pane);
-    if (!prev || h.ts > prev.ts) paneAgent.set(h.pane, { agent: h.agent, ts: h.ts });
-  }
+  // Scraping and display use the same ownership check before freshness wins.
+  const paneAgent = resolvePaneHooks(panes, hookStatuses);
 
   // Hook-less agent discovery: map allowlisted processes with no .status file to
   // their host pane and classify working from the spinner glyph, reusing the
@@ -451,15 +511,9 @@ export function refreshStates(
   const { ok: tmuxOk, panes } = pre?.panesResult ?? listPanesResult();
   lastTmuxOk = tmuxOk;
 
-  // tmux pane ids (%N) are server-global, so the same pane number can have a
-  // .status in two agents' dirs while only one agent truly occupies it. Keep the
-  // freshest record per pane; its `agent`/`statusDir` then drive agentType and
-  // the events read below.
-  const hookByPane = new Map<string, (typeof hookStatuses)[number]>();
-  for (const h of hookStatuses) {
-    const prev = hookByPane.get(h.pane);
-    if (!prev || h.ts > prev.ts) hookByPane.set(h.pane, h);
-  }
+  // Pane ids can be reused after a server restart. An old hook must not claim
+  // a new occupant, even when its status timestamp is newer.
+  const hookByPane = resolvePaneHooks(panes, hookStatuses);
 
   const states: AgentState[] = [];
 

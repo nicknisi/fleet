@@ -313,7 +313,7 @@ async function launchTui(): Promise<number> {
         switchClient(selected.paneId);
         finish(0);
       }
-      verifyPaneState(selected, statusDirs);
+      verifyPaneState(selected, dirs);
       acknowledgePane(selected.paneId, statusDirs);
     };
 

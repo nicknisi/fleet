@@ -27,7 +27,7 @@ function fakeClient(opts: {
 
 describe('listPanesResultVia', () => {
   test('runs listPanesCommand (single-quoted format) and parses the body identically to the fork path', async () => {
-    const line = ['%3', 's', 'w', '@5', '2', '/p', '123', '1', '1', '1', '0', '0', 't'].join('\t');
+    const line = ['%3', 's', 'w', '@5', '2', '/p', '123', '1', '1', '1', '0', '0', '1000', 't'].join('\t');
     const client = fakeClient({ run: async () => line });
     const res = await listPanesResultVia(client);
     expect(res.ok).toBe(true);
@@ -35,6 +35,7 @@ describe('listPanesResultVia', () => {
     expect(res.panes[0]!.paneId).toBe('%3');
     expect(res.panes[0]!.windowId).toBe('@5');
     expect(res.panes[0]!.focused).toBe(true);
+    expect(res.panes[0]!.tmuxPid).toBe(1000);
     // The exact command string from sessions.ts is sent verbatim — no
     // re-derivation, so the fork and control paths share one format source.
     expect(client.runCalls).toEqual([listPanesCommand()]);
