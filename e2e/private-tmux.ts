@@ -28,7 +28,9 @@ export function privateTmux(prefix: string) {
       if (check()) return;
       await Bun.sleep(30);
     }
-    throw new Error('Timed out waiting for preview fixture\n' + tm('capture-pane', '-p', '-t', 'monitor'));
+    // Not tm(): it throws when no monitor session exists, hiding the timeout.
+    const screen = Bun.spawnSync(['tmux', '-S', socket, 'capture-pane', '-p', '-t', 'monitor'], { env });
+    throw new Error('Timed out waiting for fixture\n' + screen.stdout.toString());
   };
   mkdirSync(join(root, 'config/fleet'), { recursive: true });
   writeFileSync(join(root, 'config/fleet/agents.json'), '{"agents":[]}');
