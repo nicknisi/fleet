@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -172,16 +172,23 @@ describe('extension event wiring', () => {
     expect(readStatus('16')?.state).toBe('done');
   });
 
-  test('a retry after agent_end stays working through its backoff; done only when pi settles', async () => {
-    const h = loadWithTmux('%15');
-    h.agent_start?.();
-    h.agent_end?.();
-    await new Promise((r) => setTimeout(r, 50)); // pi's retry backoff: no done in between
-    expect(readStatus('15')?.state).toBe('working');
-    h.agent_start?.();
-    h.agent_end?.();
-    h.agent_settled?.();
-    expect(readStatus('15')?.state).toBe('done');
+  test('a retry after agent_end stays working through its backoff; done only when pi settles', () => {
+    // A controlled clock: pi's retry backoff waits 2s, 4s, then 8s, longer than any
+    // agent_end grace period, so nothing may publish done before agent_settled.
+    jest.useFakeTimers();
+    try {
+      const h = loadWithTmux('%15');
+      h.agent_start?.();
+      h.agent_end?.();
+      jest.advanceTimersByTime(10_000);
+      expect(readStatus('15')?.state).toBe('working');
+      h.agent_start?.();
+      h.agent_end?.();
+      h.agent_settled?.();
+      expect(readStatus('15')?.state).toBe('done');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('a pi confirm dialog writes permit, other dialogs write question, and the run resumes after', () => {
