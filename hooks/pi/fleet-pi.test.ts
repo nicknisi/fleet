@@ -92,6 +92,8 @@ describe('buildPiStatusLine', () => {
 
 describe('extension event wiring', () => {
   let statusDir: string;
+  // Each loaded extension's shutdown, so teardown stops its timers even after a failed assertion.
+  const shutdowns: Array<() => void> = [];
   let saved: SavedEnv;
 
   beforeEach(() => {
@@ -105,6 +107,7 @@ describe('extension event wiring', () => {
   });
 
   afterEach(() => {
+    for (const shutdown of shutdowns.splice(0)) shutdown();
     rmSync(statusDir, { recursive: true, force: true });
     for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete process.env[k];
@@ -131,13 +134,14 @@ describe('extension event wiring', () => {
     // SAFETY: mockPi implements only the on()/events surface piDefault touches; the
     // captured handler type is deliberately looser than pi's per-event handler types.
     piDefault(mockPi as Parameters<typeof piDefault>[0]);
+    shutdowns.push(() => handlers.session_shutdown?.());
     return handlers;
   }
 
   const readStatus = (paneNum: string): ReturnType<typeof parseStatusFile> =>
     parseStatusFile(readFileSync(join(statusDir, `${paneNum}.status`), 'utf8'));
 
-  test('agent_start writes working; tool_execution_start enriches the label; agent_end writes done', () => {
+  test('agent_start writes working; tool_execution_start enriches the label; agent_settled writes done', () => {
     const h = loadWithTmux('%42');
 
     h.agent_start?.();
@@ -150,8 +154,37 @@ describe('extension event wiring', () => {
     expect(s?.tool).toBe('Bash: bun test');
 
     h.agent_end?.();
+    expect(readStatus('42')?.state).toBe('working'); // a retry or follow-up may still come
+    h.agent_settled?.();
     s = readStatus('42');
     expect(s?.state).toBe('done');
+  });
+
+  test('without agent_settled (older pi), agent_end writes done after a short delay', async () => {
+    process.env.FLEET_PI_DONE_DELAY_MS = '20';
+    try {
+      const h = loadWithTmux('%14');
+      h.agent_start?.();
+      h.agent_end?.();
+      await new Promise((r) => setTimeout(r, 60));
+      expect(readStatus('14')?.state).toBe('done');
+    } finally {
+      delete process.env.FLEET_PI_DONE_DELAY_MS;
+    }
+  });
+
+  test('a retry that starts right after agent_end keeps working instead of flashing done', async () => {
+    process.env.FLEET_PI_DONE_DELAY_MS = '20';
+    try {
+      const h = loadWithTmux('%15');
+      h.agent_start?.();
+      h.agent_end?.();
+      h.agent_start?.();
+      await new Promise((r) => setTimeout(r, 60));
+      expect(readStatus('15')?.state).toBe('working');
+    } finally {
+      delete process.env.FLEET_PI_DONE_DELAY_MS;
+    }
   });
 
   test('a pi confirm dialog writes permit, other dialogs write question, and the run resumes after', () => {
@@ -189,6 +222,7 @@ describe('extension event wiring', () => {
 
       h.ui_prompt_end?.();
       h.agent_end?.();
+      h.agent_settled?.();
       const done = statSync(file).mtimeMs;
       await new Promise((r) => setTimeout(r, 80));
       expect(statSync(file).mtimeMs).toBe(done);
@@ -202,6 +236,7 @@ describe('extension event wiring', () => {
     const h = loadWithTmux('%12');
     h.agent_start?.();
     h.agent_end?.();
+    h.agent_settled?.();
     h.ui_prompt_start?.({ kind: 'input' });
     expect(readStatus('12')?.state).toBe('question');
     h.ui_prompt_end?.();

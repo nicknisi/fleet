@@ -18,7 +18,9 @@
  *   ui_prompt_start (confirm)       -> { state: "permit" }   (a pi dialog waits on the user)
  *   ui_prompt_start (other kinds)   -> { state: "question" }
  *   ui_prompt_end                   -> back to "working" mid-run, else the state before the prompt
- *   agent_end                      -> { state: "done" }      (fleet ages done -> idle)
+ *   agent_settled                  -> { state: "done" }      (fleet ages done -> idle)
+ *   agent_end                      -> "done" 3s later unless pi starts again (retry, follow-up)
+ *                                     or settles first; covers pi builds without agent_settled
  *   session_info_changed           -> rewrite current state carrying pi's session name
  *   session_shutdown               -> remove the status file (pi exited; no stale state)
  *
@@ -81,7 +83,7 @@ type PiToolEvent = {
 };
 interface PiExtensionAPI {
   on(
-    event: 'session_start' | 'agent_start' | 'agent_end' | 'turn_start' | 'session_shutdown',
+    event: 'session_start' | 'agent_start' | 'agent_end' | 'agent_settled' | 'turn_start' | 'session_shutdown',
     handler: () => void,
   ): void;
   on(event: 'tool_execution_start', handler: (event: PiToolExecutionStartEvent) => void): void;
@@ -239,6 +241,20 @@ export default function (pi: PiExtensionAPI): void {
     });
   };
 
+  // agent_end can precede an automatic retry or a queued follow-up; agent_settled
+  // is pi's "finished" boundary. Older pi builds lack agent_settled, so agent_end
+  // also schedules done, the way hooks/stop.sh waits before writing done.
+  let doneTimer: ReturnType<typeof setTimeout> | undefined;
+  const doneDelayMs = Number(process.env.FLEET_PI_DONE_DELAY_MS) || 3000;
+  const finish = (): void => {
+    if (doneTimer) clearTimeout(doneTimer);
+    doneTimer = undefined;
+    if (running || lastState === 'done') return;
+    currentTool = '';
+    write('done', '');
+    notify('done');
+  };
+
   pi.on('session_start', () => {
     // tmux env is fully populated by now; backfill anything missing at load.
     if (!session) session = tmuxQuery('#{session_name}');
@@ -251,6 +267,8 @@ export default function (pi: PiExtensionAPI): void {
     write('idle', '');
   });
   pi.on('agent_start', () => {
+    if (doneTimer) clearTimeout(doneTimer);
+    doneTimer = undefined;
     running = true;
     write('working', currentTool);
     startHeartbeat();
@@ -262,22 +280,28 @@ export default function (pi: PiExtensionAPI): void {
     currentTool = fleetPiLabel(event.toolName, event.args);
     write('working', currentTool);
   });
+  // Write a waiting state, notifying only on the way in: a question tool that
+  // also opens a dialog must not message twice.
+  const wait = (state: 'permit' | 'question', label: string): void => {
+    const was = lastState;
+    write(state, label);
+    if (was !== state) notify(state, label);
+  };
   pi.on('tool_call', (event) => {
     // tool_call fires after every extension's tool_execution_start handler, so
     // another status extension cannot overwrite this with its own working write.
-    if (isPiQuestionTool(event.toolName)) write('question', QUESTION_TOOL_LABEL);
+    if (isPiQuestionTool(event.toolName)) wait('question', QUESTION_TOOL_LABEL);
   });
   pi.on('tool_execution_end', (event) => {
     if (isPiQuestionTool(event.toolName)) write('working', currentTool);
   });
   pi.events?.on('rpiv:ask-user:blocked', (payload) => {
-    write(payload.active ? 'question' : 'working', payload.active ? 'Ask User Question' : currentTool);
+    if (payload.active) wait('question', QUESTION_TOOL_LABEL);
+    else write('working', currentTool);
   });
   pi.on('ui_prompt_start', (event) => {
     beforePrompt = lastState;
-    const state = piPromptState(event.kind);
-    write(state, event.title ?? '');
-    notify(state, event.title ?? '');
+    wait(piPromptState(event.kind), event.title ?? '');
   });
   pi.on('ui_prompt_end', () => {
     write(running ? 'working' : beforePrompt || 'idle', running ? currentTool : '');
@@ -285,10 +309,11 @@ export default function (pi: PiExtensionAPI): void {
   pi.on('agent_end', () => {
     running = false;
     stopHeartbeat();
-    currentTool = '';
-    write('done', '');
-    notify('done');
+    if (doneTimer) clearTimeout(doneTimer);
+    doneTimer = setTimeout(finish, doneDelayMs);
+    doneTimer.unref?.();
   });
+  pi.on('agent_settled', finish);
   // The auto-name lands after the first turn, between lifecycle writes —
   // rewrite the current state so a rename/auto-name shows up immediately
   // instead of whenever the next write happens.
@@ -297,6 +322,7 @@ export default function (pi: PiExtensionAPI): void {
   });
   pi.on('session_shutdown', () => {
     stopHeartbeat();
+    if (doneTimer) clearTimeout(doneTimer);
     // pi is exiting — drop the status file so the pane doesn't linger as done.
     lastState = '';
     try {
