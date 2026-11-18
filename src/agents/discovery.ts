@@ -31,6 +31,7 @@ export interface DiscoveryOpts {
   idleSecs: number; // grace before working->stopped (debounce), default 3
   now: number; // epoch seconds
   lastWorking: Map<string, number>; // paneId -> last ts a glyph was seen (carried across ticks)
+  tags?: Map<string, string>; // paneId -> `@fleet_agent` pane option
 }
 
 // Compiled once. WORKING_GLYPH_PATTERN is Phase 1's braille range (U+2800–U+28FF)
@@ -137,6 +138,11 @@ export function discoverAgents(
 
   // paneId -> agentType, first allowlisted match per pane wins.
   const agentByPane = new Map<string, string>();
+  // A pane tag names the agent behind a remote session, where the local process
+  // is ssh. It beats the process scan but must still name an allowlisted agent.
+  for (const [paneId, tag] of opts.tags ?? []) {
+    if (opts.allowlist.has(tag)) agentByPane.set(paneId, tag);
+  }
   for (const [pid, comm] of commByPid) {
     if (!opts.allowlist.has(comm)) continue;
     const paneId = walkToPane(pid, ppidByPid, panePids);
@@ -352,6 +358,7 @@ export function scanDiscovered(
   psTable: string[],
   lastWorking: Map<string, number>,
   now: number,
+  tags?: Map<string, string>,
   config?: DiscoveryConfig,
 ): DiscoveryScan {
   const cfg = config ?? readDiscoveryConfig();
@@ -369,5 +376,6 @@ export function scanDiscovered(
     idleSecs: cfg.idleSecs,
     now,
     lastWorking,
+    tags,
   });
 }

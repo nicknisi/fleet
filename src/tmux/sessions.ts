@@ -11,6 +11,8 @@ export interface PaneInfo {
   panePid: number;
   // Pane numbers restart with the server; hook records carry this owner.
   tmuxPid?: number;
+  // `@fleet_agent` pane option: names the agent a remote session (ssh) shows.
+  agentTag?: string;
   // The user is looking at this pane right now: it is the active pane of the
   // active window of a session with at least one attached client. Drives the
   // "finished while you were elsewhere" logic — a DONE synthesized for a
@@ -25,7 +27,7 @@ export interface PaneInfo {
 // Fields are inserted BEFORE pane_title so it stays LAST: a stray tab in a pane
 // title then lands in trailing (ignored) parts instead of shifting a field.
 export const PANE_FORMAT =
-  '#{pane_id}\t#{session_name}\t#{window_name}\t#{window_id}\t#{window_index}\t#{pane_current_path}\t#{pane_pid}\t#{pane_active}\t#{window_active}\t#{session_attached}\t#{pane_left}\t#{pane_top}\t#{pid}\t#{pane_title}';
+  '#{pane_id}\t#{session_name}\t#{window_name}\t#{window_id}\t#{window_index}\t#{pane_current_path}\t#{pane_pid}\t#{pane_active}\t#{window_active}\t#{session_attached}\t#{pane_left}\t#{pane_top}\t#{pid}\t#{@fleet_agent}\t#{pane_title}';
 
 export interface ListPanesResult {
   ok: boolean;
@@ -38,7 +40,7 @@ export function parsePanesOutput(stdout: string): PaneInfo[] {
   for (const line of stdout.split('\n')) {
     if (line.length === 0) continue;
     const parts = line.split('\t');
-    if (parts.length < 14) continue;
+    if (parts.length < 15) continue;
     const paneId = parts[0]!;
     panes.push({
       paneId,
@@ -54,9 +56,10 @@ export function parsePanesOutput(stdout: string): PaneInfo[] {
       paneLeft: parseInt(parts[10]!, 10),
       paneTop: parseInt(parts[11]!, 10),
       tmuxPid: parseInt(parts[12]!, 10),
+      agentTag: parts[13]!,
       // Title is the last field, so a tab inside it split into extra parts —
       // rejoin them instead of silently truncating at the first tab.
-      paneTitle: parts.slice(13).join('\t'),
+      paneTitle: parts.slice(14).join('\t'),
     });
   }
   return panes;
