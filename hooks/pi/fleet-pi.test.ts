@@ -1,8 +1,15 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import piDefault, { buildPiStatusLine, fleetPiLabel, isPiQuestionTool } from './fleet-pi.ts';
+import piDefault, {
+  buildPiStatusLine,
+  fleetNotifyMessage,
+  fleetPiLabel,
+  isPiQuestionTool,
+  piPromptState,
+  tmuxLiteral,
+} from './fleet-pi.ts';
 import { parseStatusFile } from '../../src/state/hooks.ts';
 import type { JsonValue } from '../../src/json.ts';
 
@@ -86,6 +93,8 @@ describe('buildPiStatusLine', () => {
 
 describe('extension event wiring', () => {
   let statusDir: string;
+  // Each loaded extension's shutdown, so teardown stops its timers even after a failed assertion.
+  const shutdowns: Array<() => void> = [];
   let saved: SavedEnv;
 
   beforeEach(() => {
@@ -99,6 +108,7 @@ describe('extension event wiring', () => {
   });
 
   afterEach(() => {
+    for (const shutdown of shutdowns.splice(0)) shutdown();
     rmSync(statusDir, { recursive: true, force: true });
     for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete process.env[k];
@@ -125,13 +135,14 @@ describe('extension event wiring', () => {
     // SAFETY: mockPi implements only the on()/events surface piDefault touches; the
     // captured handler type is deliberately looser than pi's per-event handler types.
     piDefault(mockPi as Parameters<typeof piDefault>[0]);
+    shutdowns.push(() => handlers.session_shutdown?.());
     return handlers;
   }
 
   const readStatus = (paneNum: string): ReturnType<typeof parseStatusFile> =>
     parseStatusFile(readFileSync(join(statusDir, `${paneNum}.status`), 'utf8'));
 
-  test('agent_start writes working; tool_execution_start enriches the label; agent_end writes done', () => {
+  test('agent_start writes working; tool_execution_start enriches the label; agent_settled writes done', () => {
     const h = loadWithTmux('%42');
 
     h.agent_start?.();
@@ -144,8 +155,96 @@ describe('extension event wiring', () => {
     expect(s?.tool).toBe('Bash: bun test');
 
     h.agent_end?.();
+    expect(readStatus('42')?.state).toBe('working'); // a retry or follow-up may still come
+    h.agent_settled?.();
     s = readStatus('42');
     expect(s?.state).toBe('done');
+  });
+
+  test('a run that finishes while a dialog is open keeps the dialog state, then reports done', () => {
+    const h = loadWithTmux('%16');
+    h.agent_start?.();
+    h.agent_end?.();
+    h.ui_prompt_start?.({ kind: 'confirm', title: 'Allow?' });
+    h.agent_settled?.();
+    expect(readStatus('16')?.state).toBe('permit');
+    h.ui_prompt_end?.();
+    expect(readStatus('16')?.state).toBe('done');
+  });
+
+  test('a retry after agent_end stays working through its backoff; done only when pi settles', () => {
+    // A controlled clock: pi's retry backoff waits 2s, 4s, then 8s, longer than any
+    // agent_end grace period, so nothing may publish done before agent_settled.
+    jest.useFakeTimers();
+    try {
+      const h = loadWithTmux('%15');
+      h.agent_start?.();
+      h.agent_end?.();
+      jest.advanceTimersByTime(10_000);
+      expect(readStatus('15')?.state).toBe('working');
+      h.agent_start?.();
+      h.agent_end?.();
+      h.agent_settled?.();
+      expect(readStatus('15')?.state).toBe('done');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a pi confirm dialog writes permit, other dialogs write question, and the run resumes after', () => {
+    const h = loadWithTmux('%11');
+    h.agent_start?.();
+    h.tool_execution_start?.({ toolName: 'bash', args: { command: 'rm -rf dist' } });
+
+    h.ui_prompt_start?.({ kind: 'confirm', title: 'Allow command?' });
+    let s = readStatus('11');
+    expect(s?.state).toBe('permit');
+    expect(s?.tool).toBe('Allow command?');
+
+    h.ui_prompt_end?.();
+    s = readStatus('11');
+    expect(s?.state).toBe('working');
+    expect(s?.tool).toBe('Bash: rm -rf dist');
+
+    h.ui_prompt_start?.({ kind: 'select', title: 'Pick a model' });
+    expect(readStatus('11')?.state).toBe('question');
+  });
+
+  test('working is re-stamped while pi works, and never over a waiting state', async () => {
+    process.env.FLEET_PI_HEARTBEAT_MS = '20';
+    try {
+      const h = loadWithTmux('%13');
+      const file = join(statusDir, '13.status');
+      h.agent_start?.();
+      const first = statSync(file).mtimeMs;
+      await new Promise((r) => setTimeout(r, 80));
+      expect(statSync(file).mtimeMs).toBeGreaterThan(first);
+
+      h.ui_prompt_start?.({ kind: 'confirm', title: 'Allow?' });
+      await new Promise((r) => setTimeout(r, 80));
+      expect(readStatus('13')?.state).toBe('permit');
+
+      h.ui_prompt_end?.();
+      h.agent_end?.();
+      h.agent_settled?.();
+      const done = statSync(file).mtimeMs;
+      await new Promise((r) => setTimeout(r, 80));
+      expect(statSync(file).mtimeMs).toBe(done);
+      expect(readStatus('13')?.state).toBe('done');
+    } finally {
+      delete process.env.FLEET_PI_HEARTBEAT_MS;
+    }
+  });
+
+  test('a dialog opened while idle returns to the state it interrupted', () => {
+    const h = loadWithTmux('%12');
+    h.agent_start?.();
+    h.agent_end?.();
+    h.agent_settled?.();
+    h.ui_prompt_start?.({ kind: 'input' });
+    expect(readStatus('12')?.state).toBe('question');
+    h.ui_prompt_end?.();
+    expect(readStatus('12')?.state).toBe('done');
   });
 
   test('rpiv ask-user blocked event writes question until the wait ends', () => {
@@ -240,5 +339,29 @@ describe('extension event wiring', () => {
     // status dir stays empty
     writeFileSync(join(statusDir, 'sentinel'), 'x'); // prove the dir is otherwise empty of .status
     expect(existsSync(join(statusDir, '1.status'))).toBe(false);
+  });
+});
+
+describe('piPromptState', () => {
+  test('confirm asks for permission; every other dialog is a question', () => {
+    expect(piPromptState('confirm')).toBe('permit');
+    for (const kind of ['select', 'input', 'editor', 'custom']) expect(piPromptState(kind)).toBe('question');
+  });
+});
+
+describe('fleetNotifyMessage', () => {
+  test('matches fleet_notify in hooks/lib.sh', () => {
+    expect(fleetNotifyMessage('permit', 'work', 'Allow command?')).toBe('⚠ work (Allow command?)');
+    expect(fleetNotifyMessage('question', 'work')).toBe('? work');
+    expect(fleetNotifyMessage('done', 'work')).toBe('✓ work');
+    expect(fleetNotifyMessage('waiting', 'work')).toBe('⏳ work');
+    expect(fleetNotifyMessage('working', 'work')).toBe('');
+  });
+});
+
+describe('tmuxLiteral', () => {
+  test('doubles # so tmux shows formats and #(cmd) literally', () => {
+    expect(tmuxLiteral('? work (#(rm -rf ~) #{pane_id})')).toBe('? work (##(rm -rf ~) ##{pane_id})');
+    expect(tmuxLiteral('plain')).toBe('plain');
   });
 });

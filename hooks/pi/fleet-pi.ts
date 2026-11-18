@@ -9,23 +9,38 @@
  * same status-file schema fleet's shell hooks write (see hooks/lib.sh):
  *
  *   session_start                  -> { state: "idle" }        (carries the session name on reload/resume)
- *   agent_start                    -> { state: "working" }
+ *   agent_start, turn_start        -> { state: "working" }  (plus a heartbeat while pi works, see below)
  *   tool_execution_start           -> { state: "working", tool: "Bash: …" | "Edit: …" }
  *   tool_call (question tool)      -> { state: "question" }
  *   tool_execution_end (question)  -> { state: "working" }
  *   rpiv:ask-user:blocked (active)  -> { state: "question" }
  *   rpiv:ask-user:blocked (cleared) -> { state: "working" }
- *   agent_end                      -> { state: "done" }      (fleet ages done -> idle)
+ *   ui_prompt_start (confirm)       -> { state: "permit" }   (a pi dialog waits on the user)
+ *   ui_prompt_start (other kinds)   -> { state: "question" }
+ *   ui_prompt_end                   -> back to "working" mid-run, else the state before the prompt
+ *   agent_settled                  -> { state: "done" }      (fleet ages done -> idle)
+ *   agent_end                      -> nothing yet: a retry or queued follow-up may follow
  *   session_info_changed           -> rewrite current state carrying pi's session name
  *   session_shutdown               -> remove the status file (pi exited; no stale state)
  *
- * pi auto-runs its tools, so it has no interactive permission prompt. Question
- * tools can still block on user input; @juicesharp/rpiv-ask-user-question
+ * pi auto-runs its tools, but extensions can open blocking dialogs (confirm,
+ * select, input, editor, custom); pi brackets those with ui_prompt_start /
+ * ui_prompt_end, which map to permit (confirm) or question. Question tools can
+ * also block on user input; @juicesharp/rpiv-ask-user-question
  * publishes that interval on pi's shared event bus, and compatibility-shimmed
  * AskUserQuestion tools are recognized from their tool_call lifecycle. State goes to
  * $FLEET_PI_STATUS_DIR or ~/.cache/pi-status (must match config.ts's
  * PI_STATUS_DIR). It is a no-op outside tmux, since fleet keys every agent on a
  * tmux pane. Every write is wrapped so a status-file error can never break pi.
+ *
+ * While a run is in progress, "working" is re-stamped every 60s, so a long
+ * generation with no tool calls never ages past fleet's 180s working timeout.
+ * That used to lean on scraping a composer spinner row, which depends on how
+ * the user's composer is styled.
+ *
+ * permit, question and done also notify, mirroring fleet_notify in
+ * hooks/lib.sh: a 3s tmux message unless this pane is the one in view, plus a
+ * bell for other sessions when @fleet_bell is on. Notifying never blocks pi.
  *
  * Zero fleet dependency: this file is loaded by pi, not bundled into fleet's
  * binary, and imports nothing from fleet. The pi API surface it uses is declared
@@ -34,7 +49,7 @@
  * without pulling pi's types. pi invokes the default export with its real
  * ExtensionAPI, which structurally satisfies the local type.
  */
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -66,10 +81,15 @@ type PiToolEvent = {
   toolName: string;
 };
 interface PiExtensionAPI {
-  on(event: 'session_start' | 'agent_start' | 'agent_end' | 'session_shutdown', handler: () => void): void;
+  on(
+    event: 'session_start' | 'agent_start' | 'agent_end' | 'agent_settled' | 'turn_start' | 'session_shutdown',
+    handler: () => void,
+  ): void;
   on(event: 'tool_execution_start', handler: (event: PiToolExecutionStartEvent) => void): void;
   on(event: 'tool_call' | 'tool_execution_end', handler: (event: PiToolEvent) => void): void;
   on(event: 'session_info_changed', handler: (event: { name?: string }) => void): void;
+  on(event: 'ui_prompt_start', handler: (event: { kind: string; title?: string }) => void): void;
+  on(event: 'ui_prompt_end', handler: () => void): void;
   // pi names sessions (auto-named after the first turn, renameable via /name);
   // optional so the extension still loads on a pi build that predates it.
   getSessionName?(): string | undefined;
@@ -107,6 +127,28 @@ export function fleetPiLabel(toolName: string, args: JsonValue | undefined): str
     return base ? `${cap}: ${base}` : cap;
   }
   return cap;
+}
+
+// fleet state for a blocking pi dialog: a confirm asks for permission,
+// everything else (select, input, editor, custom) is a question.
+export function piPromptState(kind: string): 'permit' | 'question' {
+  return kind === 'confirm' ? 'permit' : 'question';
+}
+
+// The tmux message fleet_notify shows (hooks/lib.sh), or '' for states that
+// don't notify.
+export function fleetNotifyMessage(state: string, session: string, tool = ''): string {
+  if (!['permit', 'question', 'done', 'waiting', 'completed'].includes(state)) return '';
+  const icon =
+    state === 'permit' ? '⚠' : state === 'question' ? '?' : state === 'done' || state === 'completed' ? '✓' : '⏳';
+  return tool ? `${icon} ${session} (${tool})` : `${icon} ${session}`;
+}
+
+// tmux expands formats in display-message text, and `#(cmd)` runs a shell
+// command; dialog titles can carry model text. Doubling `#` makes tmux print
+// it literally, on every tmux version (display-message -l is newer).
+export function tmuxLiteral(text: string): string {
+  return text.replace(/#/g, '##');
 }
 
 // Serialize a fleet status record. JSON.stringify escapes quotes/newlines in the
@@ -170,6 +212,60 @@ export default function (pi: PiExtensionAPI): void {
   };
 
   let currentTool = '';
+  let running = false;
+  let beforePrompt = '';
+  /** A dialog is on screen; completion must not overwrite its permit/question. */
+  let promptOpen = false;
+  /** The run finished while a dialog was open; publish done when it closes. */
+  let finishedDuringPrompt = false;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const heartbeatMs = Number(process.env.FLEET_PI_HEARTBEAT_MS) || 60_000;
+  const stopHeartbeat = (): void => {
+    if (heartbeat) clearInterval(heartbeat);
+    heartbeat = undefined;
+  };
+  // Only re-stamp "working": never overwrite a permit/question/done.
+  const startHeartbeat = (): void => {
+    stopHeartbeat();
+    heartbeat = setInterval(() => {
+      if (lastState === 'working') write('working', currentTool);
+    }, heartbeatMs);
+    heartbeat.unref?.();
+  };
+
+  // Port of fleet_notify (hooks/lib.sh). Async, and every failure is swallowed.
+  const notify = (state: string, tool = ''): void => {
+    const msg = fleetNotifyMessage(state, session, tool);
+    if (!msg) return;
+    const tmux = (args: string[], done?: (out: string) => void) =>
+      execFile('tmux', args, { encoding: 'utf8' }, (err, out) => {
+        if (!err) done?.(String(out).trim());
+      });
+    tmux(['display-message', '-p', '#{pane_id}\t#{session_name}'], (out) => {
+      const [currentPane, currentSession] = out.split('\t');
+      if (currentPane === paneId) return; // the user is looking at this pane
+      tmux(['display-message', '-d', '3000', tmuxLiteral(msg)]);
+      tmux(['show-option', '-gqv', '@fleet_bell'], (bell) => {
+        if (bell === 'on' && currentSession !== session) tmux(['run-shell', '-t', paneId, "printf '\\a'"]);
+      });
+    });
+  };
+
+  // agent_end can precede an automatic retry (backing off 2s, 4s, 8s) or a queued
+  // follow-up; agent_settled is pi's "finished" boundary, so done is written
+  // only there. agent_settled exists since pi 0.80.4, and the dialog events above
+  // need 0.84.4; on an older pi the state stays working until fleet's 180s
+  // working timeout ages it to idle.
+  const finish = (): void => {
+    if (running || lastState === 'done') return;
+    if (promptOpen) {
+      finishedDuringPrompt = true;
+      return;
+    }
+    currentTool = '';
+    write('done', '');
+    notify('done');
+  };
 
   pi.on('session_start', () => {
     // tmux env is fully populated by now; backfill anything missing at load.
@@ -182,26 +278,58 @@ export default function (pi: PiExtensionAPI): void {
     // the visibility.
     write('idle', '');
   });
-  pi.on('agent_start', () => write('working', currentTool));
+  pi.on('agent_start', () => {
+    finishedDuringPrompt = false;
+    running = true;
+    write('working', currentTool);
+    startHeartbeat();
+  });
+  pi.on('turn_start', () => {
+    if (running && lastState === 'working') write('working', currentTool);
+  });
   pi.on('tool_execution_start', (event) => {
     currentTool = fleetPiLabel(event.toolName, event.args);
     write('working', currentTool);
   });
+  // Write a waiting state, notifying only on the way in: a question tool that
+  // also opens a dialog must not message twice.
+  const wait = (state: 'permit' | 'question', label: string): void => {
+    const was = lastState;
+    write(state, label);
+    if (was !== state) notify(state, label);
+  };
   pi.on('tool_call', (event) => {
     // tool_call fires after every extension's tool_execution_start handler, so
     // another status extension cannot overwrite this with its own working write.
-    if (isPiQuestionTool(event.toolName)) write('question', QUESTION_TOOL_LABEL);
+    if (isPiQuestionTool(event.toolName)) wait('question', QUESTION_TOOL_LABEL);
   });
   pi.on('tool_execution_end', (event) => {
     if (isPiQuestionTool(event.toolName)) write('working', currentTool);
   });
   pi.events?.on('rpiv:ask-user:blocked', (payload) => {
-    write(payload.active ? 'question' : 'working', payload.active ? 'Ask User Question' : currentTool);
+    if (payload.active) wait('question', QUESTION_TOOL_LABEL);
+    else write('working', currentTool);
+  });
+  pi.on('ui_prompt_start', (event) => {
+    promptOpen = true;
+    beforePrompt = lastState;
+    wait(piPromptState(event.kind), event.title ?? '');
+  });
+  pi.on('ui_prompt_end', () => {
+    promptOpen = false;
+    if (!running && finishedDuringPrompt) {
+      finishedDuringPrompt = false;
+      lastState = ''; // let finish() publish done over the dialog's state
+      finish();
+      return;
+    }
+    write(running ? 'working' : beforePrompt || 'idle', running ? currentTool : '');
   });
   pi.on('agent_end', () => {
-    currentTool = '';
-    write('done', '');
+    running = false;
+    stopHeartbeat();
   });
+  pi.on('agent_settled', finish);
   // The auto-name lands after the first turn, between lifecycle writes —
   // rewrite the current state so a rename/auto-name shows up immediately
   // instead of whenever the next write happens.
@@ -209,6 +337,7 @@ export default function (pi: PiExtensionAPI): void {
     if (lastState) write(lastState, currentTool);
   });
   pi.on('session_shutdown', () => {
+    stopHeartbeat();
     // pi is exiting — drop the status file so the pane doesn't linger as done.
     lastState = '';
     try {
