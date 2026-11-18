@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import piDefault, { buildPiStatusLine, fleetPiLabel, isPiQuestionTool } from './fleet-pi.ts';
+import piDefault, {
+  buildPiStatusLine,
+  fleetNotifyMessage,
+  fleetPiLabel,
+  isPiQuestionTool,
+  piPromptState,
+} from './fleet-pi.ts';
 import { parseStatusFile } from '../../src/state/hooks.ts';
 import type { JsonValue } from '../../src/json.ts';
 
@@ -148,6 +154,35 @@ describe('extension event wiring', () => {
     expect(s?.state).toBe('done');
   });
 
+  test('a pi confirm dialog writes permit, other dialogs write question, and the run resumes after', () => {
+    const h = loadWithTmux('%11');
+    h.agent_start?.();
+    h.tool_execution_start?.({ toolName: 'bash', args: { command: 'rm -rf dist' } });
+
+    h.ui_prompt_start?.({ kind: 'confirm', title: 'Allow command?' });
+    let s = readStatus('11');
+    expect(s?.state).toBe('permit');
+    expect(s?.tool).toBe('Allow command?');
+
+    h.ui_prompt_end?.();
+    s = readStatus('11');
+    expect(s?.state).toBe('working');
+    expect(s?.tool).toBe('Bash: rm -rf dist');
+
+    h.ui_prompt_start?.({ kind: 'select', title: 'Pick a model' });
+    expect(readStatus('11')?.state).toBe('question');
+  });
+
+  test('a dialog opened while idle returns to the state it interrupted', () => {
+    const h = loadWithTmux('%12');
+    h.agent_start?.();
+    h.agent_end?.();
+    h.ui_prompt_start?.({ kind: 'input' });
+    expect(readStatus('12')?.state).toBe('question');
+    h.ui_prompt_end?.();
+    expect(readStatus('12')?.state).toBe('done');
+  });
+
   test('rpiv ask-user blocked event writes question until the wait ends', () => {
     const h = loadWithTmux('%8');
     h.agent_start?.();
@@ -240,5 +275,22 @@ describe('extension event wiring', () => {
     // status dir stays empty
     writeFileSync(join(statusDir, 'sentinel'), 'x'); // prove the dir is otherwise empty of .status
     expect(existsSync(join(statusDir, '1.status'))).toBe(false);
+  });
+});
+
+describe('piPromptState', () => {
+  test('confirm asks for permission; every other dialog is a question', () => {
+    expect(piPromptState('confirm')).toBe('permit');
+    for (const kind of ['select', 'input', 'editor', 'custom']) expect(piPromptState(kind)).toBe('question');
+  });
+});
+
+describe('fleetNotifyMessage', () => {
+  test('matches fleet_notify in hooks/lib.sh', () => {
+    expect(fleetNotifyMessage('permit', 'work', 'Allow command?')).toBe('⚠ work (Allow command?)');
+    expect(fleetNotifyMessage('question', 'work')).toBe('? work');
+    expect(fleetNotifyMessage('done', 'work')).toBe('✓ work');
+    expect(fleetNotifyMessage('waiting', 'work')).toBe('⏳ work');
+    expect(fleetNotifyMessage('working', 'work')).toBe('');
   });
 });
