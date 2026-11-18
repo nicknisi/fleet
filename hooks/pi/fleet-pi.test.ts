@@ -8,6 +8,7 @@ import piDefault, {
   fleetPiLabel,
   isPiQuestionTool,
   piPromptState,
+  tmuxLiteral,
 } from './fleet-pi.ts';
 import { parseStatusFile } from '../../src/state/hooks.ts';
 import type { JsonValue } from '../../src/json.ts';
@@ -168,6 +169,24 @@ describe('extension event wiring', () => {
       h.agent_end?.();
       await new Promise((r) => setTimeout(r, 60));
       expect(readStatus('14')?.state).toBe('done');
+    } finally {
+      delete process.env.FLEET_PI_DONE_DELAY_MS;
+    }
+  });
+
+  test('a run that finishes while a dialog is open keeps the dialog state, then reports done', async () => {
+    process.env.FLEET_PI_DONE_DELAY_MS = '20';
+    try {
+      const h = loadWithTmux('%16');
+      h.agent_start?.();
+      h.agent_end?.();
+      h.ui_prompt_start?.({ kind: 'confirm', title: 'Allow?' });
+      await new Promise((r) => setTimeout(r, 60)); // the delayed done fires here
+      expect(readStatus('16')?.state).toBe('permit');
+      h.agent_settled?.();
+      expect(readStatus('16')?.state).toBe('permit');
+      h.ui_prompt_end?.();
+      expect(readStatus('16')?.state).toBe('done');
     } finally {
       delete process.env.FLEET_PI_DONE_DELAY_MS;
     }
@@ -352,5 +371,12 @@ describe('fleetNotifyMessage', () => {
     expect(fleetNotifyMessage('done', 'work')).toBe('✓ work');
     expect(fleetNotifyMessage('waiting', 'work')).toBe('⏳ work');
     expect(fleetNotifyMessage('working', 'work')).toBe('');
+  });
+});
+
+describe('tmuxLiteral', () => {
+  test('doubles # so tmux shows formats and #(cmd) literally', () => {
+    expect(tmuxLiteral('? work (#(rm -rf ~) #{pane_id})')).toBe('? work (##(rm -rf ~) ##{pane_id})');
+    expect(tmuxLiteral('plain')).toBe('plain');
   });
 });

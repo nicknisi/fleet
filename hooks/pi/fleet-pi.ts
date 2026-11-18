@@ -145,6 +145,13 @@ export function fleetNotifyMessage(state: string, session: string, tool = ''): s
   return tool ? `${icon} ${session} (${tool})` : `${icon} ${session}`;
 }
 
+// tmux expands formats in display-message text, and `#(cmd)` runs a shell
+// command; dialog titles can carry model text. Doubling `#` makes tmux print
+// it literally, on every tmux version (display-message -l is newer).
+export function tmuxLiteral(text: string): string {
+  return text.replace(/#/g, '##');
+}
+
 // Serialize a fleet status record. JSON.stringify escapes quotes/newlines in the
 // label so a status file can never be corrupted by tool input. Field names and
 // shape mirror parseStatusFile in src/state/hooks.ts exactly. `name` is pi's own
@@ -208,6 +215,10 @@ export default function (pi: PiExtensionAPI): void {
   let currentTool = '';
   let running = false;
   let beforePrompt = '';
+  /** A dialog is on screen; completion must not overwrite its permit/question. */
+  let promptOpen = false;
+  /** The run finished while a dialog was open; publish done when it closes. */
+  let finishedDuringPrompt = false;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   const heartbeatMs = Number(process.env.FLEET_PI_HEARTBEAT_MS) || 60_000;
   const stopHeartbeat = (): void => {
@@ -234,7 +245,7 @@ export default function (pi: PiExtensionAPI): void {
     tmux(['display-message', '-p', '#{pane_id}\t#{session_name}'], (out) => {
       const [currentPane, currentSession] = out.split('\t');
       if (currentPane === paneId) return; // the user is looking at this pane
-      tmux(['display-message', '-d', '3000', msg]);
+      tmux(['display-message', '-d', '3000', tmuxLiteral(msg)]);
       tmux(['show-option', '-gqv', '@fleet_bell'], (bell) => {
         if (bell === 'on' && currentSession !== session) tmux(['run-shell', '-t', paneId, "printf '\\a'"]);
       });
@@ -250,6 +261,10 @@ export default function (pi: PiExtensionAPI): void {
     if (doneTimer) clearTimeout(doneTimer);
     doneTimer = undefined;
     if (running || lastState === 'done') return;
+    if (promptOpen) {
+      finishedDuringPrompt = true;
+      return;
+    }
     currentTool = '';
     write('done', '');
     notify('done');
@@ -269,6 +284,7 @@ export default function (pi: PiExtensionAPI): void {
   pi.on('agent_start', () => {
     if (doneTimer) clearTimeout(doneTimer);
     doneTimer = undefined;
+    finishedDuringPrompt = false;
     running = true;
     write('working', currentTool);
     startHeartbeat();
@@ -300,10 +316,18 @@ export default function (pi: PiExtensionAPI): void {
     else write('working', currentTool);
   });
   pi.on('ui_prompt_start', (event) => {
+    promptOpen = true;
     beforePrompt = lastState;
     wait(piPromptState(event.kind), event.title ?? '');
   });
   pi.on('ui_prompt_end', () => {
+    promptOpen = false;
+    if (!running && finishedDuringPrompt) {
+      finishedDuringPrompt = false;
+      lastState = ''; // let finish() publish done over the dialog's state
+      finish();
+      return;
+    }
     write(running ? 'working' : beforePrompt || 'idle', running ? currentTool : '');
   });
   pi.on('agent_end', () => {
