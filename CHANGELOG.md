@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/nicknisi/fleet/compare/v0.31.1...v0.32.0) (2026-11-18)
+
+
+### Features
+
+* **pi:** report pi dialogs, notify like fleet_notify, and keep working fresh ([#111](https://github.com/nicknisi/fleet/issues/111)) ([2b3ed38](https://github.com/nicknisi/fleet/commit/2b3ed38edcb8cb3069d3febeb47ccda63d93ae8b))
+
 ## [0.31.1](https://github.com/nicknisi/fleet/compare/v0.31.0...v0.31.1) (2026-11-16)
 
 
