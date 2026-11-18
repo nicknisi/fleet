@@ -19,8 +19,7 @@
  *   ui_prompt_start (other kinds)   -> { state: "question" }
  *   ui_prompt_end                   -> back to "working" mid-run, else the state before the prompt
  *   agent_settled                  -> { state: "done" }      (fleet ages done -> idle)
- *   agent_end                      -> "done" 3s later unless pi starts again (retry, follow-up)
- *                                     or settles first; covers pi builds without agent_settled
+ *   agent_end                      -> nothing yet: a retry or queued follow-up may follow
  *   session_info_changed           -> rewrite current state carrying pi's session name
  *   session_shutdown               -> remove the status file (pi exited; no stale state)
  *
@@ -252,14 +251,12 @@ export default function (pi: PiExtensionAPI): void {
     });
   };
 
-  // agent_end can precede an automatic retry or a queued follow-up; agent_settled
-  // is pi's "finished" boundary. Older pi builds lack agent_settled, so agent_end
-  // also schedules done, the way hooks/stop.sh waits before writing done.
-  let doneTimer: ReturnType<typeof setTimeout> | undefined;
-  const doneDelayMs = Number(process.env.FLEET_PI_DONE_DELAY_MS) || 3000;
+  // agent_end can precede an automatic retry (backing off 2s, 4s, 8s) or a queued
+  // follow-up; agent_settled is pi's "finished" boundary, so done is written
+  // only there. agent_settled exists since pi 0.80.4, and the dialog events above
+  // need 0.84.4; on an older pi the state stays working until fleet's 180s
+  // working timeout ages it to idle.
   const finish = (): void => {
-    if (doneTimer) clearTimeout(doneTimer);
-    doneTimer = undefined;
     if (running || lastState === 'done') return;
     if (promptOpen) {
       finishedDuringPrompt = true;
@@ -282,8 +279,6 @@ export default function (pi: PiExtensionAPI): void {
     write('idle', '');
   });
   pi.on('agent_start', () => {
-    if (doneTimer) clearTimeout(doneTimer);
-    doneTimer = undefined;
     finishedDuringPrompt = false;
     running = true;
     write('working', currentTool);
@@ -333,9 +328,6 @@ export default function (pi: PiExtensionAPI): void {
   pi.on('agent_end', () => {
     running = false;
     stopHeartbeat();
-    if (doneTimer) clearTimeout(doneTimer);
-    doneTimer = setTimeout(finish, doneDelayMs);
-    doneTimer.unref?.();
   });
   pi.on('agent_settled', finish);
   // The auto-name lands after the first turn, between lifecycle writes —
@@ -346,7 +338,6 @@ export default function (pi: PiExtensionAPI): void {
   });
   pi.on('session_shutdown', () => {
     stopHeartbeat();
-    if (doneTimer) clearTimeout(doneTimer);
     // pi is exiting — drop the status file so the pane doesn't linger as done.
     lastState = '';
     try {

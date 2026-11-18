@@ -161,49 +161,27 @@ describe('extension event wiring', () => {
     expect(s?.state).toBe('done');
   });
 
-  test('without agent_settled (older pi), agent_end writes done after a short delay', async () => {
-    process.env.FLEET_PI_DONE_DELAY_MS = '20';
-    try {
-      const h = loadWithTmux('%14');
-      h.agent_start?.();
-      h.agent_end?.();
-      await new Promise((r) => setTimeout(r, 60));
-      expect(readStatus('14')?.state).toBe('done');
-    } finally {
-      delete process.env.FLEET_PI_DONE_DELAY_MS;
-    }
+  test('a run that finishes while a dialog is open keeps the dialog state, then reports done', () => {
+    const h = loadWithTmux('%16');
+    h.agent_start?.();
+    h.agent_end?.();
+    h.ui_prompt_start?.({ kind: 'confirm', title: 'Allow?' });
+    h.agent_settled?.();
+    expect(readStatus('16')?.state).toBe('permit');
+    h.ui_prompt_end?.();
+    expect(readStatus('16')?.state).toBe('done');
   });
 
-  test('a run that finishes while a dialog is open keeps the dialog state, then reports done', async () => {
-    process.env.FLEET_PI_DONE_DELAY_MS = '20';
-    try {
-      const h = loadWithTmux('%16');
-      h.agent_start?.();
-      h.agent_end?.();
-      h.ui_prompt_start?.({ kind: 'confirm', title: 'Allow?' });
-      await new Promise((r) => setTimeout(r, 60)); // the delayed done fires here
-      expect(readStatus('16')?.state).toBe('permit');
-      h.agent_settled?.();
-      expect(readStatus('16')?.state).toBe('permit');
-      h.ui_prompt_end?.();
-      expect(readStatus('16')?.state).toBe('done');
-    } finally {
-      delete process.env.FLEET_PI_DONE_DELAY_MS;
-    }
-  });
-
-  test('a retry that starts right after agent_end keeps working instead of flashing done', async () => {
-    process.env.FLEET_PI_DONE_DELAY_MS = '20';
-    try {
-      const h = loadWithTmux('%15');
-      h.agent_start?.();
-      h.agent_end?.();
-      h.agent_start?.();
-      await new Promise((r) => setTimeout(r, 60));
-      expect(readStatus('15')?.state).toBe('working');
-    } finally {
-      delete process.env.FLEET_PI_DONE_DELAY_MS;
-    }
+  test('a retry after agent_end stays working through its backoff; done only when pi settles', async () => {
+    const h = loadWithTmux('%15');
+    h.agent_start?.();
+    h.agent_end?.();
+    await new Promise((r) => setTimeout(r, 50)); // pi's retry backoff: no done in between
+    expect(readStatus('15')?.state).toBe('working');
+    h.agent_start?.();
+    h.agent_end?.();
+    h.agent_settled?.();
+    expect(readStatus('15')?.state).toBe('done');
   });
 
   test('a pi confirm dialog writes permit, other dialogs write question, and the run resumes after', () => {
