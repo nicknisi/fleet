@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import piDefault, {
@@ -171,6 +171,31 @@ describe('extension event wiring', () => {
 
     h.ui_prompt_start?.({ kind: 'select', title: 'Pick a model' });
     expect(readStatus('11')?.state).toBe('question');
+  });
+
+  test('working is re-stamped while pi works, and never over a waiting state', async () => {
+    process.env.FLEET_PI_HEARTBEAT_MS = '20';
+    try {
+      const h = loadWithTmux('%13');
+      const file = join(statusDir, '13.status');
+      h.agent_start?.();
+      const first = statSync(file).mtimeMs;
+      await new Promise((r) => setTimeout(r, 80));
+      expect(statSync(file).mtimeMs).toBeGreaterThan(first);
+
+      h.ui_prompt_start?.({ kind: 'confirm', title: 'Allow?' });
+      await new Promise((r) => setTimeout(r, 80));
+      expect(readStatus('13')?.state).toBe('permit');
+
+      h.ui_prompt_end?.();
+      h.agent_end?.();
+      const done = statSync(file).mtimeMs;
+      await new Promise((r) => setTimeout(r, 80));
+      expect(statSync(file).mtimeMs).toBe(done);
+      expect(readStatus('13')?.state).toBe('done');
+    } finally {
+      delete process.env.FLEET_PI_HEARTBEAT_MS;
+    }
   });
 
   test('a dialog opened while idle returns to the state it interrupted', () => {

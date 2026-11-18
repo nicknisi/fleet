@@ -9,7 +9,7 @@
  * same status-file schema fleet's shell hooks write (see hooks/lib.sh):
  *
  *   session_start                  -> { state: "idle" }        (carries the session name on reload/resume)
- *   agent_start                    -> { state: "working" }
+ *   agent_start, turn_start        -> { state: "working" }  (plus a heartbeat while pi works, see below)
  *   tool_execution_start           -> { state: "working", tool: "Bash: …" | "Edit: …" }
  *   tool_call (question tool)      -> { state: "question" }
  *   tool_execution_end (question)  -> { state: "working" }
@@ -31,6 +31,11 @@
  * $FLEET_PI_STATUS_DIR or ~/.cache/pi-status (must match config.ts's
  * PI_STATUS_DIR). It is a no-op outside tmux, since fleet keys every agent on a
  * tmux pane. Every write is wrapped so a status-file error can never break pi.
+ *
+ * While a run is in progress, "working" is re-stamped every 60s, so a long
+ * generation with no tool calls never ages past fleet's 180s working timeout.
+ * That used to lean on scraping a composer spinner row, which depends on how
+ * the user's composer is styled.
  *
  * permit, question and done also notify, mirroring fleet_notify in
  * hooks/lib.sh: a 3s tmux message unless this pane is the one in view, plus a
@@ -75,7 +80,10 @@ type PiToolEvent = {
   toolName: string;
 };
 interface PiExtensionAPI {
-  on(event: 'session_start' | 'agent_start' | 'agent_end' | 'session_shutdown', handler: () => void): void;
+  on(
+    event: 'session_start' | 'agent_start' | 'agent_end' | 'turn_start' | 'session_shutdown',
+    handler: () => void,
+  ): void;
   on(event: 'tool_execution_start', handler: (event: PiToolExecutionStartEvent) => void): void;
   on(event: 'tool_call' | 'tool_execution_end', handler: (event: PiToolEvent) => void): void;
   on(event: 'session_info_changed', handler: (event: { name?: string }) => void): void;
@@ -198,6 +206,20 @@ export default function (pi: PiExtensionAPI): void {
   let currentTool = '';
   let running = false;
   let beforePrompt = '';
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const heartbeatMs = Number(process.env.FLEET_PI_HEARTBEAT_MS) || 60_000;
+  const stopHeartbeat = (): void => {
+    if (heartbeat) clearInterval(heartbeat);
+    heartbeat = undefined;
+  };
+  // Only re-stamp "working": never overwrite a permit/question/done.
+  const startHeartbeat = (): void => {
+    stopHeartbeat();
+    heartbeat = setInterval(() => {
+      if (lastState === 'working') write('working', currentTool);
+    }, heartbeatMs);
+    heartbeat.unref?.();
+  };
 
   // Port of fleet_notify (hooks/lib.sh). Async, and every failure is swallowed.
   const notify = (state: string, tool = ''): void => {
@@ -231,6 +253,10 @@ export default function (pi: PiExtensionAPI): void {
   pi.on('agent_start', () => {
     running = true;
     write('working', currentTool);
+    startHeartbeat();
+  });
+  pi.on('turn_start', () => {
+    if (running && lastState === 'working') write('working', currentTool);
   });
   pi.on('tool_execution_start', (event) => {
     currentTool = fleetPiLabel(event.toolName, event.args);
@@ -258,6 +284,7 @@ export default function (pi: PiExtensionAPI): void {
   });
   pi.on('agent_end', () => {
     running = false;
+    stopHeartbeat();
     currentTool = '';
     write('done', '');
     notify('done');
@@ -269,6 +296,7 @@ export default function (pi: PiExtensionAPI): void {
     if (lastState) write(lastState, currentTool);
   });
   pi.on('session_shutdown', () => {
+    stopHeartbeat();
     // pi is exiting — drop the status file so the pane doesn't linger as done.
     lastState = '';
     try {
