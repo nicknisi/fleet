@@ -100,6 +100,14 @@ describe('Claude question form recognition', () => {
     expect(isClaudeQuestionForm(lines)).toBe(true);
   });
 
+  test('recognizes the Claude 2.1.330 review with live submit controls', () => {
+    const review = screens.review.filter((line) => line !== 'Ready to submit your answers?');
+    expect(isClaudeQuestionForm(review)).toBe(true);
+    expect(isClaudeQuestionForm(review.filter((line) => !line.includes('→ Blue')))).toBe(false);
+    expect(isClaudeQuestionForm(review.filter((line) => line !== 'Review your answers'))).toBe(false);
+    expect(isClaudeQuestionForm([...review, ...notForms.permission])).toBe(false);
+  });
+
   test.each(Object.entries(notForms))('never treats %s as a question form', (_name, lines) => {
     expect(isClaudeQuestionForm(lines)).toBe(false);
   });

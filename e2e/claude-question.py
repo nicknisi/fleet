@@ -217,7 +217,7 @@ try:
     tm('send-keys', '-t', 'monitor', '-l', 'café fixture note')
     wait_for(lambda: 'café fixture note' in capture('monitor'), 'typed answer visible in Fleet')
     tm('send-keys', '-t', 'monitor', 'Enter')
-    wait_for(lambda: 'Ready to submit your answers?' in capture('monitor'), 'review page inside Fleet')
+    wait_for(lambda: 'Submit answers' in capture('monitor'), 'review page inside Fleet')
     assert '● ANSWER' in capture('monitor'), 'Fleet left before the answers were submitted'
     save_screen('review')
     tm('send-keys', '-t', 'monitor', '-l', '\rFLEET_SUFFIX_PROBE')
