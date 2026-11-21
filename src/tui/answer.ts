@@ -49,6 +49,10 @@ const FORM_FOOTER = /^\s*Enter to select · (?:Tab\/Arrow keys|↑\/↓) to navi
 const CHAT_OPTION = /^\s*(?:❯\s*)?\d+\. Chat about this$/;
 const REVIEW_PROMPT = /^\s*Ready to submit your answers\?$/;
 const REVIEW_HEADING = /^\s*Review your answers$/;
+const REVIEW_QUESTION = /^\s*(?:│ )?● \S/;
+const REVIEW_WRAPPED_QUESTION = /^\s*│ ● \S/;
+const REVIEW_CONTINUATION = /^\s*│ {3}\S/;
+const REVIEW_ANSWER = /^\s*→ \S/;
 const SUBMIT_OPTION = /^\s*(?:❯\s*)?\d+\. Submit answers$/;
 const CANCEL_OPTION = /^\s*(?:❯\s*)?\d+\. Cancel$/;
 
@@ -71,12 +75,15 @@ export function isClaudeQuestionForm(lines: string[]): boolean {
   if (!SUBMIT_OPTION.test(rows[end - 1]!)) return false;
   const review = rows.slice(Math.max(0, end - 40), end - 1);
   const heading = review.findLastIndex((row) => REVIEW_HEADING.test(row));
-  return (
-    heading >= 0 &&
-    review
-      .slice(heading + 1)
-      .some((row, index, answers) => /^\s*● \S/.test(row) && /^\s*→ \S/.test(answers[index + 1] ?? ''))
-  );
+  if (heading < 0) return false;
+  return review.slice(heading + 1).some((row, index, answers) => {
+    if (!REVIEW_ANSWER.test(row)) return false;
+    let question = index - 1;
+    // Claude draws a vertical bar on every line of a wrapped question.
+    while (REVIEW_CONTINUATION.test(answers[question] ?? '')) question -= 1;
+    const questionPattern = question === index - 1 ? REVIEW_QUESTION : REVIEW_WRAPPED_QUESTION;
+    return questionPattern.test(answers[question] ?? '');
+  });
 }
 
 // Rows whose native question S answers in place instead of refusing to send.

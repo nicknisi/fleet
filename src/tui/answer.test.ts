@@ -108,6 +108,19 @@ describe('Claude question form recognition', () => {
     expect(isClaudeQuestionForm([...review, ...notForms.permission])).toBe(false);
   });
 
+  test('recognizes a native wrapped review question without accepting unrelated intervening rows', () => {
+    const review = [
+      'Review your answers',
+      ' │ ● Which fixture colour should Fleet select? Please include enough detail',
+      ' │   about the fixture that the long question wraps.',
+      '   → Blue',
+      '❯ 1. Submit answers',
+      '  2. Cancel',
+    ];
+    expect(isClaudeQuestionForm(review)).toBe(true);
+    expect(isClaudeQuestionForm(review.map((line) => line.replace(' │   about', '   about')))).toBe(false);
+  });
+
   test.each(Object.entries(notForms))('never treats %s as a question form', (_name, lines) => {
     expect(isClaudeQuestionForm(lines)).toBe(false);
   });
