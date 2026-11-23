@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.32.1](https://github.com/nicknisi/fleet/compare/v0.32.0...v0.32.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* force UTF-8 control client so the sidebar finds agents without LANG ([#114](https://github.com/nicknisi/fleet/issues/114)) ([df0047f](https://github.com/nicknisi/fleet/commit/df0047fe5b398a81655e106621bbb342f8b3123a))
+* keep Claude question reviews answerable ([#113](https://github.com/nicknisi/fleet/issues/113)) ([2753aca](https://github.com/nicknisi/fleet/commit/2753aca3928f1ad536473f7b723380302acbcf9a))
+
 ## [0.32.0](https://github.com/nicknisi/fleet/compare/v0.31.1...v0.32.0) (2026-11-18)
 
 
