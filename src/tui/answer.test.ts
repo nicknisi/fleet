@@ -100,6 +100,34 @@ describe('Claude question form recognition', () => {
     expect(isClaudeQuestionForm(lines)).toBe(true);
   });
 
+  test('recognizes the Claude 2.1.330 review with live submit controls', () => {
+    const review = screens.review.filter((line) => line !== 'Ready to submit your answers?');
+    expect(isClaudeQuestionForm(review)).toBe(true);
+    expect(isClaudeQuestionForm(review.filter((line) => !line.includes('→ Blue')))).toBe(false);
+    expect(isClaudeQuestionForm(review.filter((line) => line !== 'Review your answers'))).toBe(false);
+    expect(isClaudeQuestionForm([...review, ...notForms.permission])).toBe(false);
+  });
+
+  test('recognizes a native wrapped review question without accepting unrelated intervening rows', () => {
+    const review = [
+      'Review your answers',
+      ' │ ● Which fixture colour should Fleet select? Please include enough detail',
+      ' │   about the fixture that the long question wraps.',
+      '   → Blue',
+      '❯ 1. Submit answers',
+      '  2. Cancel',
+    ];
+    expect(isClaudeQuestionForm(review)).toBe(true);
+    expect(isClaudeQuestionForm(review.map((line) => line.replace(' │   about', '   about')))).toBe(false);
+  });
+
+  test('recognizes a review whose heading is far above the controls in a narrow pane', () => {
+    const question = [' │ ● Which', ...Array.from({ length: 12 }, () => ' │   fixture'), '   → Blue'];
+    const review = ['Review your answers', ...Array(4).fill(question).flat(), '❯ 1. Submit answers', '  2. Cancel'];
+    expect(isClaudeQuestionForm(review)).toBe(true);
+    expect(isClaudeQuestionForm([...review, ...notForms.permission])).toBe(false);
+  });
+
   test.each(Object.entries(notForms))('never treats %s as a question form', (_name, lines) => {
     expect(isClaudeQuestionForm(lines)).toBe(false);
   });
