@@ -31,7 +31,9 @@ export function attachArgs(tmuxEnv: string | undefined): string[] {
     const sock = tmuxEnv.split(',')[0];
     if (sock) args.push('-S', sock);
   }
-  args.push('-C', 'attach-session', '-f', 'no-output');
+  // -u: without a UTF-8 locale (tmux-spawned panes often lack LANG), tmux
+  // sanitizes control output, turning PANE_FORMAT's tabs into '_' (0 panes).
+  args.push('-u', '-C', 'attach-session', '-f', 'no-output');
   return args;
 }
 
