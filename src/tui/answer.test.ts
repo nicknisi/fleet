@@ -121,6 +121,13 @@ describe('Claude question form recognition', () => {
     expect(isClaudeQuestionForm(review.map((line) => line.replace(' │   about', '   about')))).toBe(false);
   });
 
+  test('recognizes a review whose heading is far above the controls in a narrow pane', () => {
+    const question = [' │ ● Which', ...Array.from({ length: 12 }, () => ' │   fixture'), '   → Blue'];
+    const review = ['Review your answers', ...Array(4).fill(question).flat(), '❯ 1. Submit answers', '  2. Cancel'];
+    expect(isClaudeQuestionForm(review)).toBe(true);
+    expect(isClaudeQuestionForm([...review, ...notForms.permission])).toBe(false);
+  });
+
   test.each(Object.entries(notForms))('never treats %s as a question form', (_name, lines) => {
     expect(isClaudeQuestionForm(lines)).toBe(false);
   });

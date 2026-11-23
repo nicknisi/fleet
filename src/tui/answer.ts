@@ -71,9 +71,10 @@ export function isClaudeQuestionForm(lines: string[]): boolean {
   if (near(REVIEW_PROMPT, 3)) return true;
 
   // Claude 2.1.330 omits the confirmation question. Match the rendered
-  // question and answer under the review heading, above the live controls.
+  // question and answer under the newest review heading, above the live
+  // controls. The capture bounds the search; a long wrapped review can fill it.
   if (!SUBMIT_OPTION.test(rows[end - 1]!)) return false;
-  const review = rows.slice(Math.max(0, end - 40), end - 1);
+  const review = rows.slice(0, end - 1);
   const heading = review.findLastIndex((row) => REVIEW_HEADING.test(row));
   if (heading < 0) return false;
   return review.slice(heading + 1).some((row, index, answers) => {
