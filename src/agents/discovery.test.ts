@@ -161,6 +161,44 @@ describe('discoverAgents — mapping', () => {
   });
 });
 
+describe('discoverAgents — @fleet_agent pane tag', () => {
+  // A local pane that only runs ssh to a remote agent.
+  const sshTable = ['  100     1 -zsh', '  200   100 ssh'];
+  const panePids = new Map<number, string>([[100, '%1']]);
+  const allowlist = new Set(['aider', 'codex']);
+
+  test('a tagged ssh pane is discovered as the tagged agent', () => {
+    const { agents } = discoverAgents(
+      sshTable,
+      panePids,
+      new Map(),
+      opts({ allowlist, tags: new Map([['%1', 'codex']]) }),
+    );
+    expect(agents).toEqual([{ paneId: '%1', agentType: 'codex', working: false }]);
+  });
+
+  test('the tag beats a local agent process in the same pane', () => {
+    const table = [...sshTable, '  300   100 aider'];
+    const { agents } = discoverAgents(
+      table,
+      panePids,
+      new Map(),
+      opts({ allowlist, tags: new Map([['%1', 'codex']]) }),
+    );
+    expect(agents.map((a) => a.agentType)).toEqual(['codex']);
+  });
+
+  test('a tag naming no allowlisted agent is ignored', () => {
+    const { agents } = discoverAgents(
+      sshTable,
+      panePids,
+      new Map(),
+      opts({ allowlist, tags: new Map([['%1', 'ssh']]) }),
+    );
+    expect(agents).toHaveLength(0);
+  });
+});
+
 describe('discoverAgents — debounce anchoring + prune', () => {
   const psTable = ['  100     1 -zsh', '  300   100 aider'];
   const panePids = new Map<number, string>([[100, '%1']]);
